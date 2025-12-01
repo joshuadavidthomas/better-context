@@ -19,11 +19,13 @@ const logEvent = (event: OcEvent) => {
       tool?: string;
       state?: { status?: string; title?: string };
     };
+    // Only output final answer text, not reasoning/thinking
     if (part.type === "text" && part.text) {
       process.stdout.write(part.text);
     }
+    // Show tool calls when completed
     if (part.type === "tool" && part.state?.status === "completed") {
-      console.log(`\n[Tool Done] ${part.tool}: ${part.state.title ?? ""}`);
+      console.log(`\n[Tool] ${part.tool}: ${part.state.title ?? ""}`);
     }
   }
 };
