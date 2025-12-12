@@ -1,6 +1,5 @@
 <script lang="ts">
-	import { Check, Copy } from "@lucide/svelte";
-
+	import { Check, Copy } from '@lucide/svelte';
 
 	let { text, label } = $props<{ text: string; label?: string }>();
 
@@ -17,7 +16,7 @@
 
 <button
 	type="button"
-	class="inline-flex items-center justify-center rounded-xl border border-neutral-200 bg-white/80 p-2 text-neutral-900 shadow-sm backdrop-blur hover:bg-white dark:border-neutral-800 dark:bg-neutral-950/40 dark:text-neutral-50 dark:hover:bg-neutral-950"
+	class="inline-flex items-center justify-center rounded-xl border border-neutral-200 bg-white p-2 text-neutral-900 shadow-sm hover:bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-50 dark:hover:bg-neutral-900"
 	onclick={copy}
 	aria-label={label ?? 'Copy to clipboard'}
 	title={label ?? 'Copy'}
@@ -28,5 +27,3 @@
 		<Copy size={16} strokeWidth={2.25} />
 	{/if}
 </button>
-
-

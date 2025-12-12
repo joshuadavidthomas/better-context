@@ -6,12 +6,15 @@
 	import { Bot, Github, Moon, Sun } from '@lucide/svelte';
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
+	import { setShikiStore } from '$lib/stores/ShikiStore.svelte';
 
 	let { children } = $props();
 
 	let theme = $state<Theme>('dark');
 	const fullBleed = $derived(page.url.pathname === '/og');
 	const ogImageUrl = $derived(new URL(ogImage, page.url).href);
+
+	setShikiStore();
 
 	const toggleTheme = () => {
 		theme = theme === 'dark' ? 'light' : 'dark';
@@ -33,7 +36,7 @@
 	<meta property="og:title" content="The Better Context App" />
 	<meta property="og:description" content="btca: CLI for asking questions about codebases." />
 	<meta property="og:url" content="https://btca.dev" />
-	<meta property="og:site_name" content="The Better Context App">
+	<meta property="og:site_name" content="The Better Context App" />
 	<meta property="og:image" content={ogImageUrl} />
 	<meta property="og:image:width" content="1200" />
 	<meta property="og:image:height" content="630" />
@@ -48,9 +51,11 @@
 	<div
 		aria-hidden="true"
 		class="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(60rem_40rem_at_20%_-10%,rgba(249,115,22,0.20),transparent_60%),radial-gradient(50rem_30rem_at_90%_0%,rgba(249,115,22,0.12),transparent_55%),radial-gradient(50rem_30rem_at_70%_110%,rgba(249,115,22,0.12),transparent_55%)] dark:bg-[radial-gradient(60rem_40rem_at_20%_-10%,rgba(249,115,22,0.14),transparent_60%),radial-gradient(50rem_30rem_at_90%_0%,rgba(249,115,22,0.10),transparent_55%),radial-gradient(50rem_30rem_at_70%_110%,rgba(249,115,22,0.10),transparent_55%)]"
-		></div>
+	></div>
 
-	<header class="sticky top-0 z-20 border-b border-neutral-200/70 bg-neutral-50/80 backdrop-blur dark:border-neutral-800/70 dark:bg-neutral-950/60">
+	<header
+		class="sticky top-0 z-20 border-b border-neutral-200/70 bg-neutral-50/80 backdrop-blur dark:border-neutral-800/70 dark:bg-neutral-950/60"
+	>
 		<div class="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
 			<a href="/" class="no-underline">
 				<div class="flex items-center gap-2">
@@ -69,6 +74,12 @@
 			</a>
 
 			<div class="flex items-center gap-2">
+				<a
+					class="hidden rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-900 no-underline shadow-sm hover:bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-900/40 dark:text-neutral-50 dark:hover:bg-neutral-900 sm:inline-flex"
+					href="/getting-started"
+				>
+					Getting started
+				</a>
 				<a
 					class="hidden rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-900 no-underline shadow-sm hover:bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-900/40 dark:text-neutral-50 dark:hover:bg-neutral-900 sm:inline-flex"
 					href="https://github.com/bmdavis419/better-context"
@@ -108,11 +119,15 @@
 	</main>
 
 	<footer class="border-t border-neutral-200/70 py-10 dark:border-neutral-800/70">
-		<div class="mx-auto flex max-w-5xl flex-col gap-3 px-6 text-sm text-neutral-600 dark:text-neutral-400 sm:flex-row sm:items-center sm:justify-between">
+		<div
+			class="mx-auto flex max-w-5xl flex-col gap-3 px-6 text-sm text-neutral-600 dark:text-neutral-400 sm:flex-row sm:items-center sm:justify-between"
+		>
 			<div>Built with Bun + Effect + SvelteKit</div>
 			<div class="flex gap-4">
-				<a href="https://github.com/bmdavis419/better-context" target="_blank" rel="noreferrer">GitHub</a>
-				<a href="#install">Install</a>
+				<a href="https://github.com/bmdavis419/better-context" target="_blank" rel="noreferrer"
+					>GitHub</a
+				>
+				<a href="/getting-started#install">Install</a>
 			</div>
 		</div>
 	</footer>

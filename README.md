@@ -1,80 +1,50 @@
-# The Better Context App
+# Better Context (`btca`)
 
-Get up to date information about any technology from it's actual source code.
+https://btca.dev
 
-```
-bun add -g btca@latest
-```
+`btca` is a CLI for asking questions about libraries/frameworks by cloning their repos locally and searching the source directly.
 
-```
-btca ask -t svelte -q "How does the inspect rune work?"
-```
+Dev docs are in the `apps/cli` directory.
 
-### I HIGHLY RECOMMEND CHANGING THE MODEL AND PROVIDER IN THE CONFIG FILE
+## Install
 
-_big pickle is surprisingly good, but there are better models out there_
-
-**Out of the box, this uses big pickle from OpenCode because it's free, but if you have opencode installed you can [customize the model and provider in the config file](https://opencode.ai/docs/models) at ~/.config/btca/btca.json.**
-
-I am mostly using haiku 4.5...
-
-```json
-{
-  "promptsDirectory": "~/.config/btca/prompts",
-  "reposDirectory": "~/.config/btca/repos",
-  "port": 3420,
-  "maxInstances": 5,
-  "repos": [
-    {
-      "name": "svelte",
-      "url": "https://github.com/sveltejs/svelte.dev",
-      "branch": "main"
-    },
-    {
-      "name": "effect",
-      "url": "https://github.com/Effect-TS/effect",
-      "branch": "main"
-    },
-    {
-      "name": "nextjs",
-      "url": "https://github.com/vercel/next.js",
-      "branch": "canary"
-    }
-  ],
-  "model": "claude-haiku-4-5",
-  "provider": "anthropic"
-}
+```bash
+bun add -g btca
+btca --help
 ```
 
-The config is also where you can add in your open repos to the app so you can ask questions about them.
+## Quick commands
 
-The way it works is the "name" is the key for that piece of tech. Say you want to ask questions about svelte, you can do the following:
+Ask a question:
 
-1. Chat with an opencode instance that has the svelte repo in context:
-
+```bash
+btca ask -t svelte -q "How do stores work in Svelte 5?"
 ```
+
+Open the TUI:
+
+```bash
 btca chat -t svelte
 ```
 
-2. Ask a question in the cli (great for agents):
+Run as a server:
 
-```
-btca ask -t svelte -q "How does the inspect rune work?"
-```
-
-3. Start a web server and send your questions there:
-
-```
-btca serve
+```bash
+btca serve -p 8080
 ```
 
-Then hit http://locahost:8080/question as a post request and this body:
+Then POST `/question` with:
 
 ```json
-{
-  "question": "how does the query remote function work in sveltekit?",
-  "tech": "svelte"
-}
+{ "tech": "svelte", "question": "how does the query remote function work in sveltekit?" }
 ```
 
-_better docs, agent setup, and more coming soon!_
+Keep an OpenCode instance running:
+
+```bash
+btca open
+```
+
+## Config
+
+On first run, `btca` creates a default config at `~/.config/btca/btca.json`. That’s where the repo list + model/provider live.

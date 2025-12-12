@@ -3,7 +3,9 @@
 </script>
 
 <section class="mx-auto w-[1200px] max-w-full">
-	<div class="relative h-[630px] overflow-hidden border border-neutral-200 bg-white/70 shadow-sm dark:border-neutral-800 dark:bg-neutral-950/40">
+	<div
+		class="relative h-[630px] overflow-hidden border border-neutral-200 bg-white/70 shadow-sm dark:border-neutral-800 dark:bg-neutral-950/40"
+	>
 		<div
 			aria-hidden="true"
 			class="pointer-events-none absolute inset-0 bg-[radial-gradient(60rem_40rem_at_20%_-10%,rgba(249,115,22,0.20),transparent_60%),radial-gradient(50rem_30rem_at_90%_0%,rgba(249,115,22,0.12),transparent_55%),radial-gradient(50rem_30rem_at_70%_110%,rgba(249,115,22,0.12),transparent_55%)] dark:bg-[radial-gradient(60rem_40rem_at_20%_-10%,rgba(249,115,22,0.14),transparent_60%),radial-gradient(50rem_30rem_at_90%_0%,rgba(249,115,22,0.10),transparent_55%),radial-gradient(50rem_30rem_at_70%_110%,rgba(249,115,22,0.10),transparent_55%)]"
@@ -18,14 +20,18 @@
 						<Bot size={22} strokeWidth={2.25} />
 					</div>
 					<div class="leading-tight">
-						<div class="text-base font-semibold tracking-tight text-neutral-950 dark:text-neutral-50">
+						<div
+							class="text-base font-semibold tracking-tight text-neutral-950 dark:text-neutral-50"
+						>
 							Better Context
 						</div>
 						<div class="text-sm text-neutral-600 dark:text-neutral-400">btca CLI</div>
 					</div>
 				</div>
 
-				<div class="text-sm text-neutral-600 dark:text-neutral-400">github.com/bmdavis419/better-context</div>
+				<div class="text-sm text-neutral-600 dark:text-neutral-400">
+					github.com/bmdavis419/better-context
+				</div>
 			</div>
 
 			<div class="mt-14 max-w-[920px]">
@@ -35,7 +41,9 @@
 					AI Powered Docs Search
 				</div>
 
-				<h1 class="mt-6 text-balance text-6xl font-semibold tracking-tight text-neutral-950 dark:text-neutral-50">
+				<h1
+					class="mt-6 text-balance text-6xl font-semibold tracking-tight text-neutral-950 dark:text-neutral-50"
+				>
 					Ask a question. Search the actual codebase. Get a real answer.
 				</h1>
 
@@ -56,13 +64,16 @@
 					</div>
 				</div>
 
-				<div class="w-[520px] overflow-hidden border border-neutral-200 bg-white/70 shadow-sm dark:border-neutral-800 dark:bg-neutral-950/40">
-					<pre class="overflow-x-auto p-4 text-base leading-relaxed text-neutral-900 dark:text-neutral-50"><code>bun add -g btca
-btca ask -t svelte -q "How do stores work?"</code></pre>
+				<div
+					class="w-[520px] overflow-hidden border border-neutral-200 bg-white/70 shadow-sm dark:border-neutral-800 dark:bg-neutral-950/40"
+				>
+					<pre
+						class="overflow-x-auto p-4 text-base leading-relaxed text-neutral-900 dark:text-neutral-50"><code
+							>bun add -g btca
+btca ask -t svelte -q "How do stores work?"</code
+						></pre>
 				</div>
 			</div>
 		</div>
 	</div>
 </section>
-
-

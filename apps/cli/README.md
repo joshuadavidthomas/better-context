@@ -36,6 +36,7 @@ btca ask --tech svelte --question "How do I create a reactive store?"
 ```
 
 Options:
+
 - `-t, --tech` - The technology/repo to query
 - `-q, --question` - The question to ask
 
@@ -49,6 +50,7 @@ btca chat --tech nextjs
 ```
 
 Options:
+
 - `-t, --tech` - The technology/repo to chat about
 
 ### `btca serve`
@@ -61,9 +63,11 @@ btca serve -p 3000
 ```
 
 Options:
+
 - `-p, --port` - Port to listen on (default: 8080)
 
 Endpoint:
+
 - `POST /question` - Send `{ "tech": "svelte", "question": "..." }` to get answers
 
 ### `btca open`
@@ -96,6 +100,7 @@ btca config model --provider anthropic --model claude-3-opus
 ```
 
 Options:
+
 - `-p, --provider` - The provider to use
 - `-m, --model` - The model to use
 
@@ -119,6 +124,7 @@ btca config repos add --name react --url https://github.com/facebook/react --bra
 ```
 
 Options:
+
 - `-n, --name` - Unique name for the repo (required)
 - `-u, --url` - Git repository URL (required)
 - `-b, --branch` - Branch to use (default: "main")
