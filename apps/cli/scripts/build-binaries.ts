@@ -11,6 +11,7 @@ const targets = [
   "bun-darwin-x64",
   "bun-linux-x64",
   "bun-linux-arm64",
+  "bun-windows-x64",
 ] as const;
 
 const outputNames: Record<(typeof targets)[number], string> = {
@@ -18,6 +19,7 @@ const outputNames: Record<(typeof targets)[number], string> = {
   "bun-darwin-x64": "btca-darwin-x64",
   "bun-linux-x64": "btca-linux-x64",
   "bun-linux-arm64": "btca-linux-arm64",
+  "bun-windows-x64": "btca-windows-x64.exe",
 };
 
 const main = Effect.gen(function* () {

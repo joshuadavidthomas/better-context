@@ -12,6 +12,7 @@ const TARGET_MAP = {
   "darwin-x64": "btca-darwin-x64",
   "linux-x64": "btca-linux-x64",
   "linux-arm64": "btca-linux-arm64",
+  "win32-x64": "btca-windows-x64.exe",
 };
 
 const binaryName = TARGET_MAP[PLATFORM_ARCH];
