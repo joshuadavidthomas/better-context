@@ -70,7 +70,7 @@ Available <tech>: svelte, tailwindcss`;
 		{
 			id: 'runed',
 			label: 'Runed',
-			cmd: 'btca config repos add -n runed -u https://github.com/svelte-plugins/runed -b main'
+			cmd: 'btca config repos add -n runed -u https://github.com/svecosystem/runed -b main'
 		}
 	] as const;
 
