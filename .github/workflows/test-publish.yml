@@ -1,0 +1,47 @@
+name: Test Publish
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/**'
+      - 'packages/**'
+      - 'package.json'
+      - 'bun.lock'
+      - 'turbo.json'
+
+permissions:
+  contents: read
+  id-token: write
+  packages: write
+
+jobs:
+  build-binaries:
+    runs-on: depot-ubuntu-24.04-arm-4
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux
+          - name: macos
+          - name: windows
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.5'
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build JS bundle
+        run: bun run build:cli
+
+      - name: Upload binary artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ matrix.name }}
+          path: apps/cli/dist/btca-*
+          retention-days: 1
