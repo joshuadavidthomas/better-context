@@ -17,8 +17,8 @@
     "target": "ESNext",
     "module": "esnext",
     "moduleDetection": "force",
-    "jsx": "react-jsx",
-    "jsxImportSource": "@opentui/react",
+    "jsx": "preserve",
+    "jsxImportSource": "@opentui/solid",
     "allowJs": true,
     // Bundler mode
     "moduleResolution": "bundler",

@@ -1,4 +1,4 @@
-import { For, type Component } from 'solid-js';
+import { For, Show, type Component } from 'solid-js';
 import { useAppContext } from '../context/app-context';
 import { colors } from '../theme';
 
@@ -65,6 +65,14 @@ export const Messages: Component = () => {
 					}
 				}}
 			</For>
+
+			{/* Loading/Streaming message */}
+			<Show when={appState.mode() === 'loading'}>
+				<box style={{ flexDirection: 'column', gap: 1 }}>
+					<text fg={colors.success}>AI </text>
+					<text fg={colors.text} content={appState.loadingText() || 'Thinking...'} />
+				</box>
+			</Show>
 		</scrollbox>
 	);
 };

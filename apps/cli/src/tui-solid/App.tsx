@@ -1,14 +1,26 @@
-import { createSignal, type Component, type JSX } from 'solid-js';
+import { createSignal, Show, type Component, type JSX } from 'solid-js';
 import { AppProvider } from './context/app-context';
 import { render, useKeyboard, useRenderer } from '@opentui/solid';
 import { MainUi } from '.';
 import { ConsolePosition } from '@opentui/core';
 import { useAppContext } from './context/app-context.tsx';
+import { services } from './services.ts';
+import { copyToClipboard } from './clipboard.ts';
 
-// TODO:
-// - make the command palette and repo mention have arrows up and down to navigate
-// - connect this up to the core process for command exec
-// - probably gonna fully rebuild the way the core instance works...
+const parseAtMention = (
+	input: string
+): { repoQuery: string; question: string; hasSpace: boolean } | null => {
+	if (!input.startsWith('@')) return null;
+	const spaceIndex = input.indexOf(' ');
+	if (spaceIndex === -1) {
+		return { repoQuery: input.slice(1), question: '', hasSpace: false };
+	}
+	return {
+		repoQuery: input.slice(1, spaceIndex),
+		question: input.slice(spaceIndex + 1),
+		hasSpace: true
+	};
+};
 
 const AppWrapper: Component<{
 	children: JSX.Element;
@@ -16,23 +28,96 @@ const AppWrapper: Component<{
 	return <AppProvider>{props.children}</AppProvider>;
 };
 
-// this is here for the debug console toggle
 const App: Component = () => {
-	console.log('jeb');
 	const renderer = useRenderer();
-
 	const appState = useAppContext();
 
 	const [heightPercent, setHeightPercent] = createSignal<`${number}%`>('100%');
 
-	useKeyboard((key) => {
-		if (key.name === 'c' && key.ctrl) {
-			if (appState.inputState().length > 0) {
-				appState.setInputState([]);
-			} else {
-				renderer.destroy();
-			}
+	const getInputText = () => {
+		return appState
+			.inputState()
+			.map((s) => s.content)
+			.join('');
+	};
+
+	const handleChatSubmit = async () => {
+		const inputText = getInputText().trim();
+		if (!inputText) return;
+
+		// If showing palettes, let them handle the return key
+		if (appState.cursorIsCurrentlyIn() === 'command' || appState.cursorIsCurrentlyIn() === 'mention') {
+			return;
 		}
+
+		if (appState.isLoading()) return;
+
+		const mention = parseAtMention(inputText);
+		if (!mention || !mention.question.trim()) {
+			appState.addMessage({
+				role: 'system',
+				content: 'Use @reponame followed by your question. Example: @daytona How do I...?'
+			});
+			return;
+		}
+
+		const targetRepo = appState.repos().find((r) => r.name.toLowerCase() === mention.repoQuery.toLowerCase());
+		if (!targetRepo) {
+			appState.addMessage({
+				role: 'system',
+				content: `Repo "${mention.repoQuery}" not found. Use /add to add a repo.`
+			});
+			return;
+		}
+
+		// Add user message with InputState for syntax highlighting
+		appState.addMessage({
+			role: 'user',
+			content: appState.inputState()
+		});
+		appState.setInputState([]);
+		appState.setIsLoading(true);
+		appState.setMode('loading');
+		appState.setLoadingText('');
+
+		let fullResponse = '';
+
+		try {
+			await services.askQuestion(targetRepo.name, mention.question, (event) => {
+				if (
+					event.type === 'message.part.updated' &&
+					'part' in event.properties &&
+					event.properties.part?.type === 'text'
+				) {
+					const delta = (event.properties as { delta?: string }).delta ?? '';
+					fullResponse += delta;
+					appState.setLoadingText(fullResponse);
+				}
+			});
+
+			await copyToClipboard(fullResponse);
+
+			appState.addMessage({ role: 'assistant', content: fullResponse });
+			appState.addMessage({ role: 'system', content: 'Answer copied to clipboard!' });
+		} catch (error) {
+			appState.addMessage({ role: 'system', content: `Error: ${error}` });
+		} finally {
+			appState.setIsLoading(false);
+			appState.setMode('chat');
+			appState.setLoadingText('');
+		}
+	};
+
+	const cancelMode = () => {
+		appState.setMode('chat');
+		appState.setInputState([]);
+		appState.setWizardInput('');
+		appState.setModelInput('');
+		appState.setRemoveRepoName('');
+	};
+
+	useKeyboard((key) => {
+		// Debug console toggle
 		if (key.raw === '\x00') {
 			if (heightPercent() === '100%') {
 				setHeightPercent('80%');
@@ -41,17 +126,41 @@ const App: Component = () => {
 				setHeightPercent('100%');
 				renderer.console.hide();
 			}
+			return;
 		}
-		if (key.name === 'return' && appState.cursorIsCurrentlyIn() === 'text') {
-			appState.addMessage({
-				role: 'user',
-				content: appState.inputState()
-			});
-			appState.setInputState([]);
+
+		// Ctrl+C handling
+		if (key.name === 'c' && key.ctrl) {
+			if (appState.inputState().length > 0) {
+				appState.setInputState([]);
+			} else {
+				renderer.destroy();
+			}
+			return;
+		}
+
+		// Escape handling for modes
+		if (key.name === 'escape') {
+			if (appState.mode() !== 'chat' && appState.mode() !== 'loading') {
+				cancelMode();
+			} else if (appState.cursorIsCurrentlyIn() === 'command' || appState.cursorIsCurrentlyIn() === 'mention') {
+				appState.setInputState([]);
+			}
+			return;
+		}
+
+		// Return key for chat submission (only in chat mode, not in palettes)
+		if (key.name === 'return' && appState.mode() === 'chat' && appState.cursorIsCurrentlyIn() === 'text') {
+			handleChatSubmit();
+			return;
 		}
 	});
 
-	return <MainUi heightPercent={heightPercent} />;
+	return (
+		<Show when={appState.mode() !== 'loading'} fallback={<MainUi heightPercent={heightPercent} />}>
+			<MainUi heightPercent={heightPercent} />
+		</Show>
+	);
 };
 
 render(

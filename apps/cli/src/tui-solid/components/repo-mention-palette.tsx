@@ -1,37 +1,12 @@
-import { createSignal, For, type Component } from 'solid-js';
+import { createSignal, createMemo, For, type Component } from 'solid-js';
 import { colors } from '../theme.ts';
 import { useKeyboard } from '@opentui/solid';
 import { useAppContext } from '../context/app-context.tsx';
-
-interface Repo {
-	name: string;
-}
 
 export const RepoMentionPalette: Component = () => {
 	const appState = useAppContext();
 
 	const [selectedIndex, setSelectedIndex] = createSignal(0);
-	// TODO: pull these in dynamically
-	const [repos, setRepos] = createSignal<Repo[]>([
-		{
-			name: 'svelte'
-		},
-		{
-			name: 'effect'
-		},
-		{
-			name: 'solid'
-		},
-		{
-			name: 'react'
-		},
-		{
-			name: 'vue'
-		},
-		{
-			name: 'angular'
-		}
-	]);
 
 	const maxVisible = 8;
 
@@ -54,14 +29,15 @@ export const RepoMentionPalette: Component = () => {
 		return curIdx;
 	};
 
-	const filteredRepos = () => {
+	const filteredRepos = createMemo(() => {
+		const repos = appState.repos();
 		const curInput = appState.inputState()[curInputIdx()]?.content;
-		if (!curInput) return repos();
+		if (!curInput) return repos;
 		const trimmedInput = curInput.toLowerCase().trim().slice(1);
-		return repos().filter((repo) => repo.name.toLowerCase().includes(trimmedInput));
-	};
+		return repos.filter((repo) => repo.name.toLowerCase().includes(trimmedInput));
+	});
 
-	const visibleRange = () => {
+	const visibleRange = createMemo(() => {
 		const start = Math.max(
 			0,
 			Math.min(selectedIndex() - Math.floor(maxVisible / 2), filteredRepos().length - maxVisible)
@@ -70,6 +46,29 @@ export const RepoMentionPalette: Component = () => {
 			start,
 			repos: filteredRepos().slice(start, start + maxVisible)
 		};
+	});
+
+	const selectRepo = () => {
+		const selectedRepo = filteredRepos()[selectedIndex()];
+		if (selectedRepo) {
+			const idx = curInputIdx();
+			const currentState = appState.inputState();
+			const newContent = '@' + selectedRepo.name + ' ';
+			const newState = [
+				...currentState.slice(0, idx),
+				{ content: newContent, type: 'mention' as const },
+				...currentState.slice(idx + 1)
+			];
+			appState.setInputState(newState);
+			const inputRef = appState.inputRef();
+			if (inputRef) {
+				let newCursorPos = 0;
+				for (let i = 0; i <= idx; i++) {
+					newCursorPos += i === idx ? newContent.length : currentState[i]!.content.length;
+				}
+				inputRef.cursorPosition = newCursorPos;
+			}
+		}
 	};
 
 	useKeyboard((key) => {
@@ -78,59 +77,21 @@ export const RepoMentionPalette: Component = () => {
 				if (selectedIndex() > 0) {
 					setSelectedIndex(selectedIndex() - 1);
 				} else {
-					setSelectedIndex(repos().length - 1);
+					setSelectedIndex(filteredRepos().length - 1);
 				}
 				break;
 			case 'down':
-				if (selectedIndex() < repos().length - 1) {
+				if (selectedIndex() < filteredRepos().length - 1) {
 					setSelectedIndex(selectedIndex() + 1);
 				} else {
 					setSelectedIndex(0);
 				}
 				break;
 			case 'tab':
-				const selectedRepoTab = filteredRepos()[selectedIndex()];
-				if (selectedRepoTab) {
-					const idx = curInputIdx();
-					const currentState = appState.inputState();
-					const newContent = '@' + selectedRepoTab.name + ' ';
-					const newState = [
-						...currentState.slice(0, idx),
-						{ content: newContent, type: 'mention' as const },
-						...currentState.slice(idx + 1)
-					];
-					appState.setInputState(newState);
-					const inputRef = appState.inputRef();
-					if (inputRef) {
-						let newCursorPos = 0;
-						for (let i = 0; i <= idx; i++) {
-							newCursorPos += i === idx ? newContent.length : currentState[i]!.content.length;
-						}
-						inputRef.cursorPosition = newCursorPos;
-					}
-				}
+				selectRepo();
 				break;
 			case 'return':
-				const selectedRepoReturn = filteredRepos()[selectedIndex()];
-				if (selectedRepoReturn) {
-					const idx = curInputIdx();
-					const currentState = appState.inputState();
-					const newContent = '@' + selectedRepoReturn.name + ' ';
-					const newState = [
-						...currentState.slice(0, idx),
-						{ content: newContent, type: 'mention' as const },
-						...currentState.slice(idx + 1)
-					];
-					appState.setInputState(newState);
-					const inputRef = appState.inputRef();
-					if (inputRef) {
-						let newCursorPos = 0;
-						for (let i = 0; i <= idx; i++) {
-							newCursorPos += i === idx ? newContent.length : currentState[i]!.content.length;
-						}
-						inputRef.cursorPosition = newCursorPos;
-					}
-				}
+				selectRepo();
 				break;
 			default:
 				break;

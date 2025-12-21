@@ -1,47 +1,62 @@
-import { createSignal, For, Show, type Component } from 'solid-js';
+import { createSignal, createMemo, For, Show, type Component } from 'solid-js';
 import { colors } from '../theme.ts';
 import { useKeyboard } from '@opentui/solid';
 import { useAppContext } from '../context/app-context.tsx';
-import { useRenderer } from '@opentui/solid';
-
-interface Command {
-	name: string;
-	description: string;
-}
+import { COMMANDS, filterCommands } from '../commands.ts';
+import type { Command } from '../types.ts';
 
 export const CommandPalette: Component = () => {
 	const appState = useAppContext();
 
-	const [commands, setCommands] = createSignal<Command[]>([
-		{
-			name: 'help',
-			description: 'Show help for a command'
-		},
-		{
-			name: 'clear',
-			description: 'Clear the screen'
-		},
-		{
-			name: 'exit',
-			description: 'Exit the CLI'
-		}
-	]);
-
 	const input = () => appState.inputState()[0]?.content;
 
-	const filteredCommands = () => {
+	const filteredCommands = createMemo(() => {
 		const curInput = input();
-
-		if (!curInput) return commands();
-
+		if (!curInput) return COMMANDS;
 		const trimmedInput = curInput.toLowerCase().trim().slice(1);
-
-		return commands().filter((cmd) => cmd.name.toLowerCase().includes(trimmedInput));
-	};
+		return filterCommands(trimmedInput);
+	});
 
 	const [selectedIndex, setSelectedIndex] = createSignal(0);
 
-	const renderer = useRenderer();
+	const executeCommand = (command: Command) => {
+		appState.setInputState([]);
+
+		if (command.mode === 'add-repo') {
+			appState.setMode('add-repo');
+			appState.setWizardStep('name');
+			appState.setWizardValues({ name: '', url: '', branch: '', notes: '' });
+			appState.setWizardInput('');
+		} else if (command.mode === 'clear') {
+			appState.clearMessages();
+			appState.addMessage({ role: 'system', content: 'Chat cleared.' });
+		} else if (command.mode === 'remove-repo') {
+			if (appState.repos().length === 0) {
+				appState.addMessage({ role: 'system', content: 'No repos to remove' });
+				return;
+			}
+			appState.setRemoveRepoName('');
+			appState.setMode('remove-repo');
+		} else if (command.mode === 'config-model') {
+			appState.setMode('config-model');
+			appState.setModelStep('provider');
+			appState.setModelValues({
+				provider: appState.selectedProvider(),
+				model: appState.selectedModel()
+			});
+			appState.setModelInput(appState.selectedProvider());
+		} else if (command.mode === 'chat') {
+			appState.addMessage({
+				role: 'system',
+				content: 'Use @reponame to start a chat. Example: @daytona How do I...?'
+			});
+		} else if (command.mode === 'ask') {
+			appState.addMessage({
+				role: 'system',
+				content: 'Use @reponame to ask a question. Example: @daytona What is...?'
+			});
+		}
+	};
 
 	useKeyboard((key) => {
 		switch (key.name) {
@@ -49,18 +64,17 @@ export const CommandPalette: Component = () => {
 				if (selectedIndex() > 0) {
 					setSelectedIndex(selectedIndex() - 1);
 				} else {
-					setSelectedIndex(commands().length - 1);
+					setSelectedIndex(filteredCommands().length - 1);
 				}
 				break;
 			case 'down':
-				if (selectedIndex() < commands().length - 1) {
+				if (selectedIndex() < filteredCommands().length - 1) {
 					setSelectedIndex(selectedIndex() + 1);
 				} else {
 					setSelectedIndex(0);
 				}
 				break;
-			case 'tab':
-				// yes this is dumb leave me alone
+			case 'tab': {
 				const curSelectedCommand = filteredCommands()[selectedIndex()];
 				if (curSelectedCommand) {
 					appState.setInputState([{ content: '/' + curSelectedCommand.name, type: 'command' }]);
@@ -70,18 +84,14 @@ export const CommandPalette: Component = () => {
 					}
 				}
 				break;
-			case 'return':
+			}
+			case 'return': {
 				const selectedCommand = filteredCommands()[selectedIndex()];
 				if (selectedCommand) {
-					appState.setInputState([{ content: '/' + selectedCommand.name, type: 'command' }]);
-					const inputRef = appState.inputRef();
-					if (inputRef) {
-						// this is kinda unhinged, but it works idk
-						inputRef.cursorPosition = selectedCommand.name.length + 2;
-					}
-					// TODO: FIRE THE COMMAND
+					executeCommand(selectedCommand);
 				}
 				break;
+			}
 			case 'escape':
 				appState.setInputState([]);
 				break;
@@ -92,7 +102,7 @@ export const CommandPalette: Component = () => {
 
 	return (
 		<Show
-			when={commands().length > 0}
+			when={filteredCommands().length > 0}
 			fallback={
 				<box
 					style={{

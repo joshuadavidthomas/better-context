@@ -31,6 +31,7 @@
 		"check": "turbo run check"
 	},
 	"devDependencies": {
+		"@opentui/solid": "^0.1.62",
 		"@types/bun": "latest",
 		"@typescript/native-preview": "^7.0.0-dev.20251219.1",
 		"prettier": "^3.7.4",

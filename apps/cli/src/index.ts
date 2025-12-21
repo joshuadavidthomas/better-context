@@ -7,7 +7,7 @@ const hasNoArgs = process.argv.length <= 2;
 
 if (hasNoArgs) {
 	// Launch the TUI
-	import('./tui/index.tsx').then(({ launchTui }) => launchTui());
+	import('./tui-solid/index.tsx').then(({ launchTui }) => launchTui());
 } else {
 	// Run the CLI with arguments
 	Effect.gen(function* () {
