@@ -6,15 +6,20 @@ export const Messages: Component = () => {
 	const appState = useAppContext();
 
 	return (
-		<box
+		<scrollbox
 			style={{
 				flexGrow: 1,
-				border: true,
-				borderColor: colors.border,
-				flexDirection: 'column',
-				padding: 1,
-				overflow: 'scroll',
-				gap: 2
+				rootOptions: {
+					border: true,
+					borderColor: colors.border
+				},
+				contentOptions: {
+					flexDirection: 'column',
+					padding: 1,
+					gap: 2
+				},
+				stickyScroll: true,
+				stickyStart: 'bottom'
 			}}
 		>
 			<For each={appState.messageHistory}>
@@ -30,6 +35,6 @@ export const Messages: Component = () => {
 					);
 				}}
 			</For>
-		</box>
+		</scrollbox>
 	);
 };
