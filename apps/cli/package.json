@@ -1,7 +1,7 @@
 {
 	"name": "btca",
 	"author": "Ben Davis",
-	"version": "0.5.4",
+	"version": "0.5.5",
 	"description": "CLI tool for asking questions about technologies using OpenCode",
 	"type": "module",
 	"license": "MIT",
