@@ -39,6 +39,6 @@ When the user says "use btca", use btca before you answer the question. It will 
 
 Run:
 
-- btca ask -t <tech> -q "<question>"
+- bun cli ask -t <tech> -q "<question>"
 
 Available <tech>: svelte, tailwindcss, opentui, runed, effect, shiki

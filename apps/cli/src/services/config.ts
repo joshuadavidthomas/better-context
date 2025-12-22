@@ -272,6 +272,8 @@ const configService = Effect.gen(function* () {
 			Effect.gen(function* () {
 				const repo = yield* getRepo({ repoName: args.repoName, config });
 
+				console.log('REPO', repo);
+
 				const ocConfig = yield* OPENCODE_CONFIG({
 					repoName: args.repoName,
 					specialNotes: repo?.specialNotes

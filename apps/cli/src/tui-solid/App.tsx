@@ -3,10 +3,43 @@ import type { ParentProps } from 'solid-js';
 import { AppProvider } from './context/app-context';
 import { render, useKeyboard, useRenderer } from '@opentui/solid';
 import { MainUi } from '.';
-import { ConsolePosition } from '@opentui/core';
+import { ConsolePosition, getTreeSitterClient } from '@opentui/core';
 import { useAppContext } from './context/app-context.tsx';
 import { services } from './services.ts';
 import { copyToClipboard } from './clipboard.ts';
+import { resolve, dirname } from 'path';
+
+// Get the path to opentui assets for tree-sitter parsers
+const opentuiCorePath = dirname(require.resolve('@opentui/core'));
+const tsWasm = resolve(opentuiCorePath, 'assets/typescript/tree-sitter-typescript.wasm');
+const jsWasm = resolve(opentuiCorePath, 'assets/javascript/tree-sitter-javascript.wasm');
+const tsHighlights = resolve(opentuiCorePath, 'assets/typescript/highlights.scm');
+const jsHighlights = resolve(opentuiCorePath, 'assets/javascript/highlights.scm');
+
+// Extend tree-sitter to support additional languages in markdown code blocks
+// Maps code fence languages (e.g. ```svelte) to available parsers
+const treeSitterClient = getTreeSitterClient();
+treeSitterClient.initialize().then(() => {
+	// Languages that should use TypeScript parser
+	const tsLangs = ['svelte', 'vue', 'jsx', 'tsx'];
+	for (const lang of tsLangs) {
+		treeSitterClient.addFiletypeParser({
+			filetype: lang,
+			wasm: tsWasm,
+			queries: { highlights: [tsHighlights] }
+		});
+	}
+
+	// Languages that should use JavaScript parser
+	const jsLangs = ['json', 'jsonc'];
+	for (const lang of jsLangs) {
+		treeSitterClient.addFiletypeParser({
+			filetype: lang,
+			wasm: jsWasm,
+			queries: { highlights: [jsHighlights] }
+		});
+	}
+});
 
 const parseAtMention = (
 	input: string
@@ -40,13 +73,8 @@ const App: Component = () => {
 			.join('');
 	};
 
-	createEffect(() => {
-		console.log('CURSOR', appState.cursorIsCurrentlyIn());
-	});
-
 	const handleChatSubmit = async () => {
 		const inputText = getInputText().trim();
-		console.log('INPUT TEXT', inputText);
 		if (!inputText) return;
 
 		// If showing palettes, let them handle the return key
@@ -54,12 +82,10 @@ const App: Component = () => {
 			appState.cursorIsCurrentlyIn() === 'command' ||
 			appState.cursorIsCurrentlyIn() === 'mention'
 		) {
-			console.log('SKIPPING');
 			return;
 		}
 
 		if (appState.isLoading()) {
-			console.log('SKIPPING LOADING');
 			return;
 		}
 
@@ -94,6 +120,7 @@ const App: Component = () => {
 		appState.setLoadingText('');
 
 		let fullResponse = '';
+		let currentMessageId: string | null = null;
 
 		try {
 			await services.askQuestion(targetRepo.name, mention.question, (event) => {
@@ -102,8 +129,17 @@ const App: Component = () => {
 					'part' in event.properties &&
 					event.properties.part?.type === 'text'
 				) {
+					const part = event.properties.part as { messageID?: string; text?: string };
 					const delta = (event.properties as { delta?: string }).delta ?? '';
-					fullResponse += delta;
+					if (currentMessageId === part.messageID) {
+						fullResponse += delta;
+					} else {
+						currentMessageId = part.messageID ?? null;
+						fullResponse += '\n\n' + (part.text ?? '');
+					}
+					if (fullResponse.startsWith('\n\n')) {
+						fullResponse = fullResponse.slice(2);
+					}
 					appState.setLoadingText(fullResponse);
 				}
 			});

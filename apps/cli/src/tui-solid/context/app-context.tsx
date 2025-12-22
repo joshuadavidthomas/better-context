@@ -79,6 +79,68 @@ const defaultMessageHistory: Message[] = [
 		content:
 			"Welcome to btca! Ask anything about the library/framework you're interested in (make sure you @ it first)"
 	}
+	// 	{
+	// 		role: 'assistant',
+	// 		content: `I'll search the Vue codebase for how to make reactive variables.Let me read the ref and reactive implementations to show you the practical usage:Now let me check examples in the Vue component setup to show practical usage:Let me search for test examples:Perfect! Here's how to make reactive variables in Vue:
+
+	// ## Using \`ref()\` - Wraps a single value
+
+	// \`\`\`js
+	// import { ref } from 'vue'
+
+	// // Create a reactive variable
+	// const count = ref(0)
+
+	// // Access/modify using .value
+	// console.log(count.value)  // 0
+	// count.value = 1          // triggers reactivity
+	// \`\`\`
+
+	// ## Using \`reactive()\` - Wraps objects/arrays
+
+	// \`\`\`js
+	// import { reactive } from 'vue'
+
+	// // Create a reactive object
+	// const state = reactive({
+	//   count: 0,
+	//   name: 'John'
+	// })
+
+	// // Access directly (no .value needed)
+	// console.log(state.count)  // 0
+	// state.count = 1          // triggers reactivity
+	// \`\`\`
+
+	// ## Key differences
+
+	// | Feature | ref() | reactive() |
+	// |---------|-------|-----------|
+	// | Best for | Single values, primitives | Objects, arrays |
+	// | Access | \`.value\` property | Direct property |
+	// | Deep reactivity | ✓ | ✓ |
+
+	// ## In Vue components (Composition API)
+
+	// \`\`\`js
+	// export default {
+	//   setup() {
+	//     const count = ref(0)
+	//     const state = reactive({ name: 'Vue' })
+
+	//     return { count, state }
+	//   }
+	// }
+	// \`\`\`
+
+	// \`\`\`html
+	// <template>
+	//   <!-- ref unwraps automatically in templates -->
+	//   <div>{{ count }}</div>
+	//   <div>{{ state.name }}</div>
+	// </template>
+	// \`\`\``
+	// 	}
 ];
 
 const AppContext = createContext<AppState>();

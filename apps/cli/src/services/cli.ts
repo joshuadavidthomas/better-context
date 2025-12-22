@@ -79,14 +79,6 @@ const askCommand = Command.make(
 		)
 );
 
-// === Open Subcommand ===
-const openCommand = Command.make('open', {}, () =>
-	Effect.gen(function* () {
-		const oc = yield* OcService;
-		yield* oc.holdOpenInstanceInBg();
-	}).pipe(Effect.provide(programLayer))
-);
-
 // === Chat Subcommand ===
 const chatTechOption = Options.text('tech').pipe(Options.withAlias('t'));
 
@@ -473,9 +465,7 @@ const mainCommand = Command.make('btca', { version: versionOption }, ({ version 
 			console.log(`btca v${VERSION}. run btca --help for more information.`);
 		}
 	})
-).pipe(
-	Command.withSubcommands([askCommand, serveCommand, openCommand, chatCommand, configCommand])
-);
+).pipe(Command.withSubcommands([askCommand, serveCommand, chatCommand, configCommand]));
 
 const cliService = Effect.gen(function* () {
 	return {

@@ -21,6 +21,7 @@ export const MainInput: Component = () => {
 		p.type === 'pasted' ? getPasteDisplay(p.lines).length : p.content.length;
 
 	usePaste((text) => {
+		if (appState.mode() !== 'chat') return;
 		const curInput = appState.inputState();
 		const lines = text.text.split('\n').length;
 		const newInput = [...curInput, { type: 'pasted' as const, content: text.text, lines }];
