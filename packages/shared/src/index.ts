@@ -15,17 +15,17 @@ export const BLESSED_MODELS: BlessedModel[] = [
 		isDefault: false
 	},
 	{
-		provider: 'openrouter',
-		model: 'minimax/minimax-m2.1',
-		description: 'Minimax M2.1: very fast, very cheap.',
-		providerSetupUrl: 'https://opencode.ai/docs/providers/#openrouter',
+		provider: 'opencode',
+		model: 'minimax-m2.1-free',
+		description: 'Minimax M2.1: very fast, very cheap, pretty good',
+		providerSetupUrl: 'https://opencode.ai/docs/zen',
 		isDefault: false
 	},
 	{
-		provider: 'openrouter',
-		model: 'btca-glm-4-6',
-		description: 'GLM 4.6 on Cerebras through OpenRouter. Very fast, very good.',
-		providerSetupUrl: 'https://opencode.ai/docs/providers/#openrouter',
+		provider: 'opencode',
+		model: 'glm-free',
+		description: 'GLM 4.7 through opencode zen',
+		providerSetupUrl: 'https://opencode.ai/docs/zen',
 		isDefault: false
 	},
 	{
