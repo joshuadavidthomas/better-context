@@ -133,6 +133,7 @@ const OPENCODE_CONFIG = (args: {
 	Effect.gen(function* () {
 		return {
 			provider: BTCA_PRESET_MODELS,
+			mcp: {},
 			agent: {
 				build: {
 					disable: true
