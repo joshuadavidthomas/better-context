@@ -513,6 +513,11 @@ const configResourcesRemoveCommand = Command.make(
 				return;
 			}
 
+			// Remove cached repo folder (only applies to git resources)
+			yield* services.resources.remove(resourceName).pipe(
+				Effect.catchAll(() => Effect.void) // Ignore if not cached
+			);
+
 			yield* services.config.removeResource(resourceName);
 			console.log(`Removed resource "${resourceName}".`);
 		}).pipe(
@@ -842,4 +847,4 @@ const cliService = Effect.gen(function* () {
 
 export class CliService extends Effect.Service<CliService>()('CliService', {
 	effect: cliService
-}) {}
+}) { }
