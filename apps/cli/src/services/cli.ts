@@ -629,6 +629,95 @@ const configCollectionsCommand = Command.make('collections', {}, () =>
 	})
 ).pipe(Command.withSubcommands([configCollectionsListCommand, configCollectionsClearCommand]));
 
+// === Clear Commands ===
+
+const clearResourcesCommand = Command.make('resources', {}, () =>
+	Effect.gen(function* () {
+		const services = yield* initializeCoreServices;
+		const resourcesDir = yield* services.config.getResourcesDirectory();
+
+		const confirmed = yield* askConfirmation(
+			`This will delete all cached resources in ${resourcesDir}. Continue? (y/N): `
+		);
+
+		if (!confirmed) {
+			console.log('Aborted.');
+			return;
+		}
+
+		yield* Effect.tryPromise({
+			try: async () => {
+				const { rm } = await import('node:fs/promises');
+				await rm(resourcesDir, { recursive: true, force: true });
+			},
+			catch: () => new Error('Failed to remove resources directory')
+		}).pipe(Effect.catchAll(() => Effect.void));
+
+		console.log('All cached resources cleared.');
+	}).pipe(Effect.provide(BunContext.layer))
+);
+
+const clearCollectionsCommand = Command.make('collections', {}, () =>
+	Effect.gen(function* () {
+		const services = yield* initializeCoreServices;
+		const collectionsDir = yield* services.config.getCollectionsDirectory();
+
+		const confirmed = yield* askConfirmation(
+			`This will delete all collections in ${collectionsDir}. Continue? (y/N): `
+		);
+
+		if (!confirmed) {
+			console.log('Aborted.');
+			return;
+		}
+
+		yield* Effect.tryPromise({
+			try: async () => {
+				const { rm } = await import('node:fs/promises');
+				await rm(collectionsDir, { recursive: true, force: true });
+			},
+			catch: () => new Error('Failed to remove collections directory')
+		}).pipe(Effect.catchAll(() => Effect.void));
+
+		console.log('All collections cleared.');
+	}).pipe(Effect.provide(BunContext.layer))
+);
+
+const clearAllCommand = Command.make('clear', {}, () =>
+	Effect.gen(function* () {
+		const services = yield* initializeCoreServices;
+		const resourcesDir = yield* services.config.getResourcesDirectory();
+		const collectionsDir = yield* services.config.getCollectionsDirectory();
+
+		const confirmed = yield* askConfirmation(
+			`This will delete all cached resources and collections. Continue? (y/N): `
+		);
+
+		if (!confirmed) {
+			console.log('Aborted.');
+			return;
+		}
+
+		yield* Effect.tryPromise({
+			try: async () => {
+				const { rm } = await import('node:fs/promises');
+				await rm(resourcesDir, { recursive: true, force: true });
+			},
+			catch: () => new Error('Failed to remove resources directory')
+		}).pipe(Effect.catchAll(() => Effect.void));
+
+		yield* Effect.tryPromise({
+			try: async () => {
+				const { rm } = await import('node:fs/promises');
+				await rm(collectionsDir, { recursive: true, force: true });
+			},
+			catch: () => new Error('Failed to remove collections directory')
+		}).pipe(Effect.catchAll(() => Effect.void));
+
+		console.log('All cached resources and collections cleared.');
+	}).pipe(Effect.provide(BunContext.layer))
+).pipe(Command.withSubcommands([clearResourcesCommand, clearCollectionsCommand]));
+
 // === Threads Subcommands ===
 
 const configThreadsListCommand = Command.make('list', {}, () =>
@@ -763,7 +852,7 @@ const mainCommand = Command.make('btca', { version: versionOption }, ({ version 
 			console.log(`btca v${VERSION}. run btca --help for more information.`);
 		}
 	})
-).pipe(Command.withSubcommands([askCommand, chatCommand, configCommand]));
+).pipe(Command.withSubcommands([askCommand, chatCommand, configCommand, clearAllCommand]));
 
 const cliService = Effect.gen(function* () {
 	return {

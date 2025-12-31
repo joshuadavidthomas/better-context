@@ -20,7 +20,15 @@ const runGit = (args: string[], options: { cwd?: string; quiet?: boolean }) =>
 			}
 		},
 		catch: (error) => new ResourceError({ message: `git ${args[0]} failed`, cause: error })
-	});
+	}).pipe(
+		Effect.tapError(() =>
+			Effect.sync(() => {
+				console.log(
+					'\nHint: If git operations are failing, try running "btca clear" to reset cached resources and try again.'
+				);
+			})
+		)
+	);
 
 /** Write sparse checkout config */
 const writeSparseCheckout = (repoDir: string, searchPath: string) =>
