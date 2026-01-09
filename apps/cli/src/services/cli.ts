@@ -1,6 +1,7 @@
-import { Command, Options } from '@effect/cli';
+import { Args, Command, Options, Prompt } from '@effect/cli';
 import { BunContext } from '@effect/platform-bun';
-import { Effect, Stream } from 'effect';
+import { Terminal } from '@effect/platform';
+import { Effect, Option, Stream } from 'effect';
 import * as readline from 'readline';
 import {
 	initializeCoreServices,
@@ -44,9 +45,6 @@ const askText = (question: string): Effect.Effect<string> =>
 		});
 	});
 
-/**
- * Interactive multi-select for resources
- */
 const selectResources = (availableResources: string[]): Effect.Effect<string[]> =>
 	Effect.gen(function* () {
 		console.log('Available resources:');
@@ -63,7 +61,6 @@ const selectResources = (availableResources: string[]): Effect.Effect<string[]> 
 			return [];
 		}
 
-		// Try to parse as numbers first
 		const parts = input.split(/[,\s]+/).filter(Boolean);
 		const selected: string[] = [];
 
@@ -80,6 +77,12 @@ const selectResources = (availableResources: string[]): Effect.Effect<string[]> 
 
 		return [...new Set(selected)];
 	});
+
+const selectSingleResource = (availableResources: string[]) =>
+	Prompt.select({
+		message: 'Select resource',
+		choices: availableResources.map((name) => ({ title: name, value: name }))
+	}).pipe(Effect.catchIf(Terminal.isQuitException, () => Effect.interrupt));
 
 /**
  * Parse @mentions from query string
@@ -479,33 +482,36 @@ const configResourcesAddCommand = Command.make(
 
 const configResourcesRemoveCommand = Command.make(
 	'remove',
-	{ name: resourceNameOption.pipe(Options.optional) },
-	({ name }) =>
+	{
+		name: resourceNameOption.pipe(Options.optional),
+		positionalName: Args.text({ name: 'name' }).pipe(Args.optional)
+	},
+	({ name, positionalName }) =>
 		Effect.gen(function* () {
 			const services = yield* initializeCoreServices;
+			const resources = yield* services.config.getResources();
+			const names = resources.map((r) => r.name);
 
-			let resourceName: string;
-			if (name._tag === 'Some') {
-				resourceName = name.value;
-			} else {
-				resourceName = yield* askText('Enter resource name to remove: ');
-			}
-
-			if (!resourceName) {
-				console.log('No resource name provided.');
+			if (names.length === 0) {
+				console.log('No resources configured.');
 				return;
 			}
 
-			// Check if resource exists
-			const resources = yield* services.config.getResources();
-			const exists = resources.find((r) => r.name === resourceName);
-			if (!exists) {
+			// Accept name from --name flag, positional arg, or show picker
+			const resourceName = yield* Option.orElse(name, () => positionalName).pipe(
+				Option.match({
+					onSome: Effect.succeed,
+					onNone: () => selectSingleResource(names)
+				})
+			);
+
+			if (!names.includes(resourceName)) {
 				console.error(`Error: Resource "${resourceName}" not found.`);
 				process.exit(1);
 			}
 
 			const confirmed = yield* askConfirmation(
-				`Are you sure you want to remove resource "${resourceName}" from config? (y/N): `
+				`Are you sure you want to remove resource "${resourceName}" from config? (y/N) :`
 			);
 
 			if (!confirmed) {
@@ -847,4 +853,4 @@ const cliService = Effect.gen(function* () {
 
 export class CliService extends Effect.Service<CliService>()('CliService', {
 	effect: cliService
-}) { }
+}) {}
