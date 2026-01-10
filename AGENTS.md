@@ -18,10 +18,11 @@ After making changes in a specific package, run its check script:
 
 | Package           | Check Command          | Format Command          |
 | ----------------- | ---------------------- | ----------------------- |
-| `apps/cli`        | `bun run check:cli`    | `bun run format:cli`    |
-| `apps/web`        | `bun run check:web`    | `bun run format:web`    |
-| `apps/server`     | `bun run check:server` | `bun run format:server` |
-| `packages/shared` | `bun run check:shared` | `bun run format:shared` |
+| `apps/cli`          | `bun run check:cli`           | `bun run format:cli`           |
+| `apps/web`          | `bun run check:web`           | `bun run format:web`           |
+| `apps/server`       | `bun run check:server`        | `bun run format:server`        |
+| `apps/server-simple` | `bun run check:server-simple` | `bun run format:server-simple` |
+| `packages/shared`   | `bun run check:shared`        | `bun run format:shared`        |
 
 <!-- effect-solutions:start -->
 
