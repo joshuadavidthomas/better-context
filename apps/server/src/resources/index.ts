@@ -1,4 +1,10 @@
-import { loadGitResource } from './impls/git';
+import { loadGitResource } from './impls/git.ts';
 
-// resources
 export { loadGitResource };
+export {
+	GitResourceSchema,
+	ResourceDefinitionSchema,
+	isGitResource,
+	type GitResource,
+	type ResourceDefinition
+} from './schema.ts';
