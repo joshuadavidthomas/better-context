@@ -1,4 +1,4 @@
-import { AsyncLocalStorage } from "node:async_hooks";
+import { AsyncLocalStorage } from 'node:async_hooks';
 
 export type ContextStore = {
 	requestId: string;
@@ -16,9 +16,9 @@ export namespace Context {
 
 	export const require = (): ContextStore => {
 		const store = storage.getStore();
-		if (!store) throw new Error("Missing AsyncLocalStorage context");
+		if (!store) throw new Error('Missing AsyncLocalStorage context');
 		return store;
 	};
 
-	export const requestId = (): string => storage.getStore()?.requestId ?? "unknown";
+	export const requestId = (): string => storage.getStore()?.requestId ?? 'unknown';
 }

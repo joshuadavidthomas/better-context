@@ -4,7 +4,7 @@ export type CollectionResult = {
 };
 
 export class CollectionError extends Error {
-	readonly _tag = "CollectionError";
+	readonly _tag = 'CollectionError';
 	override readonly cause?: unknown;
 
 	constructor(args: { message: string; cause?: unknown }) {
@@ -14,5 +14,5 @@ export class CollectionError extends Error {
 }
 
 export const getCollectionKey = (resourceNames: readonly string[]): string => {
-	return [...resourceNames].sort().join("+");
+	return [...resourceNames].sort().join('+');
 };

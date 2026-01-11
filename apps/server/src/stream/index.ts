@@ -1,4 +1,4 @@
-export { StreamService } from "./service.ts";
+export { StreamService } from './service.ts';
 export {
 	BtcaStreamEventSchema,
 	BtcaStreamMetaEventSchema,
@@ -7,7 +7,7 @@ export {
 	BtcaStreamToolUpdatedEventSchema,
 	BtcaStreamDoneEventSchema,
 	BtcaStreamErrorEventSchema
-} from "./types.ts";
+} from './types.ts';
 export type {
 	BtcaStreamEvent,
 	BtcaStreamMetaEvent,
@@ -16,4 +16,4 @@ export type {
 	BtcaStreamToolUpdatedEvent,
 	BtcaStreamDoneEvent,
 	BtcaStreamErrorEvent
-} from "./types.ts";
+} from './types.ts';

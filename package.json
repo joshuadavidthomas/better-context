@@ -41,6 +41,8 @@
 		"format:shared": "turbo format --filter=@btca/shared",
 		"format:server": "turbo format --filter=@btca/server",
 
+		"test:server": "turbo test --filter=@btca/server",
+
 		"clean": "find . -type d \\( -name node_modules -o -name .svelte-kit -o -name .turbo -o -name .vercel \\) -prune -exec rm -rf {} +"
 	},
 	"devDependencies": {

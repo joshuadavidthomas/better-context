@@ -1,5 +1,5 @@
-import { Metrics } from "../metrics/index.ts";
-import { Context } from "./index.ts";
+import { Metrics } from '../metrics/index.ts';
+import { Context } from './index.ts';
 
 export namespace Transaction {
 	export const run = async <T>(name: string, fn: () => Promise<T>): Promise<T> => {
@@ -8,13 +8,13 @@ export namespace Transaction {
 		store.txDepth = depth + 1;
 
 		const start = performance.now();
-		Metrics.info("tx.start", { name, depth });
+		Metrics.info('tx.start', { name, depth });
 		try {
 			const result = await fn();
-			Metrics.info("tx.commit", { name, depth, ms: Math.round(performance.now() - start) });
+			Metrics.info('tx.commit', { name, depth, ms: Math.round(performance.now() - start) });
 			return result;
 		} catch (cause) {
-			Metrics.error("tx.rollback", {
+			Metrics.error('tx.rollback', {
 				name,
 				depth,
 				ms: Math.round(performance.now() - start),

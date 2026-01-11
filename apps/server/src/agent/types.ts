@@ -1,4 +1,4 @@
-import type { Event as OcEvent, OpencodeClient } from "@opencode-ai/sdk";
+import type { Event as OcEvent, OpencodeClient } from '@opencode-ai/sdk';
 
 export type AgentResult = {
 	answer: string;

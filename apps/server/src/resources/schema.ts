@@ -1,7 +1,7 @@
-import { z } from "zod";
+import { z } from 'zod';
 
 export const GitResourceSchema = z.object({
-	type: z.literal("git"),
+	type: z.literal('git'),
 	name: z.string().min(1),
 	url: z.string().min(1),
 	branch: z.string().min(1),
@@ -14,4 +14,5 @@ export const ResourceDefinitionSchema = GitResourceSchema;
 export type GitResource = z.infer<typeof GitResourceSchema>;
 export type ResourceDefinition = z.infer<typeof ResourceDefinitionSchema>;
 
-export const isGitResource = (value: ResourceDefinition): value is GitResource => value.type === "git";
+export const isGitResource = (value: ResourceDefinition): value is GitResource =>
+	value.type === 'git';

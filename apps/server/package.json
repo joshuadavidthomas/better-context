@@ -11,7 +11,9 @@
 	"scripts": {
 		"check": "tsgo --noEmit",
 		"dev": "bun --watch src/index.ts",
-		"format": "prettier --write ."
+		"format": "prettier --write .",
+		"test": "bun test",
+		"test:watch": "bun test --watch"
 	},
 	"devDependencies": {
 		"@types/bun": "latest",

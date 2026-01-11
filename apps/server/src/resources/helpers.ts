@@ -1,5 +1,5 @@
 export class ResourceError extends Error {
-	readonly _tag = "ResourceError";
+	readonly _tag = 'ResourceError';
 	override readonly cause?: unknown;
 
 	constructor(args: { message: string; cause?: unknown; stack?: string }) {
