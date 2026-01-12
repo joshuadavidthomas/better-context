@@ -1,11 +1,11 @@
-# @btca/server
+# btca-server
 
 BTCA (Better Context AI) server for answering questions about your codebase using OpenCode AI.
 
 ## Installation
 
 ```bash
-bun add @btca/server
+bun add btca-server
 ```
 
 ## Usage
@@ -13,7 +13,7 @@ bun add @btca/server
 ### Starting the Server
 
 ```typescript
-import { startServer } from '@btca/server';
+import { startServer } from 'btca-server';
 
 // Start with default options (port 8080 or process.env.PORT)
 const server = await startServer();
@@ -35,9 +35,9 @@ The `startServer` function returns a `ServerInstance` object:
 
 ```typescript
 interface ServerInstance {
-  port: number;       // Actual port the server is running on
-  url: string;        // Full URL (e.g., "http://localhost:8080")
-  stop: () => void;   // Function to stop the server
+	port: number; // Actual port the server is running on
+	url: string; // Full URL (e.g., "http://localhost:8080")
+	stop: () => void; // Function to stop the server
 }
 ```
 
@@ -164,7 +164,7 @@ branch = "main"
 The package exports TypeScript types for use with Hono RPC client:
 
 ```typescript
-import type { AppType } from '@btca/server';
+import type { AppType } from 'btca-server';
 import { hc } from 'hono/client';
 
 const client = hc<AppType>('http://localhost:8080');
@@ -175,10 +175,7 @@ const client = hc<AppType>('http://localhost:8080');
 For working with SSE streaming responses:
 
 ```typescript
-import type { 
-  BtcaStreamEvent, 
-  BtcaStreamMetaEvent 
-} from '@btca/server/stream/types';
+import type { BtcaStreamEvent, BtcaStreamMetaEvent } from 'btca-server/stream/types';
 ```
 
 ## Requirements

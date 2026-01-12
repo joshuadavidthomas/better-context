@@ -9,7 +9,7 @@ import {
 	type ResourceInput
 } from '../client/index.ts';
 import { parseSSEStream } from '../client/stream.ts';
-import type { BtcaStreamEvent } from '@btca/server/stream/types';
+import type { BtcaStreamEvent } from 'btca-server/stream/types';
 import type { Repo, BtcaChunk } from './types.ts';
 
 // Get server URL from global (set by TUI launcher)

@@ -1,5 +1,5 @@
 import { hc } from 'hono/client';
-import type { AppType } from '@btca/server';
+import type { AppType } from 'btca-server';
 
 export type Client = ReturnType<typeof hc<AppType>>;
 

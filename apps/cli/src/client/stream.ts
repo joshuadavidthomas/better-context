@@ -1,4 +1,4 @@
-import { BtcaStreamEventSchema, type BtcaStreamEvent } from '@btca/server/stream/types';
+import { BtcaStreamEventSchema, type BtcaStreamEvent } from 'btca-server/stream/types';
 
 /**
  * Parse a Server-Sent Events stream from a Response

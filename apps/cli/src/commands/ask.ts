@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import { ensureServer } from '../server/manager.ts';
 import { createClient, getResources, askQuestionStream } from '../client/index.ts';
 import { parseSSEStream } from '../client/stream.ts';
-import type { BtcaStreamEvent } from '@btca/server/stream/types';
+import type { BtcaStreamEvent } from 'btca-server/stream/types';
 
 /**
  * Parse @mentions from query string

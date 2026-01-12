@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { startServer } from '@btca/server';
+import { startServer } from 'btca-server';
 
 const DEFAULT_PORT = 8080;
 
