@@ -27,13 +27,8 @@ function parseQuery(query: string): { query: string; resources: string[] } {
 /**
  * Merge CLI -r flags with @mentions, deduplicating
  */
-function mergeResources(
-	cliResources: string[],
-	mentionedResources: string[],
-	tech?: string
-): string[] {
+function mergeResources(cliResources: string[], mentionedResources: string[]): string[] {
 	const all = [...cliResources, ...mentionedResources];
-	if (tech) all.push(tech);
 	return [...new Set(all)];
 }
 
@@ -41,9 +36,17 @@ export const askCommand = new Command('ask')
 	.description('Ask a question about configured resources')
 	.requiredOption('-q, --question <text>', 'Question to ask')
 	.option('-r, --resource <name...>', 'Resources to search (can specify multiple)')
-	.option('-t, --tech <name>', 'Single resource alias (same as -r)')
 	.action(async (options, command) => {
 		const globalOpts = command.parent?.opts() as { server?: string; port?: number } | undefined;
+
+		// Check for deprecated -t flag usage (not registered, but might be in user's muscle memory)
+		const rawArgs = process.argv;
+		if (rawArgs.includes('-t') || rawArgs.includes('--tech')) {
+			console.error('Error: The -t/--tech flag has been deprecated.');
+			console.error('Use -r/--resource instead: btca ask -r <resource> -q "your question"');
+			console.error('You can specify multiple resources: btca ask -r svelte -r effect -q "..."');
+			process.exit(1);
+		}
 
 		try {
 			const server = await ensureServer({
@@ -60,8 +63,7 @@ export const askCommand = new Command('ask')
 			// Merge CLI -r flags with @mentions
 			const resourceNames = mergeResources(
 				(options.resource as string[] | undefined) ?? [],
-				parsed.resources,
-				options.tech as string | undefined
+				parsed.resources
 			);
 
 			// If no resources specified, validate that some exist

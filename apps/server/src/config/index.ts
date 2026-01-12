@@ -6,6 +6,7 @@ import { ResourceDefinitionSchema, type ResourceDefinition } from '../resources/
 
 export const GLOBAL_CONFIG_DIR = '~/.config/btca';
 export const GLOBAL_CONFIG_FILENAME = 'btca.config.jsonc';
+export const LEGACY_CONFIG_FILENAME = 'btca.json';
 export const GLOBAL_DATA_DIR = '~/.local/share/btca';
 export const PROJECT_CONFIG_FILENAME = 'btca.config.jsonc';
 export const PROJECT_DATA_DIR = '.btca';
@@ -52,6 +53,45 @@ const StoredConfigSchema = z.object({
 });
 
 type StoredConfig = z.infer<typeof StoredConfigSchema>;
+
+// Legacy config schemas (btca.json format from old CLI)
+// There are two legacy formats:
+// 1. Very old: has "repos" array with git repos only
+// 2. Intermediate: has "resources" array (already migrated repos->resources but different file name)
+
+const LegacyRepoSchema = z.object({
+	name: z.string(),
+	url: z.string(),
+	branch: z.string(),
+	specialNotes: z.string().optional(),
+	searchPath: z.string().optional()
+});
+
+// Very old format with "repos"
+const LegacyReposConfigSchema = z.object({
+	$schema: z.string().optional(),
+	reposDirectory: z.string().optional(),
+	workspacesDirectory: z.string().optional(),
+	dataDirectory: z.string().optional(),
+	port: z.number().optional(),
+	maxInstances: z.number().optional(),
+	repos: z.array(LegacyRepoSchema),
+	model: z.string(),
+	provider: z.string()
+});
+
+// Intermediate format with "resources" (same as new format, just different filename)
+const LegacyResourcesConfigSchema = z.object({
+	$schema: z.string().optional(),
+	dataDirectory: z.string().optional(),
+	resources: z.array(ResourceDefinitionSchema),
+	model: z.string(),
+	provider: z.string()
+});
+
+type LegacyReposConfig = z.infer<typeof LegacyReposConfigSchema>;
+type LegacyResourcesConfig = z.infer<typeof LegacyResourcesConfigSchema>;
+type LegacyRepo = z.infer<typeof LegacyRepoSchema>;
 
 export namespace Config {
 	export class ConfigError extends Error {
@@ -186,6 +226,146 @@ export namespace Config {
 	};
 
 	const parseJsonc = (content: string): unknown => JSON.parse(stripJsonc(content));
+
+	/**
+	 * Convert a legacy repo to a git resource
+	 */
+	const legacyRepoToResource = (repo: LegacyRepo): ResourceDefinition => ({
+		type: 'git',
+		name: repo.name,
+		url: repo.url,
+		branch: repo.branch,
+		...(repo.specialNotes && { specialNotes: repo.specialNotes }),
+		...(repo.searchPath && { searchPath: repo.searchPath })
+	});
+
+	/**
+	 * Check for and migrate legacy config (btca.json) to new format
+	 * Supports two legacy formats:
+	 * 1. Very old: has "repos" array with git repos only
+	 * 2. Intermediate: has "resources" array (already migrated repos->resources)
+	 *
+	 * Returns migrated config if legacy exists, null otherwise
+	 */
+	const migrateLegacyConfig = async (
+		legacyPath: string,
+		newConfigPath: string
+	): Promise<StoredConfig | null> => {
+		const legacyExists = await Bun.file(legacyPath).exists();
+		if (!legacyExists) return null;
+
+		Metrics.info('config.legacy.found', { path: legacyPath });
+
+		let content: string;
+		try {
+			content = await Bun.file(legacyPath).text();
+		} catch (cause) {
+			Metrics.error('config.legacy.read_failed', { path: legacyPath, error: String(cause) });
+			return null;
+		}
+
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(content);
+		} catch (cause) {
+			Metrics.error('config.legacy.parse_failed', { path: legacyPath, error: String(cause) });
+			return null;
+		}
+
+		// Try the intermediate format first (has "resources" array)
+		const resourcesResult = LegacyResourcesConfigSchema.safeParse(parsed);
+		if (resourcesResult.success) {
+			const legacy = resourcesResult.data;
+			Metrics.info('config.legacy.parsed', {
+				format: 'resources',
+				resourceCount: legacy.resources.length,
+				model: legacy.model,
+				provider: legacy.provider
+			});
+
+			// Resources are already in the right format, just copy them over
+			const migrated: StoredConfig = {
+				$schema: CONFIG_SCHEMA_URL,
+				resources: legacy.resources,
+				model: legacy.model,
+				provider: legacy.provider
+			};
+
+			return finalizeMigration(migrated, legacyPath, newConfigPath, legacy.resources.length);
+		}
+
+		// Try the very old format (has "repos" array)
+		const reposResult = LegacyReposConfigSchema.safeParse(parsed);
+		if (reposResult.success) {
+			const legacy = reposResult.data;
+			Metrics.info('config.legacy.parsed', {
+				format: 'repos',
+				repoCount: legacy.repos.length,
+				model: legacy.model,
+				provider: legacy.provider
+			});
+
+			// Convert legacy repos to resources
+			const migratedResources = legacy.repos.map(legacyRepoToResource);
+
+			// Merge with default resources (legacy resources take precedence by name)
+			const migratedNames = new Set(migratedResources.map((r) => r.name));
+			const defaultsToAdd = DEFAULT_RESOURCES.filter((r) => !migratedNames.has(r.name));
+			const allResources = [...migratedResources, ...defaultsToAdd];
+
+			const migrated: StoredConfig = {
+				$schema: CONFIG_SCHEMA_URL,
+				resources: allResources,
+				model: legacy.model,
+				provider: legacy.provider
+			};
+
+			return finalizeMigration(migrated, legacyPath, newConfigPath, migratedResources.length);
+		}
+
+		// Neither format matched
+		Metrics.error('config.legacy.invalid', {
+			path: legacyPath,
+			error: 'Config does not match any known legacy format'
+		});
+		return null;
+	};
+
+	/**
+	 * Write migrated config and rename legacy file
+	 */
+	const finalizeMigration = async (
+		migrated: StoredConfig,
+		legacyPath: string,
+		newConfigPath: string,
+		migratedCount: number
+	): Promise<StoredConfig> => {
+		// Save the migrated config
+		const configDir = newConfigPath.slice(0, newConfigPath.lastIndexOf('/'));
+		try {
+			await fs.mkdir(configDir, { recursive: true });
+			await Bun.write(newConfigPath, JSON.stringify(migrated, null, 2));
+		} catch (cause) {
+			throw new ConfigError({ message: 'Failed to write migrated config', cause });
+		}
+
+		Metrics.info('config.legacy.migrated', {
+			newPath: newConfigPath,
+			resourceCount: migrated.resources.length,
+			migratedCount
+		});
+
+		// Rename the legacy file to mark it as migrated
+		try {
+			await fs.rename(legacyPath, `${legacyPath}.migrated`);
+			Metrics.info('config.legacy.renamed', { from: legacyPath, to: `${legacyPath}.migrated` });
+		} catch {
+			// Not critical if we can't rename
+			Metrics.info('config.legacy.rename_skipped', { path: legacyPath });
+		}
+
+		return migrated;
+	};
 
 	const loadConfigFromPath = async (configPath: string): Promise<StoredConfig> => {
 		let content: string;
@@ -348,6 +528,22 @@ export namespace Config {
 
 		const globalConfigPath = `${expandHome(GLOBAL_CONFIG_DIR)}/${GLOBAL_CONFIG_FILENAME}`;
 		const globalExists = await Bun.file(globalConfigPath).exists();
+
+		// If new config doesn't exist, check for legacy config to migrate
+		if (!globalExists) {
+			const legacyConfigPath = `${expandHome(GLOBAL_CONFIG_DIR)}/${LEGACY_CONFIG_FILENAME}`;
+			const migrated = await migrateLegacyConfig(legacyConfigPath, globalConfigPath);
+			if (migrated) {
+				Metrics.info('config.load.source', { source: 'migrated', path: globalConfigPath });
+				return makeService(
+					migrated,
+					`${expandHome(GLOBAL_DATA_DIR)}/resources`,
+					`${expandHome(GLOBAL_DATA_DIR)}/collections`,
+					globalConfigPath
+				);
+			}
+		}
+
 		Metrics.info('config.load.source', {
 			source: globalExists ? 'global' : 'default',
 			path: globalConfigPath

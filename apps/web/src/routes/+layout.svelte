@@ -75,6 +75,7 @@
 			</a>
 
 			<nav aria-label="Primary" class="hidden items-center gap-1 sm:flex">
+				<a class="bc-navLink" href="/getting-started">Get Started</a>
 				<a class="bc-navLink" href="/config">Config</a>
 				<a class="bc-navLink" href="/commands">Commands</a>
 			</nav>
@@ -125,6 +126,7 @@
 			<div class="bc-container pb-4 sm:hidden">
 				<div class="bc-card bc-ring p-2">
 					<nav aria-label="Mobile" class="flex flex-col">
+						<a class="bc-navLink" href="/getting-started">Get Started</a>
 						<a class="bc-navLink" href="/config">Config</a>
 						<a class="bc-navLink" href="/commands">Commands</a>
 						<a
@@ -160,7 +162,9 @@
 			</div>
 
 			<div class="flex flex-wrap items-start gap-2 sm:justify-end">
+				<a class="bc-chip" href="/getting-started">Get Started</a>
 				<a class="bc-chip" href="/config">Config</a>
+				<a class="bc-chip" href="/commands">Commands</a>
 				<a
 					class="bc-chip"
 					href="https://github.com/bmdavis419/better-context"
@@ -169,7 +173,6 @@
 				>
 					GitHub
 				</a>
-				<a class="bc-chip" href="/commands">Commands</a>
 			</div>
 		</div>
 	</footer>

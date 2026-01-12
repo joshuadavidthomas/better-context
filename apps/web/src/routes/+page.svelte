@@ -42,7 +42,7 @@
 			</p>
 
 			<div class="flex flex-col gap-3 sm:flex-row sm:items-center bc-reveal" style="--delay: 230ms">
-				<a href="/config" class="bc-chip bc-btnPrimary justify-center">Get started</a>
+				<a href="/getting-started" class="bc-chip bc-btnPrimary justify-center">Get started</a>
 				<a
 					href="https://github.com/bmdavis419/better-context"
 					target="_blank"

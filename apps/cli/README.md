@@ -45,7 +45,6 @@ btca ask -r svelte -q "How do I create a reactive store?"
 Options:
 
 - `-r, --resource <name...>` - Resources to search (can specify multiple)
-- `-t, --tech <name>` - Alias for single resource
 - `-q, --question <text>` - Question to ask (required)
 
 Examples:

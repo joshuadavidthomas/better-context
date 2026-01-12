@@ -49,7 +49,19 @@ btca open
 
 ## Config
 
-On first run, `btca` creates a default config at `~/.config/btca/btca.json`. That's where the repo list + model/provider live.
+On first run, `btca` creates a default config at `~/.config/btca/btca.config.jsonc`. That's where the repo list + model/provider live.
+
+### Project-Specific Setup
+
+Want to set up btca for a specific project? Visit the [Getting Started guide](https://btca.dev/getting-started) to get a setup prompt you can paste into your coding agent (like OpenCode, Cursor, etc.).
+
+The agent will:
+1. Detect your dependencies
+2. Suggest relevant resources (Svelte, Effect, Tailwind, etc.)
+3. Create a project-specific `btca.config.jsonc`
+4. Update your `AGENTS.md` with btca usage instructions
+
+This gives you project-specific documentation access without polluting your global config.
 
 ### Adding resources
 

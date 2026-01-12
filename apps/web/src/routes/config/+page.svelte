@@ -67,24 +67,18 @@ Available resources: svelte, effect`;
 			<span>Config file</span>
 		</div>
 
-		<p class="mt-2 max-w-2xl text-sm bc-prose">
-			btca looks for config in two places:
-		</p>
+		<p class="mt-2 max-w-2xl text-sm bc-prose">btca looks for config in two places:</p>
 
 		<div class="mt-4 grid gap-4 md:grid-cols-2">
 			<div class="bc-card bc-ring p-5">
 				<div class="text-sm font-semibold">Global config</div>
-				<p class="mt-2 text-sm bc-prose">
-					Default location, used when no project config exists.
-				</p>
+				<p class="mt-2 text-sm bc-prose">Default location, used when no project config exists.</p>
 				<code class="mt-3 block bc-inlineCode text-xs">~/.config/btca/btca.config.jsonc</code>
 			</div>
 
 			<div class="bc-card bc-ring p-5">
 				<div class="text-sm font-semibold">Project config</div>
-				<p class="mt-2 text-sm bc-prose">
-					Place in your project root to override global config.
-				</p>
+				<p class="mt-2 text-sm bc-prose">Place in your project root to override global config.</p>
 				<code class="mt-3 block bc-inlineCode text-xs">./btca.config.jsonc</code>
 			</div>
 		</div>
@@ -276,8 +270,8 @@ Available resources: svelte, effect`;
 		</div>
 
 		<p class="mt-2 max-w-2xl text-sm bc-prose">
-			Add this to your project's <code class="bc-inlineCode">AGENTS.md</code> so your AI agent knows
-			when to use btca:
+			Add this to your project's <code class="bc-inlineCode">AGENTS.md</code> so your AI agent knows when
+			to use btca:
 		</p>
 
 		<div class="mt-4 bc-card bc-ring p-5">
