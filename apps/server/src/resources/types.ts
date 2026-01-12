@@ -4,7 +4,7 @@ export const FS_RESOURCE_SYSTEM_NOTE =
 export type BtcaFsResource = {
 	readonly _tag: 'fs-based';
 	readonly name: string;
-	readonly type: 'git';
+	readonly type: 'git' | 'local';
 	readonly repoSubPath: string;
 	readonly specialAgentInstructions: string;
 	readonly getAbsoluteDirectoryPath: () => Promise<string>;
@@ -19,4 +19,11 @@ export type BtcaGitResourceArgs = {
 	readonly resourcesDirectoryPath: string;
 	readonly specialAgentInstructions: string;
 	readonly quiet: boolean;
+};
+
+export type BtcaLocalResourceArgs = {
+	readonly type: 'local';
+	readonly name: string;
+	readonly path: string;
+	readonly specialAgentInstructions: string;
 };

@@ -1,14 +1,17 @@
 import type { Component } from 'solid-js';
 import { colors } from '../theme.ts';
-import type { CancelState } from '../types.ts';
+import type { CancelState, ActiveWizard, WizardStep } from '../types.ts';
 
-const VERSION = '0.7.0';
+// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+const VERSION = (globalThis as { __VERSION__?: string }).__VERSION__ ?? '0.7.0';
 
 export interface StatusBarProps {
 	cursorIn: string;
 	isStreaming: boolean;
 	cancelState: CancelState;
 	threadResources: string[];
+	activeWizard?: ActiveWizard;
+	wizardStep?: WizardStep;
 }
 
 export const StatusBar: Component<StatusBarProps> = (props) => {
@@ -18,6 +21,18 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
 				return ' Press [Esc] again to confirm cancel';
 			}
 			return ' Streaming... [Esc] to cancel';
+		}
+
+		// Wizard-specific help
+		if (props.activeWizard === 'blessed-model') {
+			return ' [Up/Down] Navigate  [Enter] Select  [Esc] Cancel';
+		}
+
+		if (props.activeWizard === 'add-repo') {
+			if (props.wizardStep === 'confirm') {
+				return ' [Enter] Get config snippet  [Esc] Cancel';
+			}
+			return ' [Enter] Next step  [Esc] Cancel';
 		}
 
 		if (props.cursorIn === 'command') {

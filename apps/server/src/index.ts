@@ -48,6 +48,25 @@ const OpencodeRequestSchema = z.object({
 	quiet: z.boolean().optional()
 });
 
+const UpdateModelRequestSchema = z.object({
+	provider: z.string(),
+	model: z.string()
+});
+
+const AddResourceRequestSchema = z.object({
+	name: z.string(),
+	type: z.enum(['git', 'local']),
+	url: z.string().optional(),
+	branch: z.string().optional(),
+	path: z.string().optional(),
+	searchPath: z.string().optional(),
+	specialNotes: z.string().optional()
+});
+
+const RemoveResourceRequestSchema = z.object({
+	name: z.string()
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Errors & Helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -138,14 +157,25 @@ const createApp = (deps: {
 		// GET /resources
 		.get('/resources', (c: HonoContext) => {
 			return c.json({
-				resources: config.resources.map((r) => ({
-					name: r.name,
-					type: r.type,
-					url: r.url,
-					branch: r.branch,
-					searchPath: r.searchPath ?? null,
-					specialNotes: r.specialNotes ?? null
-				}))
+				resources: config.resources.map((r) => {
+					if (r.type === 'git') {
+						return {
+							name: r.name,
+							type: r.type,
+							url: r.url,
+							branch: r.branch,
+							searchPath: r.searchPath ?? null,
+							specialNotes: r.specialNotes ?? null
+						};
+					} else {
+						return {
+							name: r.name,
+							type: r.type,
+							path: r.path,
+							specialNotes: r.specialNotes ?? null
+						};
+					}
+				})
 			});
 		})
 
@@ -258,6 +288,60 @@ const createApp = (deps: {
 				resources: resourceNames,
 				collection: { key: collectionKey, path: collection.path }
 			});
+		})
+
+		// PUT /config/model - Update model configuration
+		.put('/config/model', async (c: HonoContext) => {
+			const decoded = await decodeJson(c.req.raw, UpdateModelRequestSchema);
+			const result = await config.updateModel(decoded.provider, decoded.model);
+			return c.json(result);
+		})
+
+		// POST /config/resources - Add a new resource
+		.post('/config/resources', async (c: HonoContext) => {
+			const decoded = await decodeJson(c.req.raw, AddResourceRequestSchema);
+
+			// Validate based on type
+			if (decoded.type === 'git') {
+				if (!decoded.url) {
+					throw new RequestError('URL is required for git resources');
+				}
+				const resource = {
+					type: 'git' as const,
+					name: decoded.name,
+					url: decoded.url,
+					branch: decoded.branch ?? 'main',
+					...(decoded.searchPath && { searchPath: decoded.searchPath }),
+					...(decoded.specialNotes && { specialNotes: decoded.specialNotes })
+				};
+				const added = await config.addResource(resource);
+				return c.json(added, 201);
+			} else {
+				if (!decoded.path) {
+					throw new RequestError('Path is required for local resources');
+				}
+				const resource = {
+					type: 'local' as const,
+					name: decoded.name,
+					path: decoded.path,
+					...(decoded.specialNotes && { specialNotes: decoded.specialNotes })
+				};
+				const added = await config.addResource(resource);
+				return c.json(added, 201);
+			}
+		})
+
+		// DELETE /config/resources - Remove a resource
+		.delete('/config/resources', async (c: HonoContext) => {
+			const decoded = await decodeJson(c.req.raw, RemoveResourceRequestSchema);
+			await config.removeResource(decoded.name);
+			return c.json({ success: true, name: decoded.name });
+		})
+
+		// POST /clear - Clear all locally cloned resources
+		.post('/clear', async (c: HonoContext) => {
+			const result = await config.clearResources();
+			return c.json(result);
 		});
 
 	return app;

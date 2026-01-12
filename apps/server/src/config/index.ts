@@ -70,7 +70,12 @@ export namespace Config {
 		resources: readonly ResourceDefinition[];
 		model: string;
 		provider: string;
+		configPath: string;
 		getResource: (name: string) => ResourceDefinition | undefined;
+		updateModel: (provider: string, model: string) => Promise<{ provider: string; model: string }>;
+		addResource: (resource: ResourceDefinition) => Promise<ResourceDefinition>;
+		removeResource: (name: string) => Promise<void>;
+		clearResources: () => Promise<{ cleared: number }>;
 	};
 
 	const expandHome = (path: string): string => {
@@ -228,18 +233,102 @@ export namespace Config {
 		return defaultStored;
 	};
 
+	const saveConfig = async (configPath: string, stored: StoredConfig): Promise<void> => {
+		try {
+			await Bun.write(configPath, JSON.stringify(stored, null, 2));
+		} catch (cause) {
+			throw new ConfigError({ message: 'Failed to write config', cause });
+		}
+	};
+
 	const makeService = (
 		stored: StoredConfig,
 		resourcesDirectory: string,
-		collectionsDirectory: string
-	): Service => ({
-		resourcesDirectory,
-		collectionsDirectory,
-		resources: stored.resources,
-		model: stored.model,
-		provider: stored.provider,
-		getResource: (name: string) => stored.resources.find((r) => r.name === name)
-	});
+		collectionsDirectory: string,
+		configPath: string
+	): Service => {
+		// Mutable state that tracks current config
+		let currentStored = stored;
+
+		const service: Service = {
+			resourcesDirectory,
+			collectionsDirectory,
+			configPath,
+			get resources() {
+				return currentStored.resources;
+			},
+			get model() {
+				return currentStored.model;
+			},
+			get provider() {
+				return currentStored.provider;
+			},
+			getResource: (name: string) => currentStored.resources.find((r) => r.name === name),
+
+			updateModel: async (provider: string, model: string) => {
+				currentStored = { ...currentStored, provider, model };
+				await saveConfig(configPath, currentStored);
+				Metrics.info('config.model.updated', { provider, model });
+				return { provider, model };
+			},
+
+			addResource: async (resource: ResourceDefinition) => {
+				// Check for duplicate name
+				if (currentStored.resources.some((r) => r.name === resource.name)) {
+					throw new ConfigError({ message: `Resource "${resource.name}" already exists` });
+				}
+				currentStored = {
+					...currentStored,
+					resources: [...currentStored.resources, resource]
+				};
+				await saveConfig(configPath, currentStored);
+				Metrics.info('config.resource.added', { name: resource.name, type: resource.type });
+				return resource;
+			},
+
+			removeResource: async (name: string) => {
+				const exists = currentStored.resources.some((r) => r.name === name);
+				if (!exists) {
+					throw new ConfigError({ message: `Resource "${name}" not found` });
+				}
+				currentStored = {
+					...currentStored,
+					resources: currentStored.resources.filter((r) => r.name !== name)
+				};
+				await saveConfig(configPath, currentStored);
+				Metrics.info('config.resource.removed', { name });
+			},
+
+			clearResources: async () => {
+				// Clear the resources and collections directories
+				let clearedCount = 0;
+
+				try {
+					const resourcesDir = await fs.readdir(resourcesDirectory).catch(() => []);
+					for (const item of resourcesDir) {
+						await fs.rm(`${resourcesDirectory}/${item}`, { recursive: true, force: true });
+						clearedCount++;
+					}
+				} catch {
+					// Directory might not exist
+				}
+
+				try {
+					const collectionsDir = await fs.readdir(collectionsDirectory).catch(() => []);
+					for (const item of collectionsDir) {
+						await fs.rm(`${collectionsDirectory}/${item}`, { recursive: true, force: true });
+					}
+				} catch {
+					// Directory might not exist
+				}
+
+				Metrics.info('config.resources.cleared', { count: clearedCount });
+				return { cleared: clearedCount };
+			}
+		};
+
+		return service;
+	};
 
 	export const load = async (): Promise<Service> => {
 		const cwd = process.cwd();
@@ -252,7 +341,8 @@ export namespace Config {
 			return makeService(
 				stored,
 				`${cwd}/${PROJECT_DATA_DIR}/resources`,
-				`${cwd}/${PROJECT_DATA_DIR}/collections`
+				`${cwd}/${PROJECT_DATA_DIR}/collections`,
+				projectConfigPath
 			);
 		}
 
@@ -270,7 +360,8 @@ export namespace Config {
 		return makeService(
 			stored,
 			`${expandHome(GLOBAL_DATA_DIR)}/resources`,
-			`${expandHome(GLOBAL_DATA_DIR)}/collections`
+			`${expandHome(GLOBAL_DATA_DIR)}/collections`,
+			globalConfigPath
 		);
 	};
 }

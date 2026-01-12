@@ -67,14 +67,20 @@ export type Message =
 			content: string;
 	  };
 
-export type CommandMode =
-	| 'add-repo'
-	| 'remove-repo'
-	| 'config-model'
-	| 'select-blessed-model'
-	| 'chat'
-	| 'ask'
-	| 'clear';
+export type CommandMode = 'add-repo' | 'select-blessed-model' | 'clear';
+
+export type ActiveWizard = 'none' | 'add-repo' | 'blessed-model';
+
+export type WizardStep =
+	| 'type'
+	| 'name'
+	| 'url'
+	| 'branch'
+	| 'searchPath'
+	| 'path'
+	| 'notes'
+	| 'confirm'
+	| null;
 
 export interface Command {
 	name: string;

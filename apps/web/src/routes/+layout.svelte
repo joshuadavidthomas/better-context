@@ -75,9 +75,8 @@
 			</a>
 
 			<nav aria-label="Primary" class="hidden items-center gap-1 sm:flex">
-				<a class="bc-navLink" href="/getting-started">Getting started</a>
+				<a class="bc-navLink" href="/config">Config</a>
 				<a class="bc-navLink" href="/commands">Commands</a>
-				<a class="bc-navLink" href="/models">Models</a>
 			</nav>
 
 			<div class="flex items-center gap-2">
@@ -126,9 +125,8 @@
 			<div class="bc-container pb-4 sm:hidden">
 				<div class="bc-card bc-ring p-2">
 					<nav aria-label="Mobile" class="flex flex-col">
-						<a class="bc-navLink" href="/getting-started">Getting started</a>
+						<a class="bc-navLink" href="/config">Config</a>
 						<a class="bc-navLink" href="/commands">Commands</a>
-						<a class="bc-navLink" href="/models">Models</a>
 						<a
 							class="bc-navLink"
 							href="https://github.com/bmdavis419/better-context"
@@ -157,13 +155,12 @@
 		<div class="bc-container grid gap-8 py-12 sm:grid-cols-2">
 			<div class="flex flex-col gap-2">
 				<div class="text-sm font-semibold tracking-tight">
-					Built for agents that actually read code.
+					Help your agents get it right on the first try.
 				</div>
-				<div class="text-sm bc-muted">Bun + Effect + SvelteKit. Zero fluff, full context.</div>
 			</div>
 
 			<div class="flex flex-wrap items-start gap-2 sm:justify-end">
-				<a class="bc-chip" href="/getting-started#install">Install</a>
+				<a class="bc-chip" href="/config">Config</a>
 				<a
 					class="bc-chip"
 					href="https://github.com/bmdavis419/better-context"
@@ -172,7 +169,7 @@
 				>
 					GitHub
 				</a>
-				<a class="bc-chip" href="/commands">Command reference</a>
+				<a class="bc-chip" href="/commands">Commands</a>
 			</div>
 		</div>
 	</footer>

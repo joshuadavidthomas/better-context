@@ -1,7 +1,16 @@
 import type { Command } from './types.ts';
 
-// Simplified commands - config management is handled by server
 export const COMMANDS: Command[] = [
+	{
+		name: 'model',
+		description: 'Select from recommended models',
+		mode: 'select-blessed-model'
+	},
+	{
+		name: 'add',
+		description: 'Add a new resource',
+		mode: 'add-repo'
+	},
 	{
 		name: 'clear',
 		description: 'Clear chat history',

@@ -1,4 +1,13 @@
-import { createClient, getConfig, getResources, askQuestionStream } from '../client/index.ts';
+import {
+	createClient,
+	getConfig,
+	getResources,
+	askQuestionStream,
+	updateModel as updateModelClient,
+	addResource as addResourceClient,
+	removeResource as removeResourceClient,
+	type ResourceInput
+} from '../client/index.ts';
 import { parseSSEStream } from '../client/stream.ts';
 import type { BtcaStreamEvent } from '@btca/server/stream/types';
 import type { Repo, BtcaChunk } from './types.ts';
@@ -16,6 +25,11 @@ let currentAbortController: AbortController | null = null;
 export type ChunkUpdate =
 	| { type: 'add'; chunk: BtcaChunk }
 	| { type: 'update'; id: string; chunk: Partial<BtcaChunk> };
+
+export interface ModelUpdateResult {
+	provider: string;
+	model: string;
+}
 
 export const services = {
 	/**
@@ -56,19 +70,30 @@ export const services = {
 
 		// Create abort controller for this request
 		currentAbortController = new AbortController();
+		const signal = currentAbortController.signal;
 
 		const response = await askQuestionStream(serverUrl, {
 			question,
 			resources: resourceNames,
-			quiet: true
+			quiet: true,
+			signal
 		});
 
 		// Track chunks by ID for updates, and order separately for display
 		const chunksById = new Map<string, BtcaChunk>();
 		const chunkOrder: string[] = [];
 
-		for await (const event of parseSSEStream(response)) {
-			processStreamEvent(event, chunksById, chunkOrder, onChunkUpdate);
+		try {
+			for await (const event of parseSSEStream(response)) {
+				if (signal.aborted) break;
+				processStreamEvent(event, chunksById, chunkOrder, onChunkUpdate);
+			}
+		} catch (error) {
+			if (error instanceof Error && error.name === 'AbortError') {
+				// Request was canceled, return what we have
+			} else {
+				throw error;
+			}
 		}
 
 		currentAbortController = null;
@@ -83,6 +108,30 @@ export const services = {
 			currentAbortController.abort();
 			currentAbortController = null;
 		}
+	},
+
+	/**
+	 * Update model configuration
+	 */
+	updateModel: async (provider: string, model: string): Promise<ModelUpdateResult> => {
+		const serverUrl = getServerUrl();
+		return updateModelClient(serverUrl, provider, model);
+	},
+
+	/**
+	 * Add a new resource
+	 */
+	addResource: async (resource: ResourceInput): Promise<ResourceInput> => {
+		const serverUrl = getServerUrl();
+		return addResourceClient(serverUrl, resource);
+	},
+
+	/**
+	 * Remove a resource
+	 */
+	removeResource: async (name: string): Promise<void> => {
+		const serverUrl = getServerUrl();
+		return removeResourceClient(serverUrl, name);
 	}
 };
 

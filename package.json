@@ -24,6 +24,7 @@
 	"scripts": {
 		"prepare": "effect-language-service patch",
 		"dev": "turbo dev --ui tui",
+		"web": "turbo dev --filter=@btca/web",
 		"cli": "bun run apps/cli/src/index.ts",
 		"server": "bun --watch apps/server/src/index.ts",
 		"cli-legacy": "bun run apps/cli-LEGACY/src/index.ts",

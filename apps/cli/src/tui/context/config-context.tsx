@@ -13,7 +13,11 @@ import { services } from '../services.ts';
 type ConfigState = {
 	selectedModel: Accessor<string>;
 	selectedProvider: Accessor<string>;
+	setModel: (model: string) => void;
+	setProvider: (provider: string) => void;
 	repos: Accessor<Repo[]>;
+	addRepo: (repo: Repo) => void;
+	removeRepo: (name: string) => void;
 	loading: Accessor<boolean>;
 };
 
@@ -51,7 +55,11 @@ export const ConfigProvider: Component<ParentProps> = (props) => {
 	const state: ConfigState = {
 		selectedModel,
 		selectedProvider,
+		setModel: setSelectedModel,
+		setProvider: setSelectedProvider,
 		repos,
+		addRepo: (repo) => setRepos((prev) => [...prev, repo]),
+		removeRepo: (name) => setRepos((prev) => prev.filter((r) => r.name !== name)),
 		loading
 	};
 

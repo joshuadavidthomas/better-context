@@ -34,7 +34,8 @@
 	"scripts": {
 		"check": "tsgo --noEmit",
 		"format": "prettier --write .",
-		"dev": "bun run src/index.ts"
+		"dev": "bun run src/index.ts",
+		"build": "bun run scripts/build-binaries.ts"
 	},
 	"dependencies": {
 		"@btca/server": "workspace:*",
