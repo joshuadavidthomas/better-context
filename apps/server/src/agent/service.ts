@@ -93,9 +93,9 @@ export namespace Agent {
 
 	const buildOpenCodeConfig = (args: { agentInstructions: string }): OpenCodeConfig => {
 		const prompt = [
-			'You are an expert internal agent who`s job is to answer questions about the collection.',
+			'You are an expert internal agent whose job is to answer questions about the collection.',
 			'You operate inside a collection directory.',
-			'Use the resources in this collection to answer the user`s question.',
+			'Use the resources in this collection to answer the user\'s question.',
 			args.agentInstructions
 		].join('\n');
 

@@ -5,7 +5,7 @@ import { CommonHints } from '../../errors.ts';
 import { ResourceError } from '../helpers.ts';
 import type { BtcaFsResource, BtcaGitResourceArgs } from '../types.ts';
 
-const isValidGitUrl = (url: string) => /^https?:\/\//.test(url) || /^git@/.test(url);
+const isValidGitUrl = (url: string) => /^https:\/\//.test(url);
 const isValidBranch = (branch: string) => /^[\w\-./]+$/.test(branch);
 const isValidPath = (path: string) => !path.includes('..') && /^[\w\-./]*$/.test(path);
 
@@ -153,9 +153,14 @@ const runGit = async (
 	}
 
 	const exitCode = await proc.exited;
-	const stderr = new TextDecoder().decode(
-		Uint8Array.from(stderrChunks.flatMap((chunk) => [...chunk]))
-	);
+	const totalLength = stderrChunks.reduce((sum, chunk) => sum + chunk.length, 0);
+	const combined = new Uint8Array(totalLength);
+	let offset = 0;
+	for (const chunk of stderrChunks) {
+		combined.set(chunk, offset);
+		offset += chunk.length;
+	}
+	const stderr = new TextDecoder().decode(combined);
 
 	// Log stderr to console if not quiet and there's content
 	if (!options.quiet && stderr.trim()) {
@@ -175,7 +180,7 @@ const gitClone = async (args: {
 	if (!isValidGitUrl(args.repoUrl)) {
 		throw new ResourceError({
 			message: 'Invalid git URL format',
-			hint: 'URLs must start with "https://" or "git@". Example: https://github.com/user/repo',
+			hint: 'URLs must start with "https://". Example: https://github.com/user/repo',
 			cause: new Error('URL validation failed')
 		});
 	}
