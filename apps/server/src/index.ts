@@ -186,7 +186,15 @@ const createApp = (deps: {
 			const tag = getErrorTag(err);
 			const message = getErrorMessage(err);
 			const hint = getErrorHint(err);
-			const status = tag === 'CollectionError' || tag === 'ResourceError' ? 400 : 500;
+			const status =
+				tag === 'CollectionError' ||
+				tag === 'ResourceError' ||
+				tag === 'ConfigError' ||
+				tag === 'InvalidProviderError' ||
+				tag === 'InvalidModelError' ||
+				tag === 'ProviderNotConnectedError'
+					? 400
+					: 500;
 			return c.json({ error: message, tag, ...(hint && { hint }) }, status);
 		})
 
