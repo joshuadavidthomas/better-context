@@ -1,152 +1,176 @@
 <script lang="ts">
-	import { MessageSquare, Plus, Trash2, Loader2 } from '@lucide/svelte';
+	import { MessageSquare, Plus, Trash2, Loader2, Settings, BookOpen } from '@lucide/svelte';
 	import { goto } from '$app/navigation';
+	import { useQuery, useConvexClient } from 'convex-svelte';
+	import { api } from '../convex/_generated/api';
+	import { getAuthState } from '$lib/stores/auth.svelte';
 
-	// Session state
-	let sessions = $state<
-		{
-			id: string;
-			status: string;
-			createdAt: string;
-			messageCount: number;
-			threadResources: string[];
-		}[]
-	>([]);
+	const auth = getAuthState();
+	const client = useConvexClient();
+
+	// Convex queries - only run when user is authenticated
+	const threadsQuery = $derived(
+		auth.convexUserId ? useQuery(api.threads.list, { userId: auth.convexUserId }) : null
+	);
 
 	// UI state
-	let isCreatingSession = $state(false);
+	let isCreatingThread = $state(false);
 
-	// Load sessions on mount
-	$effect(() => {
-		loadSessions();
-	});
+	async function createNewThread() {
+		if (!auth.convexUserId) return;
 
-	async function loadSessions() {
+		isCreatingThread = true;
 		try {
-			const response = await fetch('/api/sessions');
-			const data = (await response.json()) as { sessions: typeof sessions };
-			sessions = data.sessions;
+			const threadId = await client.mutation(api.threads.create, { userId: auth.convexUserId });
+			goto(`/chat/${threadId}`);
 		} catch (error) {
-			console.error('Failed to load sessions:', error);
-		}
-	}
-
-	async function createNewSession() {
-		isCreatingSession = true;
-		try {
-			const response = await fetch('/api/sessions', { method: 'POST' });
-			const data = (await response.json()) as { id: string; error?: string };
-			if (!response.ok) throw new Error(data.error ?? 'Failed to create session');
-			await loadSessions();
-			goto(`/chat/${data.id}`);
-		} catch (error) {
-			console.error('Failed to create session:', error);
-			alert(error instanceof Error ? error.message : 'Failed to create session');
+			console.error('Failed to create thread:', error);
+			alert(error instanceof Error ? error.message : 'Failed to create thread');
 		} finally {
-			isCreatingSession = false;
+			isCreatingThread = false;
 		}
 	}
 
-	async function destroySession(sessionId: string) {
-		if (!confirm('Are you sure you want to destroy this session?')) return;
+	async function destroyThread(threadId: string) {
+		if (!confirm('Are you sure you want to delete this thread?')) return;
 		try {
-			await fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' });
-			await loadSessions();
+			await client.mutation(api.threads.remove, { threadId: threadId as any });
 		} catch (error) {
-			console.error('Failed to destroy session:', error);
+			console.error('Failed to delete thread:', error);
 		}
+	}
+
+	function formatDate(timestamp: number): string {
+		return new Date(timestamp).toLocaleDateString(undefined, {
+			month: 'short',
+			day: 'numeric',
+			hour: '2-digit',
+			minute: '2-digit'
+		});
 	}
 </script>
 
-<div class="flex flex-1 overflow-hidden">
-	<div class="mx-auto flex w-full max-w-3xl flex-col gap-6 p-8">
-		<!-- Header -->
-		<div class="flex items-center justify-between">
-			<div>
-				<h1 class="text-2xl font-semibold">Sessions</h1>
-				<p class="bc-muted mt-1 text-sm">Select a session or create a new one</p>
-			</div>
-			<button
-				type="button"
-				class="bc-btn bc-btn-primary"
-				onclick={createNewSession}
-				disabled={isCreatingSession}
-			>
-				{#if isCreatingSession}
-					<Loader2 size={16} class="animate-spin" /> Creating...
-				{:else}
-					<Plus size={16} /> New Session
-				{/if}
-			</button>
+{#if !auth.isSignedIn}
+	<!-- Landing page for unauthenticated users -->
+	<div class="flex flex-1 flex-col items-center justify-center gap-6 p-8">
+		<div class="bc-logoMark h-16 w-16">
+			<MessageSquare size={32} />
 		</div>
-
-		<!-- Sessions list -->
-		{#if sessions.length === 0}
-			<div class="bc-card flex flex-col items-center justify-center gap-4 py-16">
-				<div class="bc-logoMark"><MessageSquare size={20} /></div>
-				<div class="text-center">
-					<h2 class="font-semibold">No sessions yet</h2>
-					<p class="bc-muted mt-1 text-sm">Create a new session to get started</p>
-				</div>
-				<button
-					type="button"
-					class="bc-btn bc-btn-primary"
-					onclick={createNewSession}
-					disabled={isCreatingSession}
-				>
-					{#if isCreatingSession}
-						<Loader2 size={16} class="animate-spin" /> Creating...
-					{:else}
-						<Plus size={16} /> New Session
-					{/if}
-				</button>
-			</div>
-		{:else}
-			<div class="flex flex-col gap-3">
-				{#each sessions as session (session.id)}
-					<a
-						href="/chat/{session.id}"
-						class="bc-card flex items-center gap-4 p-4 no-underline transition-colors hover:border-[hsl(var(--bc-fg))]"
-					>
-						<div class="bc-logoMark shrink-0">
-							<MessageSquare size={18} />
-						</div>
-						<div class="min-w-0 flex-1">
-							<div class="flex items-center gap-2">
-								<span class="font-medium">{session.id.slice(0, 8)}...</span>
-								{#if session.status === 'active'}
-									<span class="bc-badge bc-badge-success">Active</span>
-								{:else if session.status === 'pending'}
-									<span class="bc-badge">Ready</span>
-								{:else if session.status === 'creating' || session.status === 'cloning' || session.status === 'starting'}
-									<span class="bc-badge bc-badge-warning">Starting</span>
-								{:else if session.status === 'error'}
-									<span class="bc-badge bc-badge-error">Error</span>
-								{:else}
-									<span class="bc-badge">{session.status}</span>
-								{/if}
-							</div>
-							<div class="bc-muted mt-1 flex items-center gap-4 text-xs">
-								<span>{session.messageCount} messages</span>
-								{#if session.threadResources.length > 0}
-									<span>Resources: {session.threadResources.join(', ')}</span>
-								{/if}
-							</div>
-						</div>
-						<button
-							type="button"
-							class="bc-chip shrink-0 p-2"
-							onclick={(e) => {
-								e.preventDefault();
-								e.stopPropagation();
-								destroySession(session.id);
-							}}
-						>
-							<Trash2 size={16} />
-						</button>
-					</a>
-				{/each}
-			</div>
-		{/if}
+		<div class="text-center">
+			<h1 class="text-3xl font-bold">Welcome to btca Chat</h1>
+			<p class="bc-muted mt-2 max-w-md">
+				Ask questions about your favorite frameworks and libraries. Sign in to get started.
+			</p>
+		</div>
+		<button
+			type="button"
+			class="bc-btn bc-btn-primary"
+			onclick={() => auth.clerk?.openSignIn()}
+		>
+			Sign in to get started
+		</button>
 	</div>
-</div>
+{:else}
+	<!-- Thread list for authenticated users -->
+	<div class="flex flex-1 overflow-hidden">
+		<div class="mx-auto flex w-full max-w-3xl flex-col gap-6 p-8">
+			<!-- Header -->
+			<div class="flex items-center justify-between">
+				<div>
+					<h1 class="text-2xl font-semibold">Your Threads</h1>
+					<p class="bc-muted mt-1 text-sm">Select a thread or create a new one</p>
+				</div>
+				<div class="flex items-center gap-2">
+					<a href="/settings/resources" class="bc-chip" title="Manage Resources">
+						<BookOpen size={16} />
+						<span class="hidden sm:inline">Resources</span>
+					</a>
+					<button
+						type="button"
+						class="bc-btn bc-btn-primary"
+						onclick={createNewThread}
+						disabled={isCreatingThread}
+					>
+						{#if isCreatingThread}
+							<Loader2 size={16} class="animate-spin" /> Creating...
+						{:else}
+							<Plus size={16} /> New Thread
+						{/if}
+					</button>
+				</div>
+			</div>
+
+			<!-- Threads list -->
+			{#if threadsQuery?.isLoading}
+				<div class="flex flex-1 items-center justify-center py-16">
+					<Loader2 size={32} class="animate-spin" />
+				</div>
+			{:else if !threadsQuery?.data || threadsQuery.data.length === 0}
+				<div class="bc-card flex flex-col items-center justify-center gap-4 py-16">
+					<div class="bc-logoMark"><MessageSquare size={20} /></div>
+					<div class="text-center">
+						<h2 class="font-semibold">No threads yet</h2>
+						<p class="bc-muted mt-1 text-sm">Create a new thread to get started</p>
+					</div>
+					<button
+						type="button"
+						class="bc-btn bc-btn-primary"
+						onclick={createNewThread}
+						disabled={isCreatingThread}
+					>
+						{#if isCreatingThread}
+							<Loader2 size={16} class="animate-spin" /> Creating...
+						{:else}
+							<Plus size={16} /> New Thread
+						{/if}
+					</button>
+				</div>
+			{:else}
+				<div class="flex flex-col gap-3">
+					{#each threadsQuery.data as thread (thread._id)}
+						<a
+							href="/chat/{thread._id}"
+							class="bc-card flex items-center gap-4 p-4 no-underline transition-colors hover:border-[hsl(var(--bc-fg))]"
+						>
+							<div class="bc-logoMark shrink-0">
+								<MessageSquare size={18} />
+							</div>
+							<div class="min-w-0 flex-1">
+								<div class="flex items-center gap-2">
+									<span class="font-medium">
+										{thread.title ?? `Thread ${thread._id.slice(0, 8)}...`}
+									</span>
+									{#if thread.sandboxState === 'active'}
+										<span class="bc-badge bc-badge-success">Active</span>
+									{:else if thread.sandboxState === 'pending'}
+										<span class="bc-badge">Ready</span>
+									{:else if thread.sandboxState === 'starting'}
+										<span class="bc-badge bc-badge-warning">Starting</span>
+									{:else if thread.sandboxState === 'stopped'}
+										<span class="bc-badge">Stopped</span>
+									{:else if thread.sandboxState === 'error'}
+										<span class="bc-badge bc-badge-error">Error</span>
+									{/if}
+								</div>
+								<div class="bc-muted mt-1 text-xs">
+									{formatDate(thread.lastActivityAt)}
+								</div>
+							</div>
+							<button
+								type="button"
+								class="bc-chip shrink-0 p-2"
+								onclick={(e) => {
+									e.preventDefault();
+									e.stopPropagation();
+									destroyThread(thread._id);
+								}}
+							>
+								<Trash2 size={16} />
+							</button>
+						</a>
+					{/each}
+				</div>
+			{/if}
+		</div>
+	</div>
+{/if}

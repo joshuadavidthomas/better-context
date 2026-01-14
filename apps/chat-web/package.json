@@ -4,7 +4,9 @@
 	"version": "0.0.1",
 	"type": "module",
 	"scripts": {
-		"dev": "vite dev",
+		"dev": "turbo run dev:web dev:convex --parallel",
+		"dev:web": "vite dev",
+		"dev:convex": "convex dev",
 		"build": "vite build",
 		"preview": "vite preview",
 		"start": "bun build/index.js",
@@ -26,11 +28,16 @@
 		"svelte": "^5.43.8",
 		"svelte-check": "^4.3.4",
 		"tailwindcss": "^4.1.17",
+		"turbo": "^2.7.4",
 		"vite": "^7.2.2"
 	},
 	"dependencies": {
+		"@clerk/clerk-js": "^5.56.0",
+		"@clerk/types": "^4.49.0",
 		"@daytonaio/sdk": "^0.130.0",
 		"@lucide/svelte": "^0.560.0",
+		"convex": "^1.27.0",
+		"convex-svelte": "^0.0.12",
 		"isomorphic-dompurify": "^2.35.0",
 		"marked": "^15.0.12",
 		"nanoid": "^5.1.5",

@@ -82,7 +82,7 @@
 			"name": "convexJs",
 			"url": "https://github.com/get-convex/convex-js",
 			"branch": "main"
-		},
+		}
 	],
 	"model": "claude-haiku-4-5",
 	"provider": "opencode"

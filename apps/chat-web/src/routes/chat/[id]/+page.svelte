@@ -1,82 +1,54 @@
 <script lang="ts">
 	import { MessageSquare, Loader2, Send } from '@lucide/svelte';
-	import type { Message, BtcaChunk, CancelState, ChatSession } from '$lib/types';
-	import { nanoid } from 'nanoid';
+	import type { BtcaChunk, CancelState } from '$lib/types';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import ChatMessages from '$lib/components/ChatMessages.svelte';
+	import { useQuery, useConvexClient } from 'convex-svelte';
+	import { api } from '../../../convex/_generated/api';
+	import { getAuthState } from '$lib/stores/auth.svelte';
+	import type { Id } from '../../../convex/_generated/dataModel';
 
-	// Get session ID from route params
-	let sessionId = $derived((page.params as { id: string }).id);
+	// Get thread ID from route params
+	const threadId = $derived((page.params as { id: string }).id as Id<'threads'>);
+	const auth = getAuthState();
+	const client = useConvexClient();
 
-	// Session state
-	let currentSession = $state<{
-		id: string;
-		status: string;
-		serverUrl: string;
-		messages: Message[];
-		threadResources: string[];
-	} | null>(null);
+	// Convex queries
+	const threadQuery = $derived(useQuery(api.threads.getWithMessages, { threadId }));
+	const resourcesQuery = $derived(
+		auth.convexUserId ? useQuery(api.resources.listAvailable, { userId: auth.convexUserId }) : null
+	);
 
 	// UI state
-	let isLoadingSession = $state(true);
 	let isStreaming = $state(false);
 	let sandboxStatus = $state<string | null>(null);
 	let cancelState = $state<CancelState>('none');
 	let inputValue = $state('');
-	let availableResources = $state<{ name: string; type: string }[]>([]);
 
 	// Streaming state
 	let currentChunks = $state<BtcaChunk[]>([]);
 	let abortController: AbortController | null = null;
 
-	// Load session on mount and when ID changes
+	// Derived values
+	const thread = $derived(threadQuery?.data);
+	const messages = $derived(thread?.messages ?? []);
+	const threadResources = $derived(thread?.threadResources ?? []);
+	const availableResources = $derived([
+		...(resourcesQuery?.data?.global ?? []),
+		...(resourcesQuery?.data?.custom ?? [])
+	]);
+
+	// Redirect if not authenticated
 	$effect(() => {
-		if (sessionId) {
-			loadSession(sessionId);
+		if (!auth.isSignedIn && auth.isLoaded) {
+			goto('/');
 		}
 	});
 
-	async function loadSession(id: string) {
-		isLoadingSession = true;
-		try {
-			const response = await fetch(`/api/sessions/${id}`);
-			const data = (await response.json()) as typeof currentSession & { error?: string };
-			if (!response.ok) {
-				console.error('Failed to load session:', data?.error);
-				goto('/');
-				return;
-			}
-			currentSession = data;
-			await loadResources();
-		} catch (error) {
-			console.error('Failed to load session:', error);
-			goto('/');
-		} finally {
-			isLoadingSession = false;
-		}
-	}
-
-	async function loadResources() {
-		if (!sessionId) return;
-		try {
-			const response = await fetch(`/api/sessions/${sessionId}/resources`);
-			const data = (await response.json()) as { resources: typeof availableResources };
-			availableResources = data.resources;
-		} catch (error) {
-			console.error('Failed to load resources:', error);
-		}
-	}
-
 	async function clearChat() {
-		if (!sessionId) return;
 		try {
-			await fetch(`/api/sessions/${sessionId}`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ action: 'clear' })
-			});
-			await loadSession(sessionId);
+			await client.mutation(api.threads.clearMessages, { threadId });
 		} catch (error) {
 			console.error('Failed to clear chat:', error);
 		}
@@ -94,10 +66,9 @@
 	}
 
 	async function sendMessage() {
-		if (!sessionId || !currentSession || isStreaming || !inputValue.trim()) return;
+		if (!auth.convexUserId || !thread || isStreaming || !inputValue.trim()) return;
 
 		const { resources: mentionedResources, question } = parseMentions(inputValue);
-		const threadResources = currentSession.threadResources || [];
 
 		if (mentionedResources.length === 0 && threadResources.length === 0) {
 			alert('Please @mention a resource first (e.g., @svelte)');
@@ -120,27 +91,28 @@
 			return;
 		}
 
-		const userMessage: Message = {
-			id: nanoid(),
-			role: 'user',
-			content: inputValue,
-			resources: validResources
-		};
-
-		currentSession.messages = [...currentSession.messages, userMessage];
 		const savedInput = inputValue;
 		inputValue = '';
 		isStreaming = true;
-		sandboxStatus = currentSession.status === 'pending' ? 'pending' : null;
+		sandboxStatus = thread.sandboxState === 'pending' ? 'pending' : null;
 		cancelState = 'none';
 		currentChunks = [];
 		abortController = new AbortController();
 
 		try {
-			const response = await fetch(`/api/sessions/${sessionId}/chat`, {
+			const response = await fetch(`/api/threads/${threadId}/chat`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ message: savedInput, resources: validResources }),
+				body: JSON.stringify({
+					message: savedInput,
+					resources: validResources,
+					userId: auth.convexUserId,
+					sandboxId: thread.sandboxId,
+					sandboxState: thread.sandboxState,
+					serverUrl: thread.serverUrl,
+					threadResources,
+					previousMessages: messages
+				}),
 				signal: abortController.signal
 			});
 
@@ -168,15 +140,12 @@
 							const event = JSON.parse(eventData) as
 								| { type: 'add'; chunk: BtcaChunk }
 								| { type: 'update'; id: string; chunk: Partial<BtcaChunk> }
-								| { type: 'status'; status: ChatSession['status'] }
+								| { type: 'status'; status: string }
 								| { type: 'done' }
 								| { type: 'error'; error: string };
 
 							if (event.type === 'status') {
 								sandboxStatus = event.status;
-								if (currentSession && event.status === 'active') {
-									currentSession.status = 'active';
-								}
 							} else if (event.type === 'add') {
 								sandboxStatus = null;
 								currentChunks = [...currentChunks, event.chunk];
@@ -197,29 +166,11 @@
 			}
 
 			reader.releaseLock();
-
-			const assistantMessage: Message = {
-				id: nanoid(),
-				role: 'assistant',
-				content: { type: 'chunks', chunks: currentChunks }
-			};
-			currentSession.messages = [...currentSession.messages, assistantMessage];
-			currentSession.threadResources = [...new Set([...threadResources, ...validResources])];
 		} catch (error) {
 			if ((error as Error).name === 'AbortError') {
-				currentSession.messages = [
-					...currentSession.messages,
-					{ id: nanoid(), role: 'system', content: 'Request canceled.' }
-				];
+				// Request was canceled - Convex subscription will update UI
 			} else {
-				currentSession.messages = [
-					...currentSession.messages,
-					{
-						id: nanoid(),
-						role: 'system',
-						content: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`
-					}
-				];
+				console.error('Chat error:', error);
 			}
 		} finally {
 			isStreaming = false;
@@ -344,7 +295,6 @@
 			requestCancel();
 			return;
 		}
-		// Only update mention state for other keys (typing), don't reset index
 		queueMicrotask(() => updateMentionState(false));
 	}
 
@@ -353,23 +303,34 @@
 		if (isStreaming) return 'Press Escape to cancel';
 		return '@resource question...';
 	}
+
+	// Convert Convex messages to the format expected by ChatMessages
+	const displayMessages = $derived(
+		messages.map((m) => ({
+			id: m._id as string,
+			role: m.role,
+			content: m.content,
+			resources: m.resources ?? [],
+			canceled: m.canceled
+		})) as import('$lib/types').Message[]
+	);
 </script>
 
 <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-	{#if isLoadingSession}
+	{#if threadQuery?.isLoading}
 		<div class="flex flex-1 items-center justify-center">
 			<Loader2 size={32} class="animate-spin" />
 		</div>
-	{:else if !currentSession}
+	{:else if !thread}
 		<div class="flex flex-1 flex-col items-center justify-center gap-6 p-8">
 			<div class="bc-logoMark"><MessageSquare size={20} /></div>
-			<h2 class="text-xl font-semibold">Session not found</h2>
-			<a href="/" class="bc-btn bc-btn-primary">Back to sessions</a>
+			<h2 class="text-xl font-semibold">Thread not found</h2>
+			<a href="/" class="bc-btn bc-btn-primary">Back to threads</a>
 		</div>
 	{:else}
 		<!-- Messages (scrollable area) -->
 		<ChatMessages
-			messages={currentSession.messages}
+			messages={displayMessages}
 			{isStreaming}
 			{sandboxStatus}
 			{currentChunks}
@@ -377,10 +338,10 @@
 
 		<!-- Input (fixed at bottom) -->
 		<div class="chat-input-container shrink-0">
-			{#if currentSession.threadResources.length > 0}
+			{#if threadResources.length > 0}
 				<div class="mb-2 flex flex-wrap items-center gap-2">
 					<span class="bc-muted text-xs">Active:</span>
-					{#each currentSession.threadResources as resource}
+					{#each threadResources as resource}
 						<span class="bc-badge">@{resource}</span>
 					{/each}
 				</div>
@@ -446,7 +407,7 @@
 				{/if}
 			</div>
 
-			{#if availableResources.length > 0 && !inputValue.includes('@') && !currentSession.threadResources.length}
+			{#if availableResources.length > 0 && !inputValue.includes('@') && !threadResources.length}
 				<div class="bc-muted mt-1 text-xs">
 					Available: {availableResources.map((r) => `@${r.name}`).join(', ')}
 				</div>
