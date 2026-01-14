@@ -421,6 +421,15 @@ export interface ValidatedGitResource {
 }
 
 /**
+ * Validated local resource.
+ */
+export interface ValidatedLocalResource {
+	name: string;
+	path: string;
+	specialNotes?: string;
+}
+
+/**
  * Validate a complete git resource definition.
  * Returns the resource with a normalized URL on success.
  */
@@ -457,22 +466,27 @@ export const validateGitResource = (resource: {
 
 /**
  * Validate a complete local resource definition.
+ * Returns the validated resource on success.
  */
 export const validateLocalResource = (resource: {
 	name: string;
 	path: string;
 	specialNotes?: string;
-}): ValidationResult => {
+}): ValidationResultWithValue<ValidatedLocalResource> => {
 	const nameResult = validateResourceName(resource.name);
-	if (!nameResult.valid) return nameResult;
+	if (!nameResult.valid) return failWithValue(nameResult.error);
 
 	const pathResult = validateLocalPath(resource.path);
-	if (!pathResult.valid) return pathResult;
+	if (!pathResult.valid) return failWithValue(pathResult.error);
 
 	const notesResult = validateNotes(resource.specialNotes);
-	if (!notesResult.valid) return notesResult;
+	if (!notesResult.valid) return failWithValue(notesResult.error);
 
-	return ok();
+	return okWithValue({
+		name: resource.name,
+		path: resource.path,
+		...(resource.specialNotes && { specialNotes: resource.specialNotes })
+	});
 };
 
 /**
