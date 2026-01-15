@@ -1,9 +1,12 @@
 import type { Component } from 'solid-js';
+import packageJson from '../../../package.json';
 import { colors } from '../theme.ts';
 import type { CancelState, ActiveWizard, WizardStep } from '../types.ts';
 
+// Version is injected at build time via Bun's define option
+// Falls back to package.json for dev mode, or 0.0.0 if unavailable
 // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-const VERSION = (globalThis as { __VERSION__?: string }).__VERSION__ ?? '0.7.0';
+const VERSION = (globalThis as { __VERSION__?: string }).__VERSION__ ?? packageJson.version ?? '0.0.0';
 
 export interface StatusBarProps {
 	cursorIn: string;

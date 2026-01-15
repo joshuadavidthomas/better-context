@@ -5,25 +5,6 @@ import { Header } from './components/header.tsx';
 import { InputSection } from './components/input-section.tsx';
 import { useToast } from './context/toast-context.tsx';
 
-const WarningBanner: Component = () => {
-	return (
-		<box
-			style={{
-				height: 1,
-				width: '100%',
-				backgroundColor: colors.error,
-				flexDirection: 'row',
-				justifyContent: 'center',
-				alignItems: 'center'
-			}}
-		>
-			<text fg={colors.bg}>
-				{' WARNING: This software is under active development and may contain bugs '}
-			</text>
-		</box>
-	);
-};
-
 const Toast: Component = () => {
 	const toast = useToast();
 
@@ -60,7 +41,6 @@ export const MainUi: Component<{
 				backgroundColor: colors.bg
 			}}
 		>
-			<WarningBanner />
 			<Header />
 			<Messages />
 			<InputSection />
