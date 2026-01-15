@@ -82,14 +82,9 @@
       "name": "convexJs",
       "url": "https://github.com/get-convex/convex-js",
       "branch": "main"
-    },
-    {
-      "type": "git",
-      "name": "effectDeej",
-      "url": "https://github.com/Effect-TS/effect",
-      "branch": "main"
     }
   ],
   "model": "claude-haiku-4-5",
-  "provider": "opencode"
+  "provider": "opencode",
+  "dataDirectory": ".btca"
 }
