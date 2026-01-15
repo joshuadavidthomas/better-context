@@ -12,3 +12,7 @@ export class ResourceError extends Error {
 		if (args.stack) this.stack = args.stack;
 	}
 }
+
+export const resourceNameToKey = (name: string): string => {
+	return encodeURIComponent(name);
+};

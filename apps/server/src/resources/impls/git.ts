@@ -3,7 +3,7 @@ import path from 'node:path';
 
 import { Metrics } from '../../metrics/index.ts';
 import { CommonHints } from '../../errors.ts';
-import { ResourceError } from '../helpers.ts';
+import { ResourceError, resourceNameToKey } from '../helpers.ts';
 import { GitResourceSchema } from '../schema.ts';
 import type { BtcaFsResource, BtcaGitResourceArgs } from '../types.ts';
 
@@ -379,7 +379,8 @@ const ensureSearchPathsExist = async (
 };
 
 const ensureGitResource = async (config: BtcaGitResourceArgs): Promise<string> => {
-	const localPath = `${config.resourcesDirectoryPath}/${config.name}`;
+	const resourceKey = resourceNameToKey(config.name);
+	const localPath = path.join(config.resourcesDirectoryPath, resourceKey);
 
 	return Metrics.span(
 		'resource.git.ensure',
@@ -442,6 +443,7 @@ export const loadGitResource = async (config: BtcaGitResourceArgs): Promise<Btca
 	return {
 		_tag: 'fs-based',
 		name: config.name,
+		fsName: resourceNameToKey(config.name),
 		type: 'git',
 		repoSubPaths: config.repoSubPaths,
 		specialAgentInstructions: config.specialAgentInstructions,

@@ -110,7 +110,7 @@ export const MainInput: Component<MainInputProps> = (props) => {
 			return parts;
 		}
 
-		const regex = /(^|(?<=\s))@\w*/g;
+		const regex = /(^|(?<=\s))@[A-Za-z0-9@._/-]*/g;
 		let lastIndex = 0;
 		let match;
 		while ((match = regex.exec(value)) !== null) {

@@ -4,6 +4,7 @@ export const FS_RESOURCE_SYSTEM_NOTE =
 export type BtcaFsResource = {
 	readonly _tag: 'fs-based';
 	readonly name: string;
+	readonly fsName: string;
 	readonly type: 'git' | 'local';
 	readonly repoSubPaths: readonly string[];
 	readonly specialAgentInstructions: string;

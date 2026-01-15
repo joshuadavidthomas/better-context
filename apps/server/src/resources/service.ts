@@ -1,6 +1,6 @@
 import { Config } from '../config/index.ts';
 
-import { ResourceError } from './helpers.ts';
+import { ResourceError, resourceNameToKey } from './helpers.ts';
 import { loadGitResource } from './impls/git.ts';
 import {
 	isGitResource,
@@ -53,6 +53,7 @@ export namespace Resources {
 	const loadLocalResource = (args: BtcaLocalResourceArgs): BtcaFsResource => ({
 		_tag: 'fs-based',
 		name: args.name,
+		fsName: resourceNameToKey(args.name),
 		type: 'local',
 		repoSubPaths: [],
 		specialAgentInstructions: args.specialAgentInstructions,

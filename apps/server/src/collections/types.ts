@@ -1,4 +1,5 @@
 import type { TaggedErrorOptions } from '../errors.ts';
+import { resourceNameToKey } from '../resources/helpers.ts';
 
 export type CollectionResult = {
 	path: string;
@@ -18,5 +19,5 @@ export class CollectionError extends Error {
 }
 
 export const getCollectionKey = (resourceNames: readonly string[]): string => {
-	return [...resourceNames].sort().join('+');
+	return [...resourceNames].map(resourceNameToKey).sort().join('+');
 };

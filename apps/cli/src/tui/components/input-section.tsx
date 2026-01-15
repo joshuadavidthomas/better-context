@@ -42,7 +42,7 @@ export const InputSection: Component = () => {
 
 	// Parse @mentions from input
 	const parseAllMentions = (input: string) => {
-		const mentionRegex = /@(\w+)/g;
+		const mentionRegex = /@([A-Za-z0-9@._/-]+)/g;
 		const repos: string[] = [];
 		let match;
 		while ((match = mentionRegex.exec(input)) !== null) {
@@ -50,6 +50,23 @@ export const InputSection: Component = () => {
 		}
 		const question = input.replace(mentionRegex, '').trim().replace(/\s+/g, ' ');
 		return { repos: [...new Set(repos)], question };
+	};
+
+	const resolveRepoName = (input: string): string | null => {
+		const available = config.repos();
+		const target = input.toLowerCase();
+		const direct = available.find((r) => r.name.toLowerCase() === target);
+		if (direct) return direct.name;
+
+		if (target.startsWith('@')) {
+			const withoutAt = target.slice(1);
+			const match = available.find((r) => r.name.toLowerCase() === withoutAt);
+			return match?.name ?? null;
+		}
+
+		const withAt = `@${target}`;
+		const match = available.find((r) => r.name.toLowerCase() === withAt);
+		return match?.name ?? null;
 	};
 
 	const handleSubmit = async () => {
@@ -75,12 +92,11 @@ export const InputSection: Component = () => {
 		}
 
 		// Validate any new repos exist
-		const availableRepos = config.repos();
 		const validNewRepos: string[] = [];
 		const invalidRepos: string[] = [];
 		for (const repoName of parsed.repos) {
-			const found = availableRepos.find((r) => r.name.toLowerCase() === repoName.toLowerCase());
-			if (found) validNewRepos.push(found.name);
+			const resolved = resolveRepoName(repoName);
+			if (resolved) validNewRepos.push(resolved);
 			else invalidRepos.push(repoName);
 		}
 		if (invalidRepos.length > 0) {

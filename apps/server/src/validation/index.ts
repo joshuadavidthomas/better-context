@@ -16,7 +16,7 @@
  * Resource name: must start with a letter, followed by alphanumeric and hyphens only.
  * This prevents path traversal (../), git option injection (-), and shell metacharacters.
  */
-const RESOURCE_NAME_REGEX = /^[a-zA-Z][a-zA-Z0-9-]*$/;
+const RESOURCE_NAME_REGEX = /^@?[a-zA-Z0-9][a-zA-Z0-9._-]*(\/[a-zA-Z0-9][a-zA-Z0-9._-]*)*$/;
 
 /**
  * Branch name: alphanumeric, forward slashes, dots, underscores, and hyphens.
@@ -95,8 +95,17 @@ export const validateResourceName = (name: string): ValidationResult => {
 
 	if (!RESOURCE_NAME_REGEX.test(name)) {
 		return fail(
-			`Invalid resource name: "${name}". Must start with a letter and contain only alphanumeric characters and hyphens`
+			`Invalid resource name: "${name}". Must start with a letter or @ and contain only letters, numbers, ., _, -, and /`
 		);
+	}
+	if (name.includes('..')) {
+		return fail('Resource name must not contain ".."');
+	}
+	if (name.includes('//')) {
+		return fail('Resource name must not contain "//"');
+	}
+	if (name.endsWith('/')) {
+		return fail('Resource name must not end with "/"');
 	}
 
 	return ok();

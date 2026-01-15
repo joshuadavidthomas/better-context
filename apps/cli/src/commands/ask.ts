@@ -22,7 +22,7 @@ function formatError(error: unknown): string {
  * Parse @mentions from query string
  */
 function parseQuery(query: string): { query: string; resources: string[] } {
-	const mentionRegex = /@(\w+)/g;
+	const mentionRegex = /@([A-Za-z0-9@._/-]+)/g;
 	const resources: string[] = [];
 	let match;
 
@@ -44,6 +44,43 @@ function parseQuery(query: string): { query: string; resources: string[] } {
 function mergeResources(cliResources: string[], mentionedResources: string[]): string[] {
 	const all = [...cliResources, ...mentionedResources];
 	return [...new Set(all)];
+}
+
+type AvailableResource = { name: string };
+
+function resolveResourceName(
+	input: string,
+	available: AvailableResource[]
+): string | null {
+	const target = input.toLowerCase();
+	const direct = available.find((r) => r.name.toLowerCase() === target);
+	if (direct) return direct.name;
+
+	if (target.startsWith('@')) {
+		const withoutAt = target.slice(1);
+		const match = available.find((r) => r.name.toLowerCase() === withoutAt);
+		return match?.name ?? null;
+	}
+
+	const withAt = `@${target}`;
+	const match = available.find((r) => r.name.toLowerCase() === withAt);
+	return match?.name ?? null;
+}
+
+function normalizeResourceNames(
+	inputs: string[],
+	available: AvailableResource[]
+): { names: string[]; invalid: string[] } {
+	const resolved: string[] = [];
+	const invalid: string[] = [];
+
+	for (const input of inputs) {
+		const resolvedName = resolveResourceName(input, available);
+		if (resolvedName) resolved.push(resolvedName);
+		else invalid.push(input);
+	}
+
+	return { names: [...new Set(resolved)], invalid };
 }
 
 export const askCommand = new Command('ask')
@@ -80,16 +117,26 @@ export const askCommand = new Command('ask')
 				parsed.resources
 			);
 
-			// If no resources specified, validate that some exist
+			const { resources } = await getResources(client);
+			if (resources.length === 0) {
+				console.error('Error: No resources configured.');
+				console.error('Add resources to your btca config file.');
+				process.exit(1);
+			}
+
 			if (resourceNames.length === 0) {
-				const { resources } = await getResources(client);
-				if (resources.length === 0) {
-					console.error('Error: No resources configured.');
-					console.error('Add resources to your btca config file.');
-					process.exit(1);
-				}
 				// Use all resources if none specified
 				resourceNames.push(...resources.map((r) => r.name));
+			} else {
+				const normalized = normalizeResourceNames(resourceNames, resources);
+				if (normalized.invalid.length > 0) {
+					console.error(
+						`Error: Unknown resource(s): ${normalized.invalid.join(', ')}. ` +
+							'Configure resources in your btca config.'
+					);
+					process.exit(1);
+				}
+				resourceNames.splice(0, resourceNames.length, ...normalized.names);
 			}
 
 			console.log('loading resources...');

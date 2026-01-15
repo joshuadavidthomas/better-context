@@ -42,7 +42,7 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : DEFAULT_PORT;
 /**
  * Resource name pattern: must start with a letter, alphanumeric and hyphens only.
  */
-const RESOURCE_NAME_REGEX = /^[a-zA-Z][a-zA-Z0-9-]*$/;
+const RESOURCE_NAME_REGEX = /^@?[a-zA-Z0-9][a-zA-Z0-9._-]*(\/[a-zA-Z0-9][a-zA-Z0-9._-]*)*$/;
 
 /**
  * Safe name pattern for provider/model names.
@@ -56,7 +56,10 @@ const ResourceNameField = z
 	.string()
 	.min(1, 'Resource name cannot be empty')
 	.max(LIMITS.RESOURCE_NAME_MAX)
-	.regex(RESOURCE_NAME_REGEX, 'Invalid resource name format');
+	.regex(RESOURCE_NAME_REGEX, 'Invalid resource name format')
+	.refine((name) => !name.includes('..'), 'Resource name must not contain ".."')
+	.refine((name) => !name.includes('//'), 'Resource name must not contain "//"')
+	.refine((name) => !name.endsWith('/'), 'Resource name must not end with "/"');
 
 const QuestionRequestSchema = z.object({
 	question: z

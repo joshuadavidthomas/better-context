@@ -19,12 +19,12 @@ export namespace Collections {
 
 	const createCollectionInstructionBlock = (resource: BtcaFsResource): string => {
 		const focusLines = resource.repoSubPaths.map(
-			(subPath) => `Focus: ./${resource.name}/${subPath}`
+			(subPath) => `Focus: ./${resource.fsName}/${subPath}`
 		);
 		const lines = [
 			`## Resource: ${resource.name}`,
 			FS_RESOURCE_SYSTEM_NOTE,
-			`Path: ./${resource.name}`,
+			`Path: ./${resource.fsName}`,
 			...focusLines,
 			resource.specialAgentInstructions ? `Notes: ${resource.specialAgentInstructions}` : ''
 		].filter(Boolean);
@@ -92,7 +92,7 @@ export namespace Collections {
 							});
 						}
 
-						const linkPath = path.join(collectionPath, resource.name);
+						const linkPath = path.join(collectionPath, resource.fsName);
 						try {
 							await fs.rm(linkPath, { recursive: true, force: true });
 						} catch {

@@ -10,7 +10,7 @@ import { LIMITS } from '../validation/index.ts';
  * Resource name: must start with a letter, followed by alphanumeric and hyphens only.
  * Prevents path traversal, git option injection, and shell metacharacters.
  */
-const RESOURCE_NAME_REGEX = /^[a-zA-Z][a-zA-Z0-9-]*$/;
+const RESOURCE_NAME_REGEX = /^@?[a-zA-Z0-9][a-zA-Z0-9._-]*(\/[a-zA-Z0-9][a-zA-Z0-9._-]*)*$/;
 
 /**
  * Branch name: alphanumeric, forward slashes, dots, underscores, and hyphens.
@@ -31,8 +31,17 @@ const ResourceNameSchema = z
 	.max(LIMITS.RESOURCE_NAME_MAX, `Resource name too long (max ${LIMITS.RESOURCE_NAME_MAX} chars)`)
 	.regex(
 		RESOURCE_NAME_REGEX,
-		'Resource name must start with a letter and contain only alphanumeric characters and hyphens'
-	);
+		'Resource name must start with a letter or @ and contain only letters, numbers, ., _, -, and /'
+	)
+	.refine((name) => !name.includes('..'), {
+		message: 'Resource name must not contain ".."'
+	})
+	.refine((name) => !name.includes('//'), {
+		message: 'Resource name must not contain "//"'
+	})
+	.refine((name) => !name.endsWith('/'), {
+		message: 'Resource name must not end with "/"'
+	});
 
 /**
  * Git URL field with security validation.
