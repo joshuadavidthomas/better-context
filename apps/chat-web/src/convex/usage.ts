@@ -1,7 +1,8 @@
+import { Autumn } from 'autumn-js';
 import { v } from 'convex/values';
 
-import { action } from './_generated/server';
-import { instances } from './apiHelpers';
+import { instances } from './apiHelpers.js';
+import { action } from './_generated/server.js';
 
 type FeatureMetrics = {
 	usage: number;
@@ -61,23 +62,21 @@ const FEATURE_IDS = {
 
 const billingArgs = { instanceId: v.id('instances') };
 
-type UsageMetric = {
-	usage?: number;
-	included_usage?: number;
-	balance?: number;
-};
-
-type AutumnResult = {
-	data?: UsageMetric;
-	error?: { message?: string };
-};
-
 function requireEnv(name: string): string {
 	const value = process.env[name];
 	if (!value) {
 		throw new Error(`${name} is not set in the Convex environment`);
 	}
 	return value;
+}
+
+let autumnClient: Autumn | null = null;
+
+function getAutumnClient(): Autumn {
+	if (!autumnClient) {
+		autumnClient = new Autumn({ secretKey: requireEnv('AUTUMN_SECRET_KEY') });
+	}
+	return autumnClient;
 }
 
 function estimateTokensFromText(text: string): number {
@@ -112,45 +111,20 @@ async function getOrCreateCustomer(user: {
 	name?: string | null;
 }): Promise<{
 	id: string;
-	products?: { id?: string; status?: string; current_period_end?: number }[];
+	products?: { id?: string; status?: string; current_period_end?: number | null }[];
 	payment_method?: unknown;
 }> {
-	const autumnKey = requireEnv('AUTUMN_SECRET_KEY');
-	const headers = {
-		Authorization: `Bearer ${autumnKey}`,
-		'Content-Type': 'application/json'
-	};
-
-	const createResponse = await fetch('https://api.autumn.com/v1/customers', {
-		method: 'POST',
-		headers,
-		body: JSON.stringify({
-			id: user.clerkId,
-			email: user.email ?? undefined,
-			name: user.name ?? undefined
-		})
+	const autumn = getAutumnClient();
+	const createPayload = await autumn.customers.create({
+		id: user.clerkId,
+		email: user.email ?? undefined,
+		name: user.name ?? undefined
 	});
 
-	const createPayload = (await createResponse.json()) as {
-		data?: { id?: string };
-		error?: { message?: string };
-	};
-
 	const fetchCustomer = async (customerId: string) => {
-		const customerResponse = await fetch(
-			`https://api.autumn.com/v1/customers/${customerId}?expand=payment_method`,
-			{
-				headers
-			}
-		);
-		const customerPayload = (await customerResponse.json()) as {
-			data?: {
-				id?: string;
-				products?: { id?: string; status?: string; current_period_end?: number }[];
-				payment_method?: unknown;
-			};
-			error?: { message?: string };
-		};
+		const customerPayload = await autumn.customers.get(customerId, {
+			expand: ['payment_method']
+		});
 		if (customerPayload.error) {
 			throw new Error(customerPayload.error.message ?? 'Failed to fetch Autumn customer');
 		}
@@ -177,7 +151,7 @@ async function getOrCreateCustomer(user: {
 }
 
 function getActiveProduct(
-	products: { id?: string; status?: string; current_period_end?: number }[] | undefined
+	products: { id?: string; status?: string; current_period_end?: number | null }[] | undefined
 ) {
 	if (!products?.length) return null;
 	return (
@@ -193,7 +167,7 @@ async function checkFeature(args: {
 	featureId: string;
 	requiredBalance?: number;
 }): Promise<{ usage: number; balance: number; included: number }> {
-	const autumnKey = requireEnv('AUTUMN_SECRET_KEY');
+	const autumn = getAutumnClient();
 	const payload: {
 		customer_id: string;
 		feature_id: string;
@@ -206,16 +180,7 @@ async function checkFeature(args: {
 		payload.required_balance = args.requiredBalance;
 	}
 
-	const response = await fetch('https://api.autumn.com/v1/check', {
-		method: 'POST',
-		headers: {
-			Authorization: `Bearer ${autumnKey}`,
-			'Content-Type': 'application/json'
-		},
-		body: JSON.stringify(payload)
-	});
-
-	const result = (await response.json()) as AutumnResult;
+	const result = await autumn.check(payload);
 	if (result.error) {
 		throw new Error(result.error.message ?? 'Failed to check Autumn usage');
 	}
@@ -232,21 +197,12 @@ async function trackUsage(args: {
 	featureId: string;
 	value: number;
 }): Promise<void> {
-	const autumnKey = requireEnv('AUTUMN_SECRET_KEY');
-	const response = await fetch('https://api.autumn.com/v1/track', {
-		method: 'POST',
-		headers: {
-			Authorization: `Bearer ${autumnKey}`,
-			'Content-Type': 'application/json'
-		},
-		body: JSON.stringify({
-			customer_id: args.customerId,
-			feature_id: args.featureId,
-			value: args.value
-		})
+	const autumn = getAutumnClient();
+	const result = await autumn.track({
+		customer_id: args.customerId,
+		feature_id: args.featureId,
+		value: args.value
 	});
-
-	const result = (await response.json()) as AutumnResult;
 	if (result.error) {
 		throw new Error(result.error.message ?? 'Failed to track Autumn usage');
 	}
@@ -462,26 +418,15 @@ export const createCheckoutSession = action({
 			clerkId: instance.clerkId
 		});
 
-		const response = await fetch('https://api.autumn.com/v1/checkout', {
-			method: 'POST',
-			headers: {
-				Authorization: `Bearer ${requireEnv('AUTUMN_SECRET_KEY')}`,
-				'Content-Type': 'application/json'
-			},
-			body: JSON.stringify({
-				customer_id: autumnCustomer.id ?? instance.clerkId,
-				product_id: 'btca_pro',
-				success_url: `${args.baseUrl}/checkout/success`,
-				checkout_session_params: {
-					cancel_url: `${args.baseUrl}/checkout/cancel`
-				}
-			})
+		const autumn = getAutumnClient();
+		const payload = await autumn.checkout({
+			customer_id: autumnCustomer.id ?? instance.clerkId,
+			product_id: 'btca_pro',
+			success_url: `${args.baseUrl}/checkout/success`,
+			checkout_session_params: {
+				cancel_url: `${args.baseUrl}/checkout/cancel`
+			}
 		});
-
-		const payload = (await response.json()) as {
-			data?: { url?: string };
-			error?: { message?: string };
-		};
 		if (payload.error) {
 			throw new Error(payload.error.message ?? 'Failed to create checkout session');
 		}
@@ -489,23 +434,11 @@ export const createCheckoutSession = action({
 			return { url: payload.data.url };
 		}
 
-		const attachResponse = await fetch('https://api.autumn.com/v1/attach', {
-			method: 'POST',
-			headers: {
-				Authorization: `Bearer ${requireEnv('AUTUMN_SECRET_KEY')}`,
-				'Content-Type': 'application/json'
-			},
-			body: JSON.stringify({
-				customer_id: autumnCustomer.id ?? instance.clerkId,
-				product_id: 'btca_pro',
-				success_url: `${args.baseUrl}/checkout/success`
-			})
+		const attachPayload = await autumn.attach({
+			customer_id: autumnCustomer.id ?? instance.clerkId,
+			product_id: 'btca_pro',
+			success_url: `${args.baseUrl}/checkout/success`
 		});
-
-		const attachPayload = (await attachResponse.json()) as {
-			data?: { checkout_url?: string };
-			error?: { message?: string };
-		};
 		if (attachPayload.error) {
 			throw new Error(attachPayload.error.message ?? 'Failed to attach checkout session');
 		}
@@ -530,24 +463,10 @@ export const createBillingPortalSession = action({
 		const autumnCustomer = await getOrCreateCustomer({
 			clerkId: instance.clerkId
 		});
-		const response = await fetch(
-			`https://api.autumn.com/v1/customers/${autumnCustomer.id ?? instance.clerkId}/billing_portal`,
-			{
-				method: 'POST',
-				headers: {
-					Authorization: `Bearer ${requireEnv('AUTUMN_SECRET_KEY')}`,
-					'Content-Type': 'application/json'
-				},
-				body: JSON.stringify({
-					return_url: `${args.baseUrl}/settings/billing`
-				})
-			}
-		);
-
-		const payload = (await response.json()) as {
-			data?: { url?: string };
-			error?: { message?: string };
-		};
+		const autumn = getAutumnClient();
+		const payload = await autumn.customers.billingPortal(autumnCustomer.id ?? instance.clerkId, {
+			return_url: `${args.baseUrl}/settings/billing`
+		});
 		if (payload.error) {
 			throw new Error(payload.error.message ?? 'Failed to create billing portal session');
 		}
