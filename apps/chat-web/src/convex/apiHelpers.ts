@@ -6,11 +6,13 @@ type PublicQueryRef = FunctionReference<'query', 'public'>;
 type PublicMutationRef = FunctionReference<'mutation', 'public'>;
 type PublicActionRef = FunctionReference<'action', 'public'>;
 type InternalQueryRef = FunctionReference<'query', 'internal'>;
+type InternalActionRef = FunctionReference<'action', 'internal'>;
 
 type PublicQueryRecord = Record<string, PublicQueryRef>;
 type PublicMutationRecord = Record<string, PublicMutationRef>;
 type PublicActionRecord = Record<string, PublicActionRef>;
 type InternalQueryRecord = Record<string, InternalQueryRef>;
+type InternalActionRecord = Record<string, InternalActionRef>;
 
 type NestedApi = typeof api & {
 	'instances/queries': PublicQueryRecord;
@@ -20,12 +22,14 @@ type NestedApi = typeof api & {
 
 type NestedInternal = typeof internal & {
 	'scheduled/queries': InternalQueryRecord;
+	'instances/actions': InternalActionRecord;
 };
 
 type InstancesApi = {
 	queries: PublicQueryRecord;
 	mutations: PublicMutationRecord;
 	actions: PublicActionRecord;
+	internalActions: InternalActionRecord;
 };
 
 type ScheduledApi = {
@@ -35,7 +39,8 @@ type ScheduledApi = {
 export const instances: InstancesApi = {
 	queries: (api as NestedApi)['instances/queries'],
 	mutations: (api as NestedApi)['instances/mutations'],
-	actions: (api as NestedApi)['instances/actions']
+	actions: (api as NestedApi)['instances/actions'],
+	internalActions: (internal as NestedInternal)['instances/actions']
 };
 
 export const scheduled: ScheduledApi = {

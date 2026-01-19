@@ -52,6 +52,14 @@ const clerkWebhookSchema = z.object({
 	})
 });
 
+const daytonaWebhookSchema = z.object({
+	type: z.string(),
+	data: z.object({
+		sandboxId: z.string().min(1),
+		state: z.string().optional()
+	})
+});
+
 type MessageLike = {
 	role: 'user' | 'assistant' | 'system';
 	content: string | { type: 'chunks'; chunks: BtcaChunk[] } | { type: 'text'; content: string };
@@ -445,6 +453,10 @@ const chatStream = httpAction(async (ctx, request) => {
 					console.error('Failed to track usage:', error);
 				}
 
+				await ctx.runMutation(instanceMutations.scheduleSyncSandboxStatus, {
+					instanceId: instance._id
+				});
+
 				sendEvent({ type: 'done' });
 				controller.close();
 			} catch (error) {
@@ -533,6 +545,54 @@ http.route({
 	path: '/webhooks/clerk',
 	method: 'OPTIONS',
 	handler: corsPreflight
+});
+
+const daytonaWebhook = httpAction(async (ctx, request) => {
+	const secret = process.env.DAYTONA_WEBHOOK_SECRET;
+	if (!secret) {
+		return jsonResponse({ error: 'Missing Daytona webhook secret' }, { status: 500 });
+	}
+
+	const authHeader = request.headers.get('Authorization');
+	const providedSecret = authHeader?.replace('Bearer ', '');
+	if (providedSecret !== secret) {
+		return jsonResponse({ error: 'Invalid webhook secret' }, { status: 401 });
+	}
+
+	let rawBody: unknown;
+	try {
+		rawBody = await request.json();
+	} catch {
+		return jsonResponse({ error: 'Invalid JSON body' }, { status: 400 });
+	}
+
+	const parseResult = daytonaWebhookSchema.safeParse(rawBody);
+	if (!parseResult.success) {
+		const issues = parseResult.error.issues
+			.map((issue) => `${issue.path.join('.')}: ${issue.message}`)
+			.join('; ');
+		return jsonResponse({ error: `Invalid webhook payload: ${issues}` }, { status: 400 });
+	}
+
+	const { type, data } = parseResult.data;
+
+	if (type === 'sandbox.stopped') {
+		await ctx.runMutation(instanceMutations.handleSandboxStopped, {
+			sandboxId: data.sandboxId
+		});
+	} else if (type === 'sandbox.started') {
+		await ctx.runMutation(instanceMutations.handleSandboxStarted, {
+			sandboxId: data.sandboxId
+		});
+	}
+
+	return jsonResponse({ received: true });
+});
+
+http.route({
+	path: '/webhooks/daytona',
+	method: 'POST',
+	handler: daytonaWebhook
 });
 
 export default http;

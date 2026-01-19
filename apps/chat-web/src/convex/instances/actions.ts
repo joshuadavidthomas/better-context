@@ -5,7 +5,7 @@ import { v } from 'convex/values';
 
 import { api } from '../_generated/api';
 import type { Doc, Id } from '../_generated/dataModel';
-import { action, type ActionCtx } from '../_generated/server';
+import { action, internalAction, type ActionCtx } from '../_generated/server';
 import { instances } from '../apiHelpers';
 
 const instanceQueries = instances.queries;
@@ -522,5 +522,114 @@ export const updateMyInstance = action({
 	handler: async (ctx): Promise<{ serverUrl?: string; updated?: boolean }> => {
 		const instance = await requireAuthenticatedInstance(ctx);
 		return updateInstanceInternal(ctx, instance._id);
+	}
+});
+
+type CachedResourceInfo = {
+	name: string;
+	url: string;
+	branch: string;
+	sizeBytes?: number;
+};
+
+type SyncResult = {
+	storageUsedBytes: number;
+	cachedResources: CachedResourceInfo[];
+};
+
+async function getSandboxStatus(sandbox: Sandbox): Promise<SyncResult> {
+	const duResult = await sandbox.process.executeCommand(
+		'du -sb /root/.btca/resources 2>/dev/null || echo "0"'
+	);
+	const duMatch = duResult.result.trim().match(/^(\d+)/);
+	const storageUsedBytes = duMatch ? parseInt(duMatch[1], 10) : 0;
+
+	const lsResult = await sandbox.process.executeCommand(
+		'ls -1 /root/.btca/resources 2>/dev/null || echo ""'
+	);
+	const resourceDirs = lsResult.result
+		.trim()
+		.split('\n')
+		.filter((line) => line.length > 0);
+
+	const cachedResources: CachedResourceInfo[] = [];
+
+	for (const dir of resourceDirs) {
+		const gitConfigPath = `/root/.btca/resources/${dir}/.git/config`;
+		const gitConfigResult = await sandbox.process.executeCommand(
+			`cat "${gitConfigPath}" 2>/dev/null || echo ""`
+		);
+
+		let url = '';
+		let branch = 'main';
+
+		const urlMatch = gitConfigResult.result.match(/url\s*=\s*(.+)/);
+		if (urlMatch) {
+			url = urlMatch[1].trim();
+		}
+
+		const branchMatch = gitConfigResult.result.match(/\[branch\s+"([^"]+)"\]/);
+		if (branchMatch) {
+			branch = branchMatch[1];
+		}
+
+		const sizeResult = await sandbox.process.executeCommand(
+			`du -sb "/root/.btca/resources/${dir}" 2>/dev/null || echo "0"`
+		);
+		const sizeMatch = sizeResult.result.trim().match(/^(\d+)/);
+		const sizeBytes = sizeMatch ? parseInt(sizeMatch[1], 10) : undefined;
+
+		if (url) {
+			cachedResources.push({
+				name: dir,
+				url,
+				branch,
+				sizeBytes
+			});
+		}
+	}
+
+	return { storageUsedBytes, cachedResources };
+}
+
+export const syncSandboxStatus = internalAction({
+	args: instanceArgs,
+	handler: async (ctx, args): Promise<SyncResult | null> => {
+		const instance = await requireInstance(ctx, args.instanceId);
+		if (!instance.sandboxId) {
+			return null;
+		}
+
+		if (instance.state !== 'running') {
+			return null;
+		}
+
+		try {
+			const daytona = getDaytona();
+			const sandbox = await daytona.get(instance.sandboxId);
+
+			if (sandbox.state !== 'started') {
+				return null;
+			}
+
+			const status = await getSandboxStatus(sandbox);
+
+			await ctx.runMutation(instanceMutations.updateStorageUsed, {
+				instanceId: args.instanceId,
+				storageUsedBytes: status.storageUsedBytes
+			});
+
+			if (status.cachedResources.length > 0) {
+				await ctx.runMutation(instanceMutations.upsertCachedResources, {
+					instanceId: args.instanceId,
+					resources: status.cachedResources
+				});
+			}
+
+			return status;
+		} catch (error) {
+			console.error('Failed to sync sandbox status:', getErrorMessage(error));
+			return null;
+		}
 	}
 });

@@ -1,6 +1,7 @@
 import { v } from 'convex/values';
 
 import { mutation } from '../_generated/server';
+import { instances } from '../apiHelpers';
 
 const instanceStateValidator = v.union(
 	v.literal('unprovisioned'),
@@ -142,5 +143,118 @@ export const touchActivity = mutation({
 	args: { instanceId: v.id('instances') },
 	handler: async (ctx, args) => {
 		await ctx.db.patch(args.instanceId, { lastActiveAt: Date.now() });
+	}
+});
+
+export const updateStorageUsed = mutation({
+	args: {
+		instanceId: v.id('instances'),
+		storageUsedBytes: v.number()
+	},
+	handler: async (ctx, args) => {
+		await ctx.db.patch(args.instanceId, { storageUsedBytes: args.storageUsedBytes });
+	}
+});
+
+export const upsertCachedResources = mutation({
+	args: {
+		instanceId: v.id('instances'),
+		resources: v.array(
+			v.object({
+				name: v.string(),
+				url: v.string(),
+				branch: v.string(),
+				sizeBytes: v.optional(v.number())
+			})
+		)
+	},
+	handler: async (ctx, args) => {
+		const existing = await ctx.db
+			.query('cachedResources')
+			.withIndex('by_instance', (q) => q.eq('instanceId', args.instanceId))
+			.collect();
+
+		const existingByName = new Map(existing.map((r) => [r.name, r]));
+		const now = Date.now();
+
+		for (const resource of args.resources) {
+			const existingResource = existingByName.get(resource.name);
+			if (existingResource) {
+				await ctx.db.patch(existingResource._id, {
+					url: resource.url,
+					branch: resource.branch,
+					sizeBytes: resource.sizeBytes,
+					lastUsedAt: now
+				});
+			} else {
+				await ctx.db.insert('cachedResources', {
+					instanceId: args.instanceId,
+					name: resource.name,
+					url: resource.url,
+					branch: resource.branch,
+					sizeBytes: resource.sizeBytes,
+					cachedAt: now,
+					lastUsedAt: now
+				});
+			}
+		}
+	}
+});
+
+export const scheduleSyncSandboxStatus = mutation({
+	args: { instanceId: v.id('instances') },
+	handler: async (ctx, args) => {
+		await ctx.scheduler.runAfter(0, instances.internalActions.syncSandboxStatus, {
+			instanceId: args.instanceId
+		});
+	}
+});
+
+export const handleSandboxStopped = mutation({
+	args: { sandboxId: v.string() },
+	handler: async (ctx, args) => {
+		const instance = await ctx.db
+			.query('instances')
+			.withIndex('by_sandbox_id', (q) => q.eq('sandboxId', args.sandboxId))
+			.first();
+
+		if (!instance) {
+			return { updated: false, reason: 'instance_not_found' };
+		}
+
+		if (instance.state === 'stopped') {
+			return { updated: false, reason: 'already_stopped' };
+		}
+
+		await ctx.db.patch(instance._id, {
+			state: 'stopped',
+			serverUrl: ''
+		});
+
+		return { updated: true, instanceId: instance._id };
+	}
+});
+
+export const handleSandboxStarted = mutation({
+	args: { sandboxId: v.string() },
+	handler: async (ctx, args) => {
+		const instance = await ctx.db
+			.query('instances')
+			.withIndex('by_sandbox_id', (q) => q.eq('sandboxId', args.sandboxId))
+			.first();
+
+		if (!instance) {
+			return { updated: false, reason: 'instance_not_found' };
+		}
+
+		if (instance.state === 'running' || instance.state === 'starting') {
+			return { updated: false, reason: 'already_running_or_starting' };
+		}
+
+		await ctx.db.patch(instance._id, {
+			state: 'starting'
+		});
+
+		return { updated: true, instanceId: instance._id };
 	}
 });

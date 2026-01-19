@@ -16,6 +16,13 @@
 		},
 		{
 			"type": "git",
+			"name": "convexWorkpools",
+			"url": "https://github.com/get-convex/workpool",
+			"branch": "main",
+			"specialNotes": "This is a Convex component that does work pools. Work pools are basically background jobs with proper queuing setup, retries, and all that stuff. "
+		},
+		{
+			"type": "git",
 			"name": "daytona",
 			"url": "https://github.com/daytonaio/daytona",
 			"branch": "main",

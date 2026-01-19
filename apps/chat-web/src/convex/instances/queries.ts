@@ -1,11 +1,21 @@
 import { v } from 'convex/values';
 
-import { query } from '../_generated/server';
+import { internalQuery, query } from '../_generated/server';
 
 export const get = query({
 	args: { id: v.id('instances') },
 	handler: async (ctx, args) => {
 		return await ctx.db.get(args.id);
+	}
+});
+
+export const getBySandboxId = internalQuery({
+	args: { sandboxId: v.string() },
+	handler: async (ctx, args) => {
+		return await ctx.db
+			.query('instances')
+			.withIndex('by_sandbox_id', (q) => q.eq('sandboxId', args.sandboxId))
+			.first();
 	}
 });
 
