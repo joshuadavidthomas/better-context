@@ -192,7 +192,7 @@
 <div class="relative" style="--delay: 40ms">
 	<div class="bc-card bc-reveal relative overflow-hidden">
 		<div
-			class="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(255,116,51,0.16),_transparent_60%)]"
+			class="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,116,51,0.16),transparent_60%)]"
 		></div>
 		<button
 			type="button"
