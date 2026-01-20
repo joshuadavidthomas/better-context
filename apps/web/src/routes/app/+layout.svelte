@@ -119,7 +119,7 @@
 </script>
 
 <svelte:head>
-	<title>btca App</title>
+	<title>btca | App</title>
 	<meta name="description" content="Web-based chat interface for btca" />
 </svelte:head>
 

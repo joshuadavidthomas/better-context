@@ -257,7 +257,7 @@
 				<div class="flex gap-2">
 					<input
 						type="text"
-						class="bc-input flex-1"
+						class="bc-input flex-1 placeholder:text-[hsl(var(--bc-fg-muted)/0.35)]"
 						placeholder="Paste a git repo URL (e.g., https://github.com/owner/repo)"
 						bind:value={quickAddUrl}
 						onkeydown={(e) => e.key === 'Enter' && quickAddUrl.trim() && handleQuickAdd()}
@@ -302,7 +302,7 @@
 							<input
 								id="confirm-name"
 								type="text"
-								class="bc-input w-full"
+								class="bc-input w-full placeholder:text-[hsl(var(--bc-fg-muted)/0.35)]"
 								placeholder="e.g., myFramework"
 								bind:value={formName}
 							/>
@@ -311,7 +311,12 @@
 
 						<div>
 							<label for="confirm-url" class="mb-1 block text-sm font-medium">Git URL *</label>
-							<input id="confirm-url" type="url" class="bc-input w-full" bind:value={formUrl} />
+							<input
+								id="confirm-url"
+								type="url"
+								class="bc-input w-full placeholder:text-[hsl(var(--bc-fg-muted)/0.35)]"
+								bind:value={formUrl}
+							/>
 						</div>
 
 						<div class="grid grid-cols-2 gap-4">
@@ -320,7 +325,7 @@
 								<input
 									id="confirm-branch"
 									type="text"
-									class="bc-input w-full"
+									class="bc-input w-full placeholder:text-[hsl(var(--bc-fg-muted)/0.35)]"
 									placeholder="main"
 									bind:value={formBranch}
 								/>
@@ -332,7 +337,7 @@
 								<input
 									id="confirm-searchPath"
 									type="text"
-									class="bc-input w-full"
+									class="bc-input w-full placeholder:text-[hsl(var(--bc-fg-muted)/0.35)]"
 									placeholder="docs/"
 									bind:value={formSearchPath}
 								/>
@@ -343,7 +348,7 @@
 							<label for="confirm-notes" class="mb-1 block text-sm font-medium">Notes</label>
 							<textarea
 								id="confirm-notes"
-								class="bc-input w-full"
+								class="bc-input w-full placeholder:text-[hsl(var(--bc-fg-muted)/0.35)]"
 								rows="2"
 								placeholder="Additional context for the AI..."
 								bind:value={formSpecialNotes}
@@ -398,7 +403,7 @@
 							<input
 								id="name"
 								type="text"
-								class="bc-input w-full"
+								class="bc-input w-full placeholder:text-[hsl(var(--bc-fg-muted)/0.35)]"
 								placeholder="e.g., myFramework"
 								bind:value={formName}
 							/>
@@ -410,7 +415,7 @@
 							<input
 								id="url"
 								type="url"
-								class="bc-input w-full"
+								class="bc-input w-full placeholder:text-[hsl(var(--bc-fg-muted)/0.35)]"
 								placeholder="https://github.com/owner/repo"
 								bind:value={formUrl}
 							/>
@@ -422,7 +427,7 @@
 								<input
 									id="branch"
 									type="text"
-									class="bc-input w-full"
+									class="bc-input w-full placeholder:text-[hsl(var(--bc-fg-muted)/0.35)]"
 									placeholder="main"
 									bind:value={formBranch}
 								/>
@@ -432,7 +437,7 @@
 								<input
 									id="searchPath"
 									type="text"
-									class="bc-input w-full"
+									class="bc-input w-full placeholder:text-[hsl(var(--bc-fg-muted)/0.35)]"
 									placeholder="docs/"
 									bind:value={formSearchPath}
 								/>
@@ -443,7 +448,7 @@
 							<label for="notes" class="mb-1 block text-sm font-medium">Notes</label>
 							<textarea
 								id="notes"
-								class="bc-input w-full"
+								class="bc-input w-full placeholder:text-[hsl(var(--bc-fg-muted)/0.35)]"
 								rows="2"
 								placeholder="Additional context for the AI..."
 								bind:value={formSpecialNotes}

@@ -10,6 +10,7 @@
 
 	const CONFIG_EXAMPLE = `{
   "$schema": "https://btca.dev/btca.schema.json",
+  "dataDirectory": ".btca",
   "model": "claude-haiku-4-5",
   "provider": "opencode",
   "providerTimeoutMs": 300000,
@@ -54,7 +55,7 @@ Available resources: svelte, effect`;
 		</div>
 
 		<h1 class="bc-h1 text-balance text-5xl sm:text-6xl bc-reveal" style="--delay: 90ms">
-			Set up <span class="text-[color:hsl(var(--bc-accent))]">btca</span>
+			Set up <span class="text-[hsl(var(--bc-accent))]">btca</span>
 		</h1>
 
 		<p class="bc-prose max-w-2xl text-pretty text-base sm:text-lg bc-reveal" style="--delay: 160ms">
@@ -85,7 +86,9 @@ Available resources: svelte, effect`;
 		</div>
 
 		<p class="mt-4 text-sm bc-prose">
-			On first run, btca creates a default global config with some starter resources.
+			On first run, btca creates a default global config with some starter resources. Use
+			<code class="bc-inlineCode">dataDirectory</code> to control where btca stores resources and
+			collections.
 		</p>
 	</section>
 
@@ -148,7 +151,7 @@ Available resources: svelte, effect`;
 						href={model.providerSetupUrl}
 						target="_blank"
 						rel="noreferrer"
-						class="mt-3 inline-block text-sm text-[color:hsl(var(--bc-accent))]"
+					class="mt-3 inline-block text-sm text-[hsl(var(--bc-accent))]"
 					>
 						Provider setup instructions
 					</a>
@@ -164,8 +167,8 @@ Available resources: svelte, effect`;
 		</div>
 
 		<p class="mt-2 max-w-2xl text-sm bc-prose">
-			Resources are git repositories that btca clones and indexes. Add them via CLI or edit the
-			config file directly.
+			Resources are git repositories or local directories that btca indexes. Add them via CLI or
+			edit the config file directly.
 		</p>
 
 		<div class="mt-4 bc-card bc-ring p-5">
@@ -196,42 +199,49 @@ Available resources: svelte, effect`;
 			<div class="mt-4 overflow-x-auto">
 				<table class="w-full text-sm">
 					<thead>
-						<tr class="border-b border-[color:hsl(var(--bc-border))]">
+						<tr class="border-b border-[hsl(var(--bc-border))]">
 							<th class="pb-2 pr-4 text-left font-semibold">Field</th>
 							<th class="pb-2 pr-4 text-left font-semibold">Required</th>
 							<th class="pb-2 text-left font-semibold">Description</th>
 						</tr>
 					</thead>
 					<tbody class="bc-prose">
-						<tr class="border-b border-[color:hsl(var(--bc-border))]">
+						<tr class="border-b border-[hsl(var(--bc-border))]">
 							<td class="py-2 pr-4"><code class="bc-inlineCode">type</code></td>
 							<td class="py-2 pr-4">Yes</td>
-							<td class="py-2">Always <code class="bc-inlineCode">"git"</code></td>
+							<td class="py-2">
+								<code class="bc-inlineCode">"git"</code> or <code class="bc-inlineCode">"local"</code>
+							</td>
 						</tr>
-						<tr class="border-b border-[color:hsl(var(--bc-border))]">
+						<tr class="border-b border-[hsl(var(--bc-border))]">
 							<td class="py-2 pr-4"><code class="bc-inlineCode">name</code></td>
 							<td class="py-2 pr-4">Yes</td>
 							<td class="py-2">Short identifier used in CLI commands</td>
 						</tr>
-						<tr class="border-b border-[color:hsl(var(--bc-border))]">
+						<tr class="border-b border-[hsl(var(--bc-border))]">
 							<td class="py-2 pr-4"><code class="bc-inlineCode">url</code></td>
 							<td class="py-2 pr-4">Yes</td>
-							<td class="py-2">Git repository URL</td>
+							<td class="py-2">Git repository URL (git only)</td>
 						</tr>
-						<tr class="border-b border-[color:hsl(var(--bc-border))]">
+						<tr class="border-b border-[hsl(var(--bc-border))]">
 							<td class="py-2 pr-4"><code class="bc-inlineCode">branch</code></td>
 							<td class="py-2 pr-4">Yes</td>
-							<td class="py-2">Branch to clone</td>
+							<td class="py-2">Branch to clone (git only)</td>
 						</tr>
-						<tr class="border-b border-[color:hsl(var(--bc-border))]">
+						<tr class="border-b border-[hsl(var(--bc-border))]">
+							<td class="py-2 pr-4"><code class="bc-inlineCode">path</code></td>
+							<td class="py-2 pr-4">Yes</td>
+							<td class="py-2">Local directory path (local only)</td>
+						</tr>
+						<tr class="border-b border-[hsl(var(--bc-border))]">
 							<td class="py-2 pr-4"><code class="bc-inlineCode">searchPath</code></td>
 							<td class="py-2 pr-4">No</td>
-							<td class="py-2">Subdirectory to search within the repo</td>
+							<td class="py-2">Subdirectory to search within the repo (git only)</td>
 						</tr>
-						<tr class="border-b border-[color:hsl(var(--bc-border))]">
+						<tr class="border-b border-[hsl(var(--bc-border))]">
 							<td class="py-2 pr-4"><code class="bc-inlineCode">searchPaths</code></td>
 							<td class="py-2 pr-4">No</td>
-							<td class="py-2">Multiple subdirectories to search within the repo</td>
+							<td class="py-2">Multiple subdirectories to search within the repo (git only)</td>
 						</tr>
 						<tr>
 							<td class="py-2 pr-4"><code class="bc-inlineCode">specialNotes</code></td>
@@ -290,7 +300,7 @@ Available resources: svelte, effect`;
 			<div class="bc-codeFrame">
 				<div class="flex items-start justify-between gap-3 p-4">
 					<textarea
-						class="block w-full min-w-0 flex-1 resize-y bg-transparent text-sm leading-relaxed text-[color:hsl(var(--bc-fg))] outline-none"
+						class="block w-full min-w-0 flex-1 resize-y bg-transparent text-sm leading-relaxed text-[hsl(var(--bc-fg))] outline-none"
 						rows="10"
 						readonly
 						value={AGENTS_MD_SNIPPET}

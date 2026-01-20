@@ -42,11 +42,17 @@
 <svelte:head>
 	<link rel="icon" href={favicon} />
 	<title>Better Context</title>
-	<meta name="description" content="btca: CLI for asking questions about codebases." />
+	<meta
+		name="description"
+		content="Better Context: CLI + web app for answering questions from real source code."
+	/>
 
 	<meta property="og:type" content="website" />
 	<meta property="og:title" content="The Better Context App" />
-	<meta property="og:description" content="btca: CLI for asking questions about codebases." />
+	<meta
+		property="og:description"
+		content="Better Context: CLI + web app for answering questions from real source code."
+	/>
 	<meta property="og:url" content="https://btca.dev" />
 	<meta property="og:site_name" content="The Better Context App" />
 	<meta property="og:image" content={ogImageUrl} />
@@ -55,7 +61,10 @@
 
 	<meta name="twitter:card" content="summary_large_image" />
 	<meta name="twitter:title" content="The Better Context App" />
-	<meta name="twitter:description" content="btca: CLI for asking questions about codebases." />
+	<meta
+		name="twitter:description"
+		content="Better Context: CLI + web app for answering questions from real source code."
+	/>
 	<meta name="twitter:image" content={ogImageUrl} />
 </svelte:head>
 
@@ -82,10 +91,10 @@
 				</a>
 
 				<nav aria-label="Primary" class="hidden items-center gap-1 sm:flex">
-					<a class="bc-navLink" href="/getting-started">Get Started</a>
-					<a class="bc-navLink" href="/config">Config</a>
-					<a class="bc-navLink" href="/commands">Commands</a>
+					<a class="bc-navLink" href="/cli">CLI</a>
+					<a class="bc-navLink" href="/web">Web</a>
 					<a class="bc-navLink" href="/pricing">Pricing</a>
+					<a class="bc-navLink" href="/resources">Resources</a>
 				</nav>
 
 				<div class="flex items-center gap-2">
@@ -136,10 +145,10 @@
 				<div class="bc-container pb-4 sm:hidden">
 					<div class="bc-card bc-ring p-2">
 						<nav aria-label="Mobile" class="flex flex-col">
-							<a class="bc-navLink" href="/getting-started">Get Started</a>
-							<a class="bc-navLink" href="/config">Config</a>
-							<a class="bc-navLink" href="/commands">Commands</a>
+							<a class="bc-navLink" href="/cli">CLI</a>
+							<a class="bc-navLink" href="/web">Web</a>
 							<a class="bc-navLink" href="/pricing">Pricing</a>
+							<a class="bc-navLink" href="/resources">Resources</a>
 							<a class="bc-navLink" href="/app">Go to App</a>
 							<a
 								class="bc-navLink"
@@ -160,7 +169,7 @@
 		</main>
 
 		<footer
-			class="mt-10 border-t border-[color:color-mix(in_oklab,hsl(var(--bc-border))_55%,transparent)]"
+			class="mt-10 border-t border-[color-mix(in_oklab,hsl(var(--bc-border))_55%,transparent)]"
 		>
 			<div class="bc-container grid gap-8 py-12 sm:grid-cols-2">
 				<div class="flex flex-col gap-2">
@@ -170,10 +179,10 @@
 				</div>
 
 				<div class="flex flex-wrap items-start gap-2 sm:justify-end">
-					<a class="bc-chip" href="/getting-started">Get Started</a>
-					<a class="bc-chip" href="/config">Config</a>
-					<a class="bc-chip" href="/commands">Commands</a>
+					<a class="bc-chip" href="/cli">CLI</a>
+					<a class="bc-chip" href="/web">Web</a>
 					<a class="bc-chip" href="/pricing">Pricing</a>
+					<a class="bc-chip" href="/resources">Resources</a>
 					<a class="bc-chip" href="/app">Go to App</a>
 					<a
 						class="bc-chip"

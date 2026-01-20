@@ -32,14 +32,6 @@ const baseResources: GlobalResourceInput[] = [
 	},
 	{
 		type: 'git',
-		name: 'autumn',
-		url: 'https://github.com/useautumn/typescript',
-		branch: 'main',
-		specialNotes:
-			'this is the TS SDK and cli for autumn. the cli is in atmn/ and the important sdk stuff is in package/'
-	},
-	{
-		type: 'git',
 		name: 'convexWorkpools',
 		url: 'https://github.com/get-convex/workpool',
 		branch: 'main',
@@ -77,6 +69,7 @@ const baseResources: GlobalResourceInput[] = [
 		name: 'tailwind',
 		url: 'https://github.com/tailwindlabs/tailwindcss.com',
 		branch: 'main',
+		logoKey: 'tailwind',
 		searchPath: 'src/docs'
 	},
 	{
@@ -84,6 +77,7 @@ const baseResources: GlobalResourceInput[] = [
 		name: 'hono',
 		url: 'https://github.com/honojs/website',
 		branch: 'main',
+		logoKey: 'hono',
 		searchPath: 'docs'
 	},
 	{
@@ -104,23 +98,18 @@ const baseResources: GlobalResourceInput[] = [
 	},
 	{
 		type: 'git',
-		name: 'commander',
-		url: 'https://github.com/tj/commander.js',
-		branch: 'master',
-		searchPath: 'docs'
-	},
-	{
-		type: 'git',
 		name: 'vite',
 		url: 'https://github.com/vitejs/vite',
 		branch: 'main',
+		logoKey: 'vite',
 		searchPath: 'docs'
 	},
 	{
 		type: 'git',
 		name: 'opencode',
 		url: 'https://github.com/anomalyco/opencode',
-		branch: 'dev'
+		branch: 'dev',
+		logoKey: 'opencode'
 	},
 	{
 		type: 'git',

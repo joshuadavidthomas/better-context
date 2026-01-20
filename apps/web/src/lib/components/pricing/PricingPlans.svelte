@@ -24,10 +24,10 @@
 	}: Props = $props();
 
 	const features = [
-		'Claude Haiku 4.5 model tuned for docs QA',
-		'Dedicated Daytona sandbox per session',
+		'Claude Haiku 4.5',
+		'Dedicated sandbox',
 		'Monthly usage budget across tokens + sandbox time',
-		'Priority support via X'
+		'Priority support'
 	];
 
 	function handleAction() {
@@ -54,10 +54,9 @@
 				<span class="bc-badge">Pro Plan</span>
 			</div>
 			<div class="max-w-2xl">
-				<h1 class="text-4xl font-semibold tracking-tight">One plan. Built to stay fast.</h1>
+				<h1 class="text-4xl font-semibold tracking-tight">Learn by Searching the Source</h1>
 				<p class="bc-muted mt-3 text-base">
-					Ship with Haiku 4.5, fresh sandboxes, and predictable usage budgets. Everything you need
-					to keep btca reliable.
+					A powerful web chat interface for researching technologies by searching their source
 				</p>
 			</div>
 		</div>
@@ -77,8 +76,7 @@
 			<div
 				class="bc-card mt-6 border-[hsl(var(--bc-border))] bg-[hsl(var(--bc-surface-2))] p-4 text-xs"
 			>
-				Usage is enforced monthly across tokens in/out and sandbox hours. You'll only see
-				percentages, never raw counts.
+				Usage is enforced monthly across tokens in/out and sandbox hours
 			</div>
 		</div>
 

@@ -477,7 +477,7 @@
 	}
 
 	.bc-input::placeholder {
-		color: hsl(var(--bc-fg-muted));
+		color: hsl(var(--bc-fg-muted) / 0.35);
 	}
 
 	.bc-muted {

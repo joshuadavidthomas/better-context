@@ -2,9 +2,13 @@
 	import ClerkSvg from '$lib/svgs/ClerkSvg.svelte';
 	import ConvexSvg from '$lib/svgs/ConvexSvg.svelte';
 	import DaytonaSvg from '$lib/svgs/DaytonaSvg.svelte';
+	import HonoSvg from '$lib/svgs/HonoSvg.svelte';
+	import OpencodeSvg from '$lib/svgs/OpencodeSvg.svelte';
 	import SolidSvg from '$lib/svgs/SolidSvg.svelte';
 	import SvelteSvg from '$lib/svgs/SvelteSvg.svelte';
+	import TailwindSvg from '$lib/svgs/TailwindSvg.svelte';
 	import TurboSvg from '$lib/svgs/TurboSvg.svelte';
+	import ViteSvg from '$lib/svgs/ViteSvg.svelte';
 	import ZodSvg from '$lib/svgs/ZodSvg.svelte';
 
 	let {
@@ -27,12 +31,20 @@
 				return ConvexSvg;
 			case 'clerk':
 				return ClerkSvg;
+			case 'hono':
+				return HonoSvg;
+			case 'opencode':
+				return OpencodeSvg;
 			case 'zod':
 				return ZodSvg;
 			case 'solid':
 				return SolidSvg;
+			case 'tailwind':
+				return TailwindSvg;
 			case 'turbo':
 				return TurboSvg;
+			case 'vite':
+				return ViteSvg;
 			default:
 				return null;
 		}

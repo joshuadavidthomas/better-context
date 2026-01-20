@@ -360,6 +360,24 @@
 	let mentionSelectedIndex = $state(0);
 	let mentionMenuOpen = $state(false);
 	let mentionRange = $state<{ start: number; end: number; query: string } | null>(null);
+	let mentionMenuEl = $state<HTMLDivElement | null>(null);
+	let mentionItemEls = $state<Array<HTMLDivElement | null>>([]);
+
+	$effect(() => {
+		if (!mentionMenuOpen) {
+			mentionItemEls = [];
+			return;
+		}
+		const target = mentionItemEls[mentionSelectedIndex];
+		if (!target || !mentionMenuEl) return;
+		const menuRect = mentionMenuEl.getBoundingClientRect();
+		const itemRect = target.getBoundingClientRect();
+		if (itemRect.top < menuRect.top) {
+			mentionMenuEl.scrollTop -= menuRect.top - itemRect.top;
+		} else if (itemRect.bottom > menuRect.bottom) {
+			mentionMenuEl.scrollTop += itemRect.bottom - menuRect.bottom;
+		}
+	});
 
 	function getMentionAtCursor(value: string, cursor: number) {
 		const regex = /(^|(?<=\s))@\w*/g;
@@ -578,13 +596,14 @@
 
 			<div class="input-wrapper">
 				{#if mentionMenuOpen}
-					<div class="mention-menu">
+					<div class="mention-menu" bind:this={mentionMenuEl}>
 						{#each getFilteredResources() as res, i (res.name)}
 							<div
 								class="mention-item {i === mentionSelectedIndex ? 'mention-item-selected' : ''}"
 								role="option"
 								tabindex="-1"
 								aria-selected={i === mentionSelectedIndex}
+								bind:this={mentionItemEls[i]}
 								onmousedown={(e) => {
 									e.preventDefault();
 									applyMention(res.name);

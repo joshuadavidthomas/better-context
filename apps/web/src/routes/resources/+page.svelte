@@ -67,7 +67,12 @@
 	};
 </script>
 
-<section class="bc-container flex flex-col gap-12 pb-20 pt-16">
+<svelte:head>
+	<title>btca | Resources</title>
+	<meta name="description" content="Curated git repositories you can add to btca as resources." />
+</svelte:head>
+
+<section class="flex flex-col gap-14">
 	<header class="flex flex-col gap-5">
 		<div class="bc-kicker">
 			<span class="bc-kickerDot"></span>
@@ -76,7 +81,7 @@
 
 		<h1 class="bc-h1 text-balance text-5xl sm:text-6xl">Global resources</h1>
 		<p class="bc-prose max-w-2xl text-pretty text-base sm:text-lg">
-			A curated list of git repositories you can add to your btca config in one click.
+			Some useful resources to add to btca. You can also add any other git repo!
 		</p>
 	</header>
 
@@ -113,9 +118,6 @@
 							<p class="bc-muted mt-1 text-xs break-all">{resource.url}</p>
 							{#if getSearchPath(resource)}
 								<p class="bc-muted mt-2 text-xs">Search path: {getSearchPath(resource)}</p>
-							{/if}
-							{#if resource.specialNotes}
-								<p class="bc-muted mt-2 text-xs italic">{resource.specialNotes}</p>
 							{/if}
 						</div>
 					</div>
