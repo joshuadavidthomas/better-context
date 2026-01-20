@@ -12,14 +12,14 @@ import { instances } from '../apiHelpers';
 const instanceQueries = instances.queries;
 const instanceMutations = instances.mutations;
 
-const BTCA_SNAPSHOT_NAME = 'btca-sandbox';
+const BTCA_SNAPSHOT_NAME = 'btca-app-sandbox';
 const BTCA_SERVER_PORT = 3000;
 const SANDBOX_IDLE_MINUTES = 2;
 const DEFAULT_MODEL = 'claude-haiku-4-5';
 const DEFAULT_PROVIDER = 'opencode';
 const BTCA_SERVER_SESSION = 'btca-server-session';
-const BTCA_PACKAGE_NAME = 'btca';
-const OPENCODE_PACKAGE_NAME = 'opencode-ai';
+const BTCA_PACKAGE_NAME = 'btca@latest';
+const OPENCODE_PACKAGE_NAME = 'opencode-ai@latest';
 
 const instanceArgs = { instanceId: v.id('instances') };
 
@@ -252,6 +252,11 @@ export const provision = action({
 				opencodeVersion: versions.opencodeVersion
 			});
 			await ctx.runMutation(instanceMutations.touchActivity, {
+				instanceId: args.instanceId
+			});
+
+			// Schedule an update to ensure packages are up to date (snapshot may have older versions)
+			await ctx.scheduler.runAfter(0, instances.actions.update, {
 				instanceId: args.instanceId
 			});
 

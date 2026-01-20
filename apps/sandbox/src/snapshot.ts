@@ -34,7 +34,15 @@ async function main(): Promise<void> {
 	console.log('This may take a few minutes...\n');
 
 	const snapshot = await daytona.snapshot.create(
-		{ name: BTCA_SNAPSHOT_NAME, image },
+		{
+			name: BTCA_SNAPSHOT_NAME,
+			image,
+			resources: {
+				cpu: 2,
+				memory: 4,
+				disk: 10
+			}
+		},
 		{ onLogs: (log) => console.log('[snapshot]', log) }
 	);
 
