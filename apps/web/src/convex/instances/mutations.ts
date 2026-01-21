@@ -130,6 +130,13 @@ export const setError = mutation({
 	}
 });
 
+export const clearError = mutation({
+	args: { instanceId: v.id('instances') },
+	handler: async (ctx, args) => {
+		await ctx.db.patch(args.instanceId, { errorMessage: undefined });
+	}
+});
+
 export const setVersions = mutation({
 	args: {
 		instanceId: v.id('instances'),

@@ -19,6 +19,7 @@ export const AnalyticsEvents = {
 	SANDBOX_STOPPED: 'sandbox_stopped',
 	SANDBOX_UPDATED: 'sandbox_updated',
 	SANDBOX_DESTROYED: 'sandbox_destroyed',
+	SANDBOX_RESET: 'sandbox_reset',
 
 	THREAD_CREATED: 'thread_created',
 	THREAD_DELETED: 'thread_deleted',

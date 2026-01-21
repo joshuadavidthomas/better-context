@@ -55,5 +55,6 @@ export const ClientAnalyticsEvents = {
 	STREAM_CANCELLED: 'stream_cancelled',
 	INSTANCE_WAKE_REQUESTED: 'instance_wake_requested',
 	INSTANCE_STOP_REQUESTED: 'instance_stop_requested',
-	INSTANCE_UPDATE_REQUESTED: 'instance_update_requested'
+	INSTANCE_UPDATE_REQUESTED: 'instance_update_requested',
+	INSTANCE_RESET_REQUESTED: 'instance_reset_requested'
 } as const;

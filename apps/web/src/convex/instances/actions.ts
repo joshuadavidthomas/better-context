@@ -612,6 +612,79 @@ export const updateMyInstance = action({
 	}
 });
 
+export const resetMyInstance = action({
+	args: {},
+	handler: async (ctx): Promise<{ reset: boolean }> => {
+		const instance = await requireAuthenticatedInstance(ctx);
+		const sandboxId = instance.sandboxId;
+
+		await ctx.runMutation(instanceMutations.updateState, {
+			instanceId: instance._id,
+			state: 'provisioning'
+		});
+
+		if (sandboxId) {
+			const daytona = getDaytona();
+			try {
+				const sandbox = await daytona.get(sandboxId);
+				await sandbox.delete(60);
+			} catch {
+				// Ignore deletion errors - sandbox may already be gone
+			}
+		}
+
+		await ctx.runMutation(instanceMutations.setServerUrl, {
+			instanceId: instance._id,
+			serverUrl: ''
+		});
+
+		await ctx.runMutation(instanceMutations.clearError, {
+			instanceId: instance._id
+		});
+
+		await ctx.scheduler.runAfter(0, internal.analytics.trackEvent, {
+			distinctId: instance.clerkId,
+			event: AnalyticsEvents.SANDBOX_RESET,
+			properties: {
+				instanceId: instance._id,
+				previousSandboxId: sandboxId
+			}
+		});
+
+		await ctx.scheduler.runAfter(0, instances.actions.provision, {
+			instanceId: instance._id
+		});
+
+		return { reset: true };
+	}
+});
+
+export const syncResources = internalAction({
+	args: instanceArgs,
+	handler: async (ctx, args): Promise<{ synced: boolean }> => {
+		const instance = await requireInstance(ctx, args.instanceId);
+		if (!instance.sandboxId || instance.state !== 'running') {
+			return { synced: false };
+		}
+
+		try {
+			const resources = await getResourceConfigs(ctx, args.instanceId);
+			const daytona = getDaytona();
+			const sandbox = await daytona.get(instance.sandboxId);
+
+			if (sandbox.state !== 'started') {
+				return { synced: false };
+			}
+
+			await uploadBtcaConfig(sandbox, resources);
+			return { synced: true };
+		} catch (error) {
+			console.error('Failed to sync resources:', getErrorMessage(error));
+			return { synced: false };
+		}
+	}
+});
+
 type CachedResourceInfo = {
 	name: string;
 	url: string;

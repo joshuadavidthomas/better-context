@@ -5,12 +5,13 @@
 		Loader2,
 		Play,
 		RefreshCcw,
+		RotateCcw,
 		Server,
 		Square
 	} from '@lucide/svelte';
 	import { getInstanceStore } from '$lib/stores/instance.svelte';
 
-	type InstanceAction = 'wake' | 'stop' | 'update';
+	type InstanceAction = 'wake' | 'stop' | 'update' | 'reset';
 
 	const instanceStore = getInstanceStore();
 	let pendingAction = $state<InstanceAction | null>(null);
@@ -112,11 +113,13 @@
 		['provisioning', 'starting', 'stopping', 'updating'].includes(instanceStore.state ?? '')
 	);
 	const hasInstance = $derived.by(() => Boolean(instanceStore.instance));
+	const isErrorState = $derived.by(() => instanceStore.state === 'error');
 	const canWake = $derived.by(
 		() => instanceStore.state === 'stopped' || instanceStore.state === 'error'
 	);
 	const canStop = $derived.by(() => instanceStore.state === 'running');
 	const canUpdate = $derived.by(() => ['running', 'stopped'].includes(instanceStore.state ?? ''));
+	const canReset = $derived.by(() => instanceStore.state === 'error');
 
 	const updateSummary = $derived.by(() => {
 		const parts: string[] = [];
@@ -157,6 +160,8 @@
 				await instanceStore.wake();
 			} else if (action === 'stop') {
 				await instanceStore.stop();
+			} else if (action === 'reset') {
+				await instanceStore.reset();
 			} else {
 				await instanceStore.update();
 			}
@@ -236,6 +241,31 @@
 						<StateIcon size={16} class={stateInfo.spin ? 'animate-spin' : ''} />
 					</div>
 				</div>
+				{#if isErrorState}
+					<div class="flex flex-col gap-2 rounded border border-red-500/30 bg-red-500/10 p-3">
+						<div class="text-xs font-medium text-red-500">Instance needs attention</div>
+						<p class="text-xs text-red-400">
+							Try resetting your instance. This will fully restart it from scratch.
+						</p>
+						<button
+							type="button"
+							class="bc-btn bc-btn-primary text-xs"
+							onclick={() => runAction('reset')}
+							disabled={!canReset || isTransitioning || pendingAction !== null}
+						>
+							{#if pendingAction === 'reset'}
+								<Loader2 size={12} class="animate-spin" />
+								Resetting...
+							{:else}
+								<RotateCcw size={12} />
+								Reset instance
+							{/if}
+						</button>
+						<p class="text-[10px] text-red-400/70">
+							If this doesn't work, please contact support.
+						</p>
+					</div>
+				{/if}
 				<div class="flex flex-col gap-2">
 					<button
 						type="button"

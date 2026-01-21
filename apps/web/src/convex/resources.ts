@@ -4,6 +4,7 @@ import { mutation, query } from './_generated/server';
 
 import { internal } from './_generated/api';
 import { AnalyticsEvents } from './analyticsEvents';
+import { instances } from './apiHelpers';
 
 export const listGlobal = query({
 	args: {},
@@ -80,6 +81,10 @@ export const addCustomResource = mutation({
 			createdAt: Date.now()
 		});
 
+		await ctx.scheduler.runAfter(0, instances.internalActions.syncResources, {
+			instanceId: args.instanceId
+		});
+
 		if (instance) {
 			await ctx.scheduler.runAfter(0, internal.analytics.trackEvent, {
 				distinctId: instance.clerkId,
@@ -107,6 +112,12 @@ export const removeCustomResource = mutation({
 		const instance = resource ? await ctx.db.get(resource.instanceId) : null;
 
 		await ctx.db.delete(args.resourceId);
+
+		if (resource) {
+			await ctx.scheduler.runAfter(0, instances.internalActions.syncResources, {
+				instanceId: resource.instanceId
+			});
+		}
 
 		if (instance && resource) {
 			await ctx.scheduler.runAfter(0, internal.analytics.trackEvent, {
