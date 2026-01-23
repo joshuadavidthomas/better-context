@@ -81,7 +81,8 @@ export default defineSchema({
 		keyPrefix: v.string(),
 		createdAt: v.number(),
 		lastUsedAt: v.optional(v.number()),
-		revokedAt: v.optional(v.number())
+		revokedAt: v.optional(v.number()),
+		usageCount: v.optional(v.number())
 	})
 		.index('by_instance', ['instanceId'])
 		.index('by_key_hash', ['keyHash']),

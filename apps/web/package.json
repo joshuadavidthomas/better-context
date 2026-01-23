@@ -43,7 +43,7 @@
 		"@shikijs/langs": "^3.20.0",
 		"@shikijs/themes": "^3.20.0",
 		"@tmcp/adapter-zod": "^0.1.7",
-		"@tmcp/transport-http": "^0.8.3",
+		"@tmcp/transport-http": "^0.8.4",
 		"ai": "^6.0.42",
 		"autumn-js": "^0.1.69",
 		"convex": "^1.31.5",
