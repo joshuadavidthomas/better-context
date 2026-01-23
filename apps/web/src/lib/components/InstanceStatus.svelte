@@ -261,9 +261,7 @@
 								Reset instance
 							{/if}
 						</button>
-						<p class="text-[10px] text-red-400/70">
-							If this doesn't work, please contact support.
-						</p>
+						<p class="text-[10px] text-red-400/70">If this doesn't work, please contact support.</p>
 					</div>
 				{/if}
 				<div class="flex flex-col gap-2">

@@ -1,6 +1,6 @@
 # MCP Server Implementation Plan
 
-This document outlines the complete implementation plan for adding an MCP (Model Context Protocol) server to Better Context, hosted as a Convex HTTP action.
+This document outlines the complete implementation plan for adding an MCP (Model Context Protocol) server to Better Context, hosted as a SvelteKit HTTP endpoint with Convex handling the backend logic.
 
 ## Overview
 
@@ -8,7 +8,58 @@ The MCP server will provide two tools:
 1. **`listResources`** - Lists all available documentation resources for the authenticated user
 2. **`ask`** - Ask questions about specific resources (non-streaming)
 
-Authentication uses API keys stored in Convex. The server is stateless (no SSE), making it compatible with Convex HTTP actions.
+Authentication uses API keys stored in Convex. The MCP protocol layer lives in SvelteKit, while Convex handles business logic (sandbox orchestration, usage tracking, etc.).
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         MCP Client                              │
+│              (Cursor, Claude Desktop, opencode)                 │
+└─────────────────────────────────────────────────────────────────┘
+                                │
+                                │ HTTP POST /api/mcp
+                                │ Authorization: Bearer btca_xxx
+                                ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    SvelteKit Endpoint                           │
+│                  src/routes/api/mcp/+server.ts                  │
+│                                                                 │
+│  • TMCP server + HTTP transport                                 │
+│  • API key validation (calls Convex query)                      │
+│  • MCP protocol handling (JSON-RPC)                             │
+│  • Tool dispatch                                                │
+└─────────────────────────────────────────────────────────────────┘
+                                │
+                                │ ConvexHttpClient
+                                ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                         Convex                                  │
+│                                                                 │
+│  Queries:                                                       │
+│  • api.apiKeys.validate - Validate API key                      │
+│  • api.resources.listAvailable - List user's resources          │
+│                                                                 │
+│  Mutations:                                                     │
+│  • api.apiKeys.touchLastUsed - Update usage stats               │
+│                                                                 │
+│  Actions:                                                       │
+│  • api.mcp.ask - Handle ask tool (NEW)                          │
+│    └─ Validates resources                                       │
+│    └─ Checks usage limits                                       │
+│    └─ Wakes sandbox if needed                                   │
+│    └─ Calls sandbox /question endpoint                          │
+│    └─ Tracks usage                                              │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Why SvelteKit Instead of Convex HTTP?
+
+1. **Stateful if needed** - SvelteKit can maintain session state; Convex actions are stateless
+2. **Module-level singletons work** - `mcpServer` and `transport` persist across requests
+3. **Simpler Convex code** - No MCP protocol handling in Convex, just clean actions/queries
+4. **Easier debugging** - MCP layer is in familiar SvelteKit territory
+5. **Consistent patterns** - Already calling Convex from SvelteKit in `billing.remote.ts`
 
 ---
 
@@ -114,20 +165,18 @@ This will add:
 
 ---
 
-## Step 3: MCP Server Implementation
+## Step 3: Convex MCP Action
 
-### 3.1 Create MCP Server Module
+### 3.1 Create MCP Action Module
 
 **File:** `apps/web/src/convex/mcp.ts` (NEW FILE)
 
-```typescript
-import { McpServer } from 'tmcp';
-import { HttpTransport } from '@tmcp/transport-http';
-import { ZodJsonSchemaAdapter } from '@tmcp/adapter-zod';
-import { z } from 'zod';
+This action handles the `ask` tool logic. It's called from SvelteKit and encapsulates all the sandbox interaction.
 
-import type { ActionCtx } from './_generated/server.js';
-import type { Id } from './_generated/dataModel.js';
+```typescript
+import { v } from 'convex/values';
+
+import { action } from './_generated/server';
 import { api } from './_generated/api.js';
 import { instances } from './apiHelpers.js';
 
@@ -135,248 +184,235 @@ const instanceActions = instances.actions;
 const instanceMutations = instances.mutations;
 const instanceQueries = instances.queries;
 
-export type McpContext = {
-  ctx: ActionCtx;
-  instanceId: Id<'instances'>;
-  clerkId: string;
-};
+export const ask = action({
+  args: {
+    instanceId: v.id('instances'),
+    question: v.string(),
+    resources: v.array(v.string())
+  },
+  handler: async (ctx, args) => {
+    const { instanceId, question, resources } = args;
 
-const createMcpServer = () => {
-  const server = new McpServer(
-    {
-      name: 'better-context',
-      version: '1.0.0',
-      description: 'Better Context MCP Server - Documentation and codebase context'
-    },
-    {
-      adapter: new ZodJsonSchemaAdapter(),
-      capabilities: {
-        tools: { listChanged: false }
-      }
-    }
-  );
+    const availableResources = await ctx.runQuery(api.resources.listAvailable, { instanceId });
+    const allResourceNames = [
+      ...availableResources.global.map((r) => r.name),
+      ...availableResources.custom.map((r) => r.name)
+    ];
 
-  server.tool(
-    {
-      name: 'listResources',
-      description: 'List all available documentation resources. Call this first to see what resources you can query.'
-    },
-    async () => {
-      const mcpCtx = server.ctx.custom as McpContext | undefined;
-      if (!mcpCtx) {
-        return {
-          content: [{ type: 'text', text: JSON.stringify({ error: 'Not authenticated' }) }],
-          isError: true
-        };
-      }
-
-      const resources = await mcpCtx.ctx.runQuery(api.resources.listAvailable, {
-        instanceId: mcpCtx.instanceId
-      });
-
+    const invalidResources = resources.filter((r) => !allResourceNames.includes(r));
+    if (invalidResources.length > 0) {
       return {
-        content: [{ type: 'text', text: JSON.stringify(resources, null, 2) }]
+        ok: false as const,
+        error: `Invalid resources: ${invalidResources.join(', ')}. Use listResources to see available resources.`
       };
     }
-  );
 
-  server.tool(
-    {
-      name: 'ask',
-      description:
-        'Ask a question about specific documentation resources. You must call listResources first to get available resource names.',
-      inputSchema: z.object({
-        question: z.string().describe('The question to ask about the resources'),
-        resources: z
-          .array(z.string())
-          .min(1)
-          .describe('Array of resource names to query (from listResources). At least one required.')
-      })
-    },
-    async ({ question, resources }) => {
-      const mcpCtx = server.ctx.custom as McpContext | undefined;
-      if (!mcpCtx) {
-        return {
-          content: [{ type: 'text', text: JSON.stringify({ error: 'Not authenticated' }) }],
-          isError: true
-        };
-      }
-
-      try {
-        const result = await handleAskTool(mcpCtx, question, resources);
-        return {
-          content: [{ type: 'text', text: result }]
-        };
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unknown error';
-        return {
-          content: [{ type: 'text', text: JSON.stringify({ error: message }) }],
-          isError: true
-        };
-      }
-    }
-  );
-
-  return server;
-};
-
-async function handleAskTool(
-  mcpCtx: McpContext,
-  question: string,
-  resources: string[]
-): Promise<string> {
-  const { ctx, instanceId } = mcpCtx;
-
-  // Validate resources exist for this user
-  const availableResources = await ctx.runQuery(api.resources.listAvailable, { instanceId });
-  const allResourceNames = [
-    ...availableResources.global.map((r) => r.name),
-    ...availableResources.custom.map((r) => r.name)
-  ];
-
-  const invalidResources = resources.filter((r) => !allResourceNames.includes(r));
-  if (invalidResources.length > 0) {
-    throw new Error(
-      `Invalid resources: ${invalidResources.join(', ')}. Use listResources to see available resources.`
-    );
-  }
-
-  // Check usage limits
-  const usageCheck = await ctx.runAction(api.usage.ensureUsageAvailable, {
-    instanceId,
-    question,
-    resources
-  });
-
-  if (!usageCheck?.ok) {
-    const reason = (usageCheck as { reason?: string }).reason;
-    if (reason === 'subscription_required') {
-      throw new Error('Subscription required. Visit Better Context to subscribe.');
-    }
-    if (reason === 'free_limit_reached') {
-      throw new Error('Free message limit reached. Upgrade to Pro to continue.');
-    }
-    throw new Error('Usage limits reached.');
-  }
-
-  // Get instance and ensure it's running
-  const instance = await ctx.runQuery(instanceQueries.get, { instanceId });
-  if (!instance) {
-    throw new Error('Instance not found');
-  }
-
-  if (instance.state === 'error') {
-    throw new Error('Instance is in an error state');
-  }
-
-  if (instance.state === 'provisioning' || instance.state === 'unprovisioned') {
-    throw new Error('Instance is still provisioning');
-  }
-
-  // Wake instance if needed
-  let serverUrl = instance.serverUrl;
-  if (instance.state !== 'running' || !serverUrl) {
-    if (!instance.sandboxId) {
-      throw new Error('Instance does not have a sandbox');
-    }
-    const wakeResult = await ctx.runAction(instanceActions.wake, { instanceId });
-    serverUrl = wakeResult.serverUrl;
-    if (!serverUrl) {
-      throw new Error('Failed to wake instance');
-    }
-  }
-
-  // Make request to sandbox server (non-streaming)
-  const response = await fetch(`${serverUrl}/question`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      question,
-      resources,
-      quiet: true
-    })
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(errorText || `Server error: ${response.status}`);
-  }
-
-  const result = await response.json();
-
-  // Track usage
-  const usageData = usageCheck as {
-    inputTokens?: number;
-    sandboxUsageHours?: number;
-  };
-
-  try {
-    await ctx.runAction(api.usage.finalizeUsage, {
+    const usageCheck = await ctx.runAction(api.usage.ensureUsageAvailable, {
       instanceId,
-      questionTokens: usageData.inputTokens ?? 0,
-      outputChars: result.text?.length ?? 0,
-      reasoningChars: 0,
-      resources,
-      sandboxUsageHours: usageData.sandboxUsageHours ?? 0
+      question,
+      resources
     });
-  } catch (error) {
-    console.error('Failed to track usage:', error);
+
+    if (!usageCheck?.ok) {
+      const reason = (usageCheck as { reason?: string }).reason;
+      if (reason === 'subscription_required') {
+        return { ok: false as const, error: 'Subscription required. Visit Better Context to subscribe.' };
+      }
+      if (reason === 'free_limit_reached') {
+        return { ok: false as const, error: 'Free message limit reached. Upgrade to Pro to continue.' };
+      }
+      return { ok: false as const, error: 'Usage limits reached.' };
+    }
+
+    const instance = await ctx.runQuery(instanceQueries.get, { instanceId });
+    if (!instance) {
+      return { ok: false as const, error: 'Instance not found' };
+    }
+
+    if (instance.state === 'error') {
+      return { ok: false as const, error: 'Instance is in an error state' };
+    }
+
+    if (instance.state === 'provisioning' || instance.state === 'unprovisioned') {
+      return { ok: false as const, error: 'Instance is still provisioning' };
+    }
+
+    let serverUrl = instance.serverUrl;
+    if (instance.state !== 'running' || !serverUrl) {
+      if (!instance.sandboxId) {
+        return { ok: false as const, error: 'Instance does not have a sandbox' };
+      }
+      const wakeResult = await ctx.runAction(instanceActions.wake, { instanceId });
+      serverUrl = wakeResult.serverUrl;
+      if (!serverUrl) {
+        return { ok: false as const, error: 'Failed to wake instance' };
+      }
+    }
+
+    const response = await fetch(`${serverUrl}/question`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        question,
+        resources,
+        quiet: true
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return { ok: false as const, error: errorText || `Server error: ${response.status}` };
+    }
+
+    const result = await response.json();
+
+    const usageData = usageCheck as {
+      inputTokens?: number;
+      sandboxUsageHours?: number;
+    };
+
+    try {
+      await ctx.runAction(api.usage.finalizeUsage, {
+        instanceId,
+        questionTokens: usageData.inputTokens ?? 0,
+        outputChars: result.text?.length ?? 0,
+        reasoningChars: 0,
+        resources,
+        sandboxUsageHours: usageData.sandboxUsageHours ?? 0
+      });
+    } catch (error) {
+      console.error('Failed to track usage:', error);
+    }
+
+    await ctx.runMutation(instanceMutations.touchActivity, { instanceId });
+
+    return {
+      ok: true as const,
+      text: result.text ?? JSON.stringify(result)
+    };
   }
-
-  // Touch instance activity
-  await ctx.runMutation(instanceMutations.touchActivity, { instanceId });
-
-  return result.text ?? JSON.stringify(result);
-}
-
-// Singleton instances
-let mcpServer: ReturnType<typeof createMcpServer> | null = null;
-let httpTransport: HttpTransport | null = null;
-
-export const getMcpServer = () => {
-  if (!mcpServer) {
-    mcpServer = createMcpServer();
-  }
-  return mcpServer;
-};
-
-export const getMcpTransport = () => {
-  if (!httpTransport) {
-    httpTransport = new HttpTransport(getMcpServer(), { path: '/mcp' });
-  }
-  return httpTransport;
-};
+});
 ```
 
 ### 3.2 Note on Non-Streaming Endpoint
 
-The `ask` tool uses `/question` (non-streaming) instead of `/question/stream`. Verify this endpoint exists on the sandbox server. If it doesn't exist, you may need to:
+The `ask` action uses `/question` (non-streaming) instead of `/question/stream`. Verify this endpoint exists on the sandbox server. If it doesn't exist, you may need to:
 
 1. Add a `/question` POST endpoint to the sandbox server that returns `{ text: string }`, OR
 2. Adapt the streaming endpoint to collect all chunks and return the final result
 
 ---
 
-## Step 4: HTTP Routes
+## Step 4: SvelteKit MCP Endpoint
 
-### 4.1 Update HTTP Router
+### 4.1 Create MCP Server Route
 
-**File:** `apps/web/src/convex/http.ts`
-
-Add the following imports at the top:
+**File:** `apps/web/src/routes/api/mcp/+server.ts` (NEW FILE)
 
 ```typescript
-import { getMcpTransport, type McpContext } from './mcp.js';
-```
+import { McpServer } from 'tmcp';
+import { HttpTransport } from '@tmcp/transport-http';
+import { ZodJsonSchemaAdapter } from '@tmcp/adapter-zod';
+import { ConvexHttpClient } from 'convex/browser';
+import { z } from 'zod';
+import { env } from '$env/dynamic/public';
+import { api } from '$convex/_generated/api';
+import type { Id } from '$convex/_generated/dataModel';
+import type { RequestHandler } from './$types';
 
-Add the MCP handler and routes:
+interface AuthContext {
+  instanceId: Id<'instances'>;
+  clerkId: string;
+}
 
-```typescript
-// MCP Authentication Helper
-async function validateMcpAuth(
-  ctx: ActionCtx,
+const getConvexClient = () => new ConvexHttpClient(env.PUBLIC_CONVEX_URL!);
+
+const mcpServer = new McpServer(
+  {
+    name: 'better-context',
+    version: '1.0.0',
+    description: 'Better Context MCP Server - Documentation and codebase context'
+  },
+  {
+    adapter: new ZodJsonSchemaAdapter(),
+    capabilities: {
+      tools: { listChanged: false }
+    }
+  }
+);
+
+mcpServer.tool(
+  {
+    name: 'listResources',
+    description: 'List all available documentation resources. Call this first to see what resources you can query.'
+  },
+  async () => {
+    const ctx = mcpServer.ctx.custom as AuthContext | undefined;
+    if (!ctx) {
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ error: 'Not authenticated' }) }],
+        isError: true
+      };
+    }
+
+    const convex = getConvexClient();
+    const resources = await convex.query(api.resources.listAvailable, {
+      instanceId: ctx.instanceId
+    });
+
+    return {
+      content: [{ type: 'text', text: JSON.stringify(resources, null, 2) }]
+    };
+  }
+);
+
+mcpServer.tool(
+  {
+    name: 'ask',
+    description:
+      'Ask a question about specific documentation resources. You must call listResources first to get available resource names.',
+    inputSchema: z.object({
+      question: z.string().describe('The question to ask about the resources'),
+      resources: z
+        .array(z.string())
+        .min(1)
+        .describe('Array of resource names to query (from listResources). At least one required.')
+    })
+  },
+  async ({ question, resources }) => {
+    const ctx = mcpServer.ctx.custom as AuthContext | undefined;
+    if (!ctx) {
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ error: 'Not authenticated' }) }],
+        isError: true
+      };
+    }
+
+    const convex = getConvexClient();
+    const result = await convex.action(api.mcp.ask, {
+      instanceId: ctx.instanceId,
+      question,
+      resources
+    });
+
+    if (!result.ok) {
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ error: result.error }) }],
+        isError: true
+      };
+    }
+
+    return {
+      content: [{ type: 'text', text: result.text }]
+    };
+  }
+);
+
+const transport = new HttpTransport(mcpServer, { path: '/api/mcp' });
+
+async function validateApiKey(
   request: Request
-): Promise<{ valid: false; error: string } | { valid: true; context: McpContext }> {
+): Promise<{ valid: false; error: string } | { valid: true; context: AuthContext; keyId: Id<'apiKeys'> }> {
   const authHeader = request.headers.get('Authorization');
   if (!authHeader?.startsWith('Bearer ')) {
     return { valid: false, error: 'Missing or invalid Authorization header' };
@@ -387,77 +423,64 @@ async function validateMcpAuth(
     return { valid: false, error: 'Missing API key' };
   }
 
-  const validation = await ctx.runQuery(api.apiKeys.validate, { apiKey });
+  const convex = getConvexClient();
+  const validation = await convex.query(api.apiKeys.validate, { apiKey });
+
   if (!validation.valid) {
     return { valid: false, error: validation.error };
   }
 
-  // Touch last used (increment usage count)
-  await ctx.runMutation(api.apiKeys.touchLastUsed, { keyId: validation.keyId });
-
   return {
     valid: true,
+    keyId: validation.keyId,
     context: {
-      ctx,
       instanceId: validation.userId,
       clerkId: validation.clerkId
     }
   };
 }
 
-// MCP HTTP Action
-const mcpHandler = httpAction(async (ctx, request) => {
-  // Handle CORS preflight
-  if (request.method === 'OPTIONS') {
-    const origin = request.headers.get('Origin');
-    const headers = new Headers();
-    const corsHeaders = getCorsHeaders(origin);
-    for (const [key, value] of Object.entries(corsHeaders)) {
-      headers.set(key, value);
-    }
-    return new Response(null, { status: 204, headers });
-  }
-
-  // Only allow POST for MCP messages
-  if (request.method !== 'POST') {
-    return corsTextResponse(request, 'Method not allowed', 405);
-  }
-
-  // Validate API key
-  const auth = await validateMcpAuth(ctx, request);
+export const POST: RequestHandler = async ({ request }) => {
+  const auth = await validateApiKey(request);
   if (!auth.valid) {
-    return corsTextResponse(request, auth.error, 401);
+    return new Response(JSON.stringify({ error: auth.error }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json' }
+    });
   }
 
-  // Process MCP request
-  const transport = getMcpTransport();
+  const convex = getConvexClient();
+  await convex.mutation(api.apiKeys.touchLastUsed, { keyId: auth.keyId });
+
   const response = await transport.respond(request, auth.context);
+  return response ?? new Response('Not Found', { status: 404 });
+};
 
-  if (!response) {
-    return corsTextResponse(request, 'Not found', 404);
+export const GET: RequestHandler = async ({ request }) => {
+  const auth = await validateApiKey(request);
+  if (!auth.valid) {
+    return new Response(JSON.stringify({ error: auth.error }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json' }
+    });
   }
 
-  return withCors(request, response);
-});
+  const response = await transport.respond(request, auth.context);
+  return response ?? new Response('Not Found', { status: 404 });
+};
 
-// Add routes (add these near the other route definitions)
-http.route({
-  path: '/mcp',
-  method: 'POST',
-  handler: mcpHandler
-});
+export const DELETE: RequestHandler = async ({ request }) => {
+  const auth = await validateApiKey(request);
+  if (!auth.valid) {
+    return new Response(JSON.stringify({ error: auth.error }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
 
-http.route({
-  path: '/mcp',
-  method: 'OPTIONS',
-  handler: mcpHandler
-});
-```
-
-Also add the import for `api.apiKeys`:
-
-```typescript
-import { api, internal } from './_generated/api.js';
+  const response = await transport.respond(request);
+  return response ?? new Response('Not Found', { status: 404 });
+};
 ```
 
 ---
@@ -473,7 +496,7 @@ import { api, internal } from './_generated/api.js';
   import { useQuery, useMutation } from 'convex-svelte';
   import { api } from '$convex/_generated/api';
   import { authStore } from '$lib/stores/auth.svelte';
-  import { env } from '$env/dynamic/public';
+  import { page } from '$app/stores';
 
   const instanceId = $derived(authStore.instanceId);
 
@@ -490,7 +513,7 @@ import { api, internal } from './_generated/api.js';
   let isCreating = $state(false);
   let showCreateModal = $state(false);
 
-  const convexUrl = env.PUBLIC_CONVEX_URL?.replace('.cloud', '.site') ?? 'https://your-app.convex.site';
+  const baseUrl = $derived($page.url.origin);
 
   const mcpConfig = $derived(
     JSON.stringify(
@@ -498,7 +521,7 @@ import { api, internal } from './_generated/api.js';
         mcpServers: {
           'better-context': {
             type: 'http',
-            url: `${convexUrl}/mcp`,
+            url: `${baseUrl}/api/mcp`,
             headers: {
               Authorization: 'Bearer YOUR_API_KEY'
             }
@@ -778,8 +801,9 @@ export const AnalyticsEvents = {
 ### Prerequisites
 
 1. Complete all implementation steps above
-2. Deploy to Convex: `cd apps/web && bunx convex deploy`
-3. Have the sandbox server running with a `/question` endpoint
+2. Deploy Convex: `cd apps/web && bunx convex deploy`
+3. Run SvelteKit dev server: `cd apps/web && bun dev`
+4. Have the sandbox server running with a `/question` endpoint
 
 ### Test 1: Create an API Key
 
@@ -788,10 +812,10 @@ export const AnalyticsEvents = {
 3. Enter a name (e.g., "Test Key")
 4. Copy the generated key (starts with `btca_`)
 
-### Test 2: Test listResources via curl
+### Test 2: Test tools/list via curl
 
 ```bash
-curl -X POST https://your-app.convex.site/mcp \
+curl -X POST http://localhost:5173/api/mcp \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer btca_YOUR_API_KEY" \
   -d '{
@@ -807,7 +831,7 @@ Expected response: List of available tools including `listResources` and `ask`.
 ### Test 3: Call listResources
 
 ```bash
-curl -X POST https://your-app.convex.site/mcp \
+curl -X POST http://localhost:5173/api/mcp \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer btca_YOUR_API_KEY" \
   -d '{
@@ -826,7 +850,7 @@ Expected response: JSON with `global` and `custom` resource arrays.
 ### Test 4: Call ask
 
 ```bash
-curl -X POST https://your-app.convex.site/mcp \
+curl -X POST http://localhost:5173/api/mcp \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer btca_YOUR_API_KEY" \
   -d '{
@@ -854,7 +878,7 @@ Expected response: Answer text from the sandbox server.
   "mcpServers": {
     "better-context": {
       "type": "http",
-      "url": "https://your-app.convex.site/mcp",
+      "url": "https://your-deployed-app.com/api/mcp",
       "headers": {
         "Authorization": "Bearer btca_YOUR_API_KEY"
       }
@@ -875,7 +899,7 @@ Expected response: Answer text from the sandbox server.
 ### Test 7: Test Invalid API Key
 
 ```bash
-curl -X POST https://your-app.convex.site/mcp \
+curl -X POST http://localhost:5173/api/mcp \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer invalid_key" \
   -d '{
@@ -891,7 +915,7 @@ Expected response: 401 Unauthorized
 ### Test 8: Test Invalid Resource
 
 ```bash
-curl -X POST https://your-app.convex.site/mcp \
+curl -X POST http://localhost:5173/api/mcp \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer btca_YOUR_API_KEY" \
   -d '{
@@ -914,13 +938,9 @@ Expected response: Error indicating invalid resource name.
 
 ## Troubleshooting
 
-### "Module not found" errors after adding dependencies
+### CORS errors
 
-Run `bunx convex deploy` again to ensure dependencies are bundled.
-
-### CORS errors in browser
-
-The MCP endpoint includes CORS headers. If testing from a browser, ensure the origin is in the allowed list.
+SvelteKit handles CORS automatically for same-origin requests. For cross-origin MCP clients, you may need to add CORS headers in the endpoint or configure SvelteKit's `handle` hook.
 
 ### "Instance is still provisioning"
 
@@ -936,11 +956,29 @@ The user's sandbox needs to be provisioned first. They should use the web app at
 
 The non-streaming `/question` endpoint may need to be added to the sandbox server. Check the btca server implementation.
 
+### ConvexHttpClient errors
+
+Ensure `PUBLIC_CONVEX_URL` is set in your environment. Check that the Convex deployment is accessible.
+
+---
+
+## Implementation Checklist
+
+- [ ] **Step 1.1**: Update schema with `usageCount` field
+- [ ] **Step 1.2**: Update `touchLastUsed` and `listByUser` mutations
+- [ ] **Step 2**: Install TMCP dependencies
+- [ ] **Step 3**: Create `apps/web/src/convex/mcp.ts` with `ask` action
+- [ ] **Step 4**: Create `apps/web/src/routes/api/mcp/+server.ts`
+- [ ] **Step 5.1**: Create MCP settings page
+- [ ] **Step 5.2**: Add navigation link to Sidebar
+- [ ] **Step 6**: Add analytics events (optional)
+- [ ] **Testing**: Run through all test cases
+
 ---
 
 ## Future Enhancements
 
-1. **Streaming support** - If Convex adds streaming HTTP response support
+1. **Streaming support** - Add SSE streaming for long-running ask requests
 2. **Rate limiting per key** - Add request rate limits independent of usage
 3. **Key scopes** - Add read-only vs read-write scopes
 4. **Detailed usage logs** - Track individual requests with timestamps and resources used
