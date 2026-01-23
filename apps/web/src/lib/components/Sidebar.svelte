@@ -121,11 +121,9 @@
 	<div class="bc-sidebar-section">
 		<div class="bc-sidebar-actions">
 			<button type="button" class="bc-btn bc-btn-primary text-xs" onclick={createNewThread}>
-				<Plus size={14} />
-				Thread
+				New Thread
 			</button>
 			<a href="/app/settings/resources" class="bc-btn text-xs" onclick={handleNavigate}>
-				<BookOpen size={14} />
 				Resources
 			</a>
 		</div>

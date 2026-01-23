@@ -6,11 +6,13 @@
 	import { getAuthState } from '$lib/stores/auth.svelte';
 	import { getShikiStore } from '$lib/stores/ShikiStore.svelte';
 	import { getThemeStore } from '$lib/stores/theme.svelte';
+	import { getBillingStore } from '$lib/stores/billing.svelte';
 	import CopyButton from '$lib/CopyButton.svelte';
 	import { page } from '$app/state';
 
 	const auth = getAuthState();
 	const client = useConvexClient();
+	const billingStore = getBillingStore();
 
 	const instanceId = $derived(auth.instanceId);
 
@@ -138,14 +140,37 @@ Use the Better Context MCP for documentation questions.
 	}
 </script>
 
-<div class="flex flex-1 overflow-hidden">
-	<div class="mx-auto flex w-full max-w-5xl flex-col gap-8 overflow-y-auto p-8">
+<div class="flex flex-1 overflow-y-auto">
+	<div class="mx-auto flex w-full max-w-5xl flex-col gap-8 p-8">
 		<div>
 			<h1 class="text-2xl font-semibold">MCP Server</h1>
 			<p class="bc-muted mt-1 text-sm">
 				Connect Better Context to your AI tools via the Model Context Protocol.
 			</p>
 		</div>
+
+		{#if billingStore.isOnFreePlan}
+			<div
+				class="bc-card border-[hsl(var(--bc-warning)/0.5)] bg-[hsl(var(--bc-warning)/0.1)] p-4 text-sm"
+			>
+				<div class="flex items-center justify-between">
+					<div>
+						<p class="font-medium">Free Plan</p>
+						<p class="bc-muted mt-0.5">
+							{billingStore.freeMessagesRemaining} / {billingStore.freeMessagesTotal} free messages remaining
+						</p>
+					</div>
+					{#if billingStore.freeMessagesRemaining === 0}
+						<a href="/app/settings/billing" class="bc-btn bc-btn-primary text-xs">Upgrade to Pro</a>
+					{:else}
+						<a
+							href="/app/settings/billing"
+							class="bc-muted text-xs underline hover:text-[hsl(var(--bc-text))]">Upgrade</a
+						>
+					{/if}
+				</div>
+			</div>
+		{/if}
 
 		<!-- API Keys Section -->
 		<section class="space-y-4">

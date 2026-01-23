@@ -172,3 +172,32 @@ export const markCanceled = mutation({
 		await ctx.db.patch(args.messageId, { canceled: true });
 	}
 });
+
+/**
+ * Delete a message and all messages after it in the thread (for retry functionality)
+ */
+export const deleteMessageAndAfter = mutation({
+	args: {
+		threadId: v.id('threads'),
+		messageId: v.id('messages')
+	},
+	handler: async (ctx, args) => {
+		const targetMessage = await ctx.db.get(args.messageId);
+		if (!targetMessage || targetMessage.threadId !== args.threadId) {
+			throw new Error('Message not found in thread');
+		}
+
+		const allMessages = await ctx.db
+			.query('messages')
+			.withIndex('by_thread', (q) => q.eq('threadId', args.threadId))
+			.collect();
+
+		const messagesToDelete = allMessages.filter((m) => m.createdAt >= targetMessage.createdAt);
+
+		for (const message of messagesToDelete) {
+			await ctx.db.delete(message._id);
+		}
+
+		return { deletedCount: messagesToDelete.length };
+	}
+});

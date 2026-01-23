@@ -26,6 +26,7 @@
 	const features = [
 		'Claude Haiku 4.5',
 		'Dedicated sandbox',
+		'MCP server for AI coding tools',
 		'Monthly usage budget across tokens + sandbox time',
 		'Priority support'
 	];

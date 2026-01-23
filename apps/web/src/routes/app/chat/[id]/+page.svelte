@@ -121,6 +121,25 @@
 		}
 	}
 
+	async function retryMessage(message: import('$lib/types').Message & { role: 'user' }) {
+		if (!threadId || isStreaming) return;
+
+		abortController?.abort();
+
+		try {
+			await client.mutation(api.messages.deleteMessageAndAfter, {
+				threadId,
+				messageId: message.id as Id<'messages'>
+			});
+		} catch (error) {
+			console.error('Failed to delete messages for retry:', error);
+			return;
+		}
+
+		inputValue = message.content;
+		await sendMessage();
+	}
+
 	function parseMentions(input: string): { resources: string[]; question: string } {
 		const mentionRegex = /@(\w+)/g;
 		const resources: string[] = [];
@@ -597,6 +616,7 @@
 			{currentChunks}
 			{activeStream}
 			{hasBackgroundStream}
+			onRetry={retryMessage}
 		/>
 
 		<!-- Input (fixed at bottom) -->

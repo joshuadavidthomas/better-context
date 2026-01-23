@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { ArrowDown, Check, CheckCircle2, Copy, Loader2 } from '@lucide/svelte';
+	import { ArrowDown, Check, CheckCircle2, Copy, Loader2, RotateCcw } from '@lucide/svelte';
 	import { nanoid } from 'nanoid';
 	import { marked } from 'marked';
 	import { createHighlighter } from 'shiki';
@@ -43,6 +43,7 @@
 		currentChunks: BtcaChunk[];
 		activeStream: { sessionId: string; messageId: string; startedAt: number } | null;
 		hasBackgroundStream: boolean;
+		onRetry?: (message: Message & { role: 'user' }) => void;
 	}
 
 	let {
@@ -51,7 +52,8 @@
 		streamStatus,
 		currentChunks,
 		activeStream,
-		hasBackgroundStream
+		hasBackgroundStream,
+		onRetry
 	}: Props = $props();
 
 	function formatRelativeTime(timestamp: number): string {
@@ -260,6 +262,14 @@
 		}, 2000);
 	}
 
+	async function copyUserMessage(messageId: string, content: string) {
+		await navigator.clipboard.writeText(stripHistory(content));
+		copiedId = messageId;
+		setTimeout(() => {
+			copiedId = null;
+		}, 2000);
+	}
+
 	async function copyFullThread() {
 		const parts: string[] = [];
 		for (const message of messages) {
@@ -305,14 +315,36 @@
 		<div class="mx-auto flex w-full max-w-5xl flex-col gap-4 p-5">
 			{#each messages as message, index (message.id)}
 				{#if message.role === 'user'}
-					<div class="chat-message chat-message-user">
-						<div class="mb-1 flex items-center gap-2">
-							<span class="bc-muted text-xs font-medium">You</span>
-							{#each message.resources as resource}
-								<span class="bc-badge">@{resource}</span>
-							{/each}
+					<div>
+						<div class="chat-message chat-message-user">
+							<div class="mb-1 flex items-center gap-2">
+								<span class="bc-muted text-xs font-medium">You</span>
+								{#each message.resources as resource}
+									<span class="bc-badge">@{resource}</span>
+								{/each}
+							</div>
+							<div class="text-sm">{stripHistory(message.content)}</div>
 						</div>
-						<div class="text-sm">{stripHistory(message.content)}</div>
+						{#if message.id !== 'pending-user'}
+							<div class="mt-2 flex justify-end gap-2">
+								<button
+									type="button"
+									class="copy-answer-btn"
+									onclick={() => copyUserMessage(message.id, message.content)}
+								>
+									{#if copiedId === message.id}
+										<Check size={12} /> Copied
+									{:else}
+										<Copy size={12} /> Copy
+									{/if}
+								</button>
+								{#if onRetry && !isStreaming}
+									<button type="button" class="copy-answer-btn" onclick={() => onRetry(message)}>
+										<RotateCcw size={12} /> Retry
+									</button>
+								{/if}
+							</div>
+						{/if}
 					</div>
 				{:else if message.role === 'assistant'}
 					<div class="chat-message chat-message-assistant">
