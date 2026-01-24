@@ -1,4 +1,4 @@
-import { createSignal, createMemo, Show, type Component } from 'solid-js';
+import { createSignal, createMemo, Show, onMount, type Component } from 'solid-js';
 import type { TextareaRenderable } from '@opentui/core';
 import { useKeyboard } from '@opentui/solid';
 import type { InputState, ActiveWizard, WizardStep } from '../types.ts';
@@ -10,6 +10,7 @@ import { CommandPalette } from './command-palette.tsx';
 import { RepoMentionPalette } from './repo-mention-palette.tsx';
 import { BlessedModelSelect } from './blessed-model-select.tsx';
 import { AddResourceWizard } from './add-resource-wizard.tsx';
+import { inputHistory } from '../history.ts';
 
 export const InputSection: Component = () => {
 	const messages = useMessagesContext();
@@ -25,6 +26,11 @@ export const InputSection: Component = () => {
 	const [currentWizardStep, setCurrentWizardStep] = createSignal<WizardStep>(null);
 
 	const isAnyWizardOpen = () => activeWizard() !== 'none';
+
+	// Initialize input history on mount
+	onMount(() => {
+		inputHistory.init();
+	});
 
 	// Computed: what type of content is cursor in
 	const cursorIsCurrentlyIn = createMemo(() => {
@@ -106,6 +112,9 @@ export const InputSection: Component = () => {
 			return;
 		}
 
+		// Save to history before clearing
+		await inputHistory.add(inputText);
+
 		// Clear input and send (pass only new repos - context will merge with existing)
 		const currentInput = inputState();
 		setInputState([]);
@@ -132,6 +141,58 @@ export const InputSection: Component = () => {
 				messages.addSystemMessage('Chat cleared.');
 				break;
 		}
+	};
+
+	// Helper to set input from history entry
+	const setInputFromHistory = (entry: string | null) => {
+		if (entry === null) return;
+		// Parse the entry back into input state (simple text segments)
+		const segments = parseTextSegment(entry);
+		setInputState(segments);
+		// Move cursor to end
+		queueMicrotask(() => {
+			const ref = inputRef();
+			if (ref) {
+				ref.gotoBufferEnd();
+				const cursor = ref.logicalCursor;
+				setCursorPosition(cursor.col);
+			}
+		});
+	};
+
+	// Parse text into InputState segments (for history)
+	const parseTextSegment = (
+		value: string
+	): { type: 'text' | 'command' | 'mention'; content: string }[] => {
+		if (!value) return [];
+		const parts: { type: 'text' | 'command' | 'mention'; content: string }[] = [];
+
+		if (value.startsWith('/')) {
+			const spaceIndex = value.indexOf(' ');
+			if (spaceIndex === -1) {
+				parts.push({ type: 'command', content: value });
+			} else {
+				parts.push({ type: 'command', content: value.slice(0, spaceIndex) });
+				parts.push({ type: 'text', content: value.slice(spaceIndex) });
+			}
+			return parts;
+		}
+
+		const regex = /(^|(?<=\s))@[A-Za-z0-9@._/-]*/g;
+		let lastIndex = 0;
+		let match;
+		while ((match = regex.exec(value)) !== null) {
+			if (match.index > lastIndex) {
+				parts.push({ type: 'text', content: value.slice(lastIndex, match.index) });
+			}
+			parts.push({ type: 'mention', content: match[0] });
+			lastIndex = regex.lastIndex;
+		}
+
+		if (lastIndex < value.length) {
+			parts.push({ type: 'text', content: value.slice(lastIndex) });
+		}
+		return parts;
 	};
 
 	// Keyboard handling for ESC cancel flow and submit
@@ -162,7 +223,21 @@ export const InputSection: Component = () => {
 		if (key.name === 'c' && key.ctrl) {
 			if (inputState().length > 0) {
 				setInputState([]);
+				inputHistory.reset();
 			}
+		}
+		// Up arrow - navigate to previous history entry
+		if (key.name === 'up' && !isAnyWizardOpen() && !messages.isStreaming()) {
+			const currentInput = inputState()
+				.map((s) => s.content)
+				.join('');
+			const entry = inputHistory.navigateUp(currentInput);
+			setInputFromHistory(entry);
+		}
+		// Down arrow - navigate to next history entry
+		if (key.name === 'down' && !isAnyWizardOpen() && !messages.isStreaming()) {
+			const entry = inputHistory.navigateDown();
+			setInputFromHistory(entry);
 		}
 	});
 
