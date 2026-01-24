@@ -172,7 +172,8 @@ class InstanceStore {
 			const result = await this._client.action(instances.actions.resetMyInstance, {});
 			return result as InstanceActionResponse;
 		} catch (error) {
-			this._error = error instanceof Error ? error.message : 'Instance reset failed. Please contact support.';
+			this._error =
+				error instanceof Error ? error.message : 'Instance reset failed. Please contact support.';
 			return { error: this._error };
 		}
 	}

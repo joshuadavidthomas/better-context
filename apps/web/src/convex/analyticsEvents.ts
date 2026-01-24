@@ -34,5 +34,9 @@ export const AnalyticsEvents = {
 
 	INSTANCE_ERROR: 'instance_error',
 	WEBHOOK_VERIFICATION_FAILED: 'webhook_verification_failed',
-	SUBSCRIPTION_REQUIRED_SHOWN: 'subscription_required_shown'
+	SUBSCRIPTION_REQUIRED_SHOWN: 'subscription_required_shown',
+
+	MCP_LIST_RESOURCES: 'mcp_list_resources',
+	MCP_ASK: 'mcp_ask',
+	MCP_ASK_FAILED: 'mcp_ask_failed'
 } as const;

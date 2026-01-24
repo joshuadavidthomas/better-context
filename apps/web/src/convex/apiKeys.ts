@@ -18,7 +18,8 @@ export const listByUser = query({
 			keyPrefix: k.keyPrefix,
 			createdAt: k.createdAt,
 			lastUsedAt: k.lastUsedAt,
-			revokedAt: k.revokedAt
+			revokedAt: k.revokedAt,
+			usageCount: k.usageCount ?? 0
 		}));
 	}
 });
@@ -129,8 +130,11 @@ export const touchLastUsed = mutation({
 		const apiKey = await ctx.db.get(args.keyId);
 		const instance = apiKey ? await ctx.db.get(apiKey.instanceId) : null;
 
+		const currentCount = apiKey?.usageCount ?? 0;
+
 		await ctx.db.patch(args.keyId, {
-			lastUsedAt: Date.now()
+			lastUsedAt: Date.now(),
+			usageCount: currentCount + 1
 		});
 
 		if (instance && apiKey) {
@@ -139,7 +143,8 @@ export const touchLastUsed = mutation({
 				event: AnalyticsEvents.API_KEY_USED,
 				properties: {
 					instanceId: apiKey.instanceId,
-					keyId: args.keyId
+					keyId: args.keyId,
+					usageCount: currentCount + 1
 				}
 			});
 		}

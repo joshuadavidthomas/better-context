@@ -5,6 +5,7 @@
 		CreditCard,
 		Github,
 		Home,
+		Key,
 		Loader2,
 		Menu,
 		Moon,
@@ -277,6 +278,10 @@
 						<a href="/app/settings/resources" class="bc-sidebar-menu-item" onclick={handleNavigate}>
 							<BookOpen size={14} />
 							Resources
+						</a>
+						<a href="/app/settings/mcp" class="bc-sidebar-menu-item" onclick={handleNavigate}>
+							<Key size={14} />
+							MCP Server
 						</a>
 						<a href="/" class="bc-sidebar-menu-item" onclick={handleNavigate}>
 							<Home size={14} />
