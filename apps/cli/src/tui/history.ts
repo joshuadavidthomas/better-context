@@ -1,23 +1,38 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import type { InputState } from './types.ts';
 
 const HISTORY_FILE = join(homedir(), '.local', 'share', 'btca', 'input-history.json');
 const MAX_HISTORY_SIZE = 100;
 
 interface HistoryData {
-	entries: string[];
+	entries: InputState[];
+}
+
+/**
+ * Get plain text representation of InputState for comparison
+ */
+function getPlainText(state: InputState): string {
+	return state.map((s) => s.content).join('');
 }
 
 /**
  * Load history from disk
  */
-async function loadHistory(): Promise<string[]> {
+async function loadHistory(): Promise<InputState[]> {
 	try {
 		const file = Bun.file(HISTORY_FILE);
 		if (!(await file.exists())) {
 			return [];
 		}
 		const data = (await file.json()) as HistoryData;
+		// Migrate old string-based format if needed
+		if (Array.isArray(data.entries) && data.entries.length > 0) {
+			if (typeof data.entries[0] === 'string') {
+				// Old format - convert strings to InputState
+				return (data.entries as unknown as string[]).map((str) => [{ type: 'text', content: str }]);
+			}
+		}
 		return data.entries ?? [];
 	} catch {
 		return [];
@@ -27,14 +42,11 @@ async function loadHistory(): Promise<string[]> {
 /**
  * Save history to disk
  */
-async function saveHistory(entries: string[]): Promise<void> {
+async function saveHistory(entries: InputState[]): Promise<void> {
 	try {
-		// Ensure directory exists
+		// Ensure directory exists (mkdir -p is idempotent)
 		const dir = join(homedir(), '.local', 'share', 'btca');
-		const dirFile = Bun.file(dir);
-		if (!(await dirFile.exists())) {
-			await Bun.$`mkdir -p ${dir}`.quiet();
-		}
+		await Bun.$`mkdir -p ${dir}`.quiet();
 
 		const data: HistoryData = { entries };
 		await Bun.write(HISTORY_FILE, JSON.stringify(data, null, 2));
@@ -46,11 +58,12 @@ async function saveHistory(entries: string[]): Promise<void> {
 /**
  * Input history manager for TUI
  * Provides up/down arrow navigation through previous inputs
+ * Preserves full InputState including pasted content blocks
  */
 export class InputHistory {
-	private entries: string[] = [];
+	private entries: InputState[] = [];
 	private currentIndex = -1;
-	private pendingInput = ''; // Stores current input when navigating history
+	private pendingInput: InputState = []; // Stores current input when navigating history
 	private loaded = false;
 
 	/**
@@ -65,23 +78,26 @@ export class InputHistory {
 	/**
 	 * Add a new entry to history (called on submit)
 	 */
-	async add(input: string): Promise<void> {
-		const trimmed = input.trim();
-		if (!trimmed) return;
+	async add(input: InputState): Promise<void> {
+		const plainText = getPlainText(input).trim();
+		if (!plainText) return;
 
 		// Don't add duplicates of the most recent entry
-		if (this.entries.length > 0 && this.entries[this.entries.length - 1] === trimmed) {
-			this.reset();
-			return;
+		if (this.entries.length > 0) {
+			const lastEntry = this.entries[this.entries.length - 1];
+			if (lastEntry && getPlainText(lastEntry) === plainText) {
+				this.reset();
+				return;
+			}
 		}
 
 		// Remove any existing occurrence to avoid duplicates
-		const existingIndex = this.entries.indexOf(trimmed);
+		const existingIndex = this.entries.findIndex((e) => getPlainText(e) === plainText);
 		if (existingIndex !== -1) {
 			this.entries.splice(existingIndex, 1);
 		}
 
-		this.entries.push(trimmed);
+		this.entries.push(input);
 
 		// Trim to max size
 		if (this.entries.length > MAX_HISTORY_SIZE) {
@@ -96,7 +112,7 @@ export class InputHistory {
 	 * Navigate to previous entry (up arrow)
 	 * Returns the entry to display, or null if no more history
 	 */
-	navigateUp(currentInput: string): string | null {
+	navigateUp(currentInput: InputState): InputState | null {
 		if (this.entries.length === 0) return null;
 
 		// First time navigating - save current input
@@ -120,7 +136,7 @@ export class InputHistory {
 	 * Navigate to next entry (down arrow)
 	 * Returns the entry to display, or null if back to current input
 	 */
-	navigateDown(): string | null {
+	navigateDown(): InputState | null {
 		if (this.currentIndex === -1) return null;
 
 		this.currentIndex++;
@@ -140,7 +156,7 @@ export class InputHistory {
 	 */
 	reset(): void {
 		this.currentIndex = -1;
-		this.pendingInput = '';
+		this.pendingInput = [];
 	}
 
 	/**
