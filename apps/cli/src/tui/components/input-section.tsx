@@ -1,4 +1,4 @@
-import { createSignal, createMemo, Show, type Component } from 'solid-js';
+import { createSignal, createMemo, Show, onMount, type Component } from 'solid-js';
 import type { TextareaRenderable } from '@opentui/core';
 import { useKeyboard } from '@opentui/solid';
 import type { InputState, ActiveWizard, WizardStep } from '../types.ts';
@@ -10,6 +10,7 @@ import { CommandPalette } from './command-palette.tsx';
 import { RepoMentionPalette } from './repo-mention-palette.tsx';
 import { BlessedModelSelect } from './blessed-model-select.tsx';
 import { AddResourceWizard } from './add-resource-wizard.tsx';
+import { inputHistory } from '../history.ts';
 
 export const InputSection: Component = () => {
 	const messages = useMessagesContext();
@@ -25,6 +26,11 @@ export const InputSection: Component = () => {
 	const [currentWizardStep, setCurrentWizardStep] = createSignal<WizardStep>(null);
 
 	const isAnyWizardOpen = () => activeWizard() !== 'none';
+
+	// Initialize input history on mount
+	onMount(() => {
+		inputHistory.init();
+	});
 
 	// Computed: what type of content is cursor in
 	const cursorIsCurrentlyIn = createMemo(() => {
@@ -106,8 +112,11 @@ export const InputSection: Component = () => {
 			return;
 		}
 
-		// Clear input and send (pass only new repos - context will merge with existing)
+		// Save to history before clearing (preserves full InputState including pasted blocks)
 		const currentInput = inputState();
+		await inputHistory.add(currentInput);
+
+		// Clear input and send (pass only new repos - context will merge with existing)
 		setInputState([]);
 		await messages.send(currentInput, validNewRepos);
 	};
@@ -132,6 +141,22 @@ export const InputSection: Component = () => {
 				messages.addSystemMessage('Chat cleared.');
 				break;
 		}
+	};
+
+	// Helper to set input from history entry (now receives full InputState)
+	const setInputFromHistory = (entry: InputState | null) => {
+		if (entry === null) return;
+		// Set the full InputState directly, preserving pasted blocks
+		setInputState(entry);
+		// Move cursor to end
+		queueMicrotask(() => {
+			const ref = inputRef();
+			if (ref) {
+				ref.gotoBufferEnd();
+				const cursor = ref.logicalCursor;
+				setCursorPosition(cursor.col);
+			}
+		});
 	};
 
 	// Keyboard handling for ESC cancel flow and submit
@@ -162,7 +187,18 @@ export const InputSection: Component = () => {
 		if (key.name === 'c' && key.ctrl) {
 			if (inputState().length > 0) {
 				setInputState([]);
+				inputHistory.reset();
 			}
+		}
+		// Up arrow - navigate to previous history entry
+		if (key.name === 'up' && !isAnyWizardOpen() && !messages.isStreaming()) {
+			const entry = inputHistory.navigateUp(inputState());
+			setInputFromHistory(entry);
+		}
+		// Down arrow - navigate to next history entry
+		if (key.name === 'down' && !isAnyWizardOpen() && !messages.isStreaming()) {
+			const entry = inputHistory.navigateDown();
+			setInputFromHistory(entry);
 		}
 	});
 
