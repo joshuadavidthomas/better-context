@@ -99,6 +99,49 @@
 		}
 	});
 
+	// Focus input and insert character when user types anywhere on page
+	$effect(() => {
+		function handleGlobalKeydown(event: KeyboardEvent) {
+			// Ignore if already focused on an input/textarea
+			const activeEl = document.activeElement;
+			if (
+				activeEl instanceof HTMLInputElement ||
+				activeEl instanceof HTMLTextAreaElement ||
+				activeEl?.getAttribute('contenteditable') === 'true'
+			) {
+				return;
+			}
+
+			// Only handle single printable characters (letters, numbers, symbols)
+			if (event.key.length !== 1) return;
+
+			// Ignore if modifier keys are pressed (except shift for uppercase)
+			if (event.ctrlKey || event.metaKey || event.altKey) return;
+
+			// Focus the input and insert the character
+			if (inputEl && !isStreaming && canChat) {
+				event.preventDefault();
+				inputEl.focus();
+				// Insert the character at the current cursor position
+				const start = inputEl.selectionStart ?? inputValue.length;
+				const end = inputEl.selectionEnd ?? inputValue.length;
+				inputValue = inputValue.slice(0, start) + event.key + inputValue.slice(end);
+				// Move cursor after the inserted character
+				queueMicrotask(() => {
+					if (inputEl) {
+						const newPos = start + 1;
+						inputEl.selectionStart = newPos;
+						inputEl.selectionEnd = newPos;
+						updateMentionState(true);
+					}
+				});
+			}
+		}
+
+		window.addEventListener('keydown', handleGlobalKeydown);
+		return () => window.removeEventListener('keydown', handleGlobalKeydown);
+	});
+
 	// Reset streaming display state when navigating to a different thread
 	$effect(() => {
 		threadId;
