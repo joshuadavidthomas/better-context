@@ -6,6 +6,7 @@ import { clearCommand } from './commands/clear.ts';
 import { initCommand } from './commands/init.ts';
 import { serveCommand } from './commands/serve.ts';
 import { launchTui } from './commands/tui.ts';
+import { launchRepl } from './commands/repl.ts';
 import packageJson from '../package.json';
 
 // Version is injected at build time via Bun's define option
@@ -20,7 +21,11 @@ const program = new Command()
 	.version(VERSION, '-v, --version', 'output the version number')
 	.enablePositionalOptions()
 	.option('--server <url>', 'Use an existing btca server URL')
-	.option('--port <port>', 'Port for auto-started server (default: random)', parseInt);
+	.option('--port <port>', 'Port for auto-started server (default: random)', parseInt)
+	.option(
+		'--no-tui',
+		'Use simple REPL mode instead of TUI (useful for Windows or minimal terminals)'
+	);
 
 program.addCommand(askCommand);
 program.addCommand(chatCommand);
@@ -29,10 +34,15 @@ program.addCommand(clearCommand);
 program.addCommand(initCommand);
 program.addCommand(serveCommand);
 
-// Default action (no subcommand) → launch TUI
-program.action(async (options: { server?: string; port?: number }) => {
+// Default action (no subcommand) → launch TUI or REPL
+program.action(async (options: { server?: string; port?: number; tui?: boolean }) => {
 	try {
-		await launchTui(options);
+		// --no-tui sets tui to false
+		if (options.tui === false) {
+			await launchRepl(options);
+		} else {
+			await launchTui(options);
+		}
 	} catch (error) {
 		console.error('Error:', error instanceof Error ? error.message : String(error));
 		process.exit(1);
