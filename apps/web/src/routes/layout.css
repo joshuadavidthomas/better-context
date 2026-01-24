@@ -576,6 +576,25 @@
 		border-radius: 0;
 		overflow: hidden;
 		position: relative;
+		max-width: 100%;
+	}
+
+	.bc-codeFrame pre {
+		overflow-x: auto;
+		scrollbar-width: thin;
+	}
+
+	.bc-codeFrame pre::-webkit-scrollbar {
+		height: 6px;
+	}
+
+	.bc-codeFrame pre::-webkit-scrollbar-thumb {
+		background-color: hsl(var(--bc-border));
+		border-radius: 3px;
+	}
+
+	.bc-codeFrame pre::-webkit-scrollbar-track {
+		background-color: transparent;
 	}
 
 	.bc-codeFrame::after {

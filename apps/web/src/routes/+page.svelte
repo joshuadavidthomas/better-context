@@ -62,7 +62,7 @@
 					<div class="text-xs bc-muted">btca</div>
 				</div>
 
-				<div class="p-4">
+				<div class="overflow-x-auto p-4">
 					{#if shikiStore.highlighter}
 						{@html shikiStore.highlighter.codeToHtml(DEMO, {
 							theme: shikiTheme,

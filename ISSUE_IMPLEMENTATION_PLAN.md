@@ -786,12 +786,12 @@ Code blocks on the btca.dev homepage are truncated horizontally without a scroll
 
 #### Acceptance Criteria
 
-- [ ] Code blocks show horizontal scrollbar when content overflows
-- [ ] Scrollbar is visible and usable
-- [ ] No content is cut off without indication
-- [ ] Page doesn't scroll horizontally (only code block)
-- [ ] Works across major browsers
-- [ ] Responsive across screen sizes
+- [x] Code blocks show horizontal scrollbar when content overflows
+- [x] Scrollbar is visible and usable
+- [x] No content is cut off without indication
+- [x] Page doesn't scroll horizontally (only code block)
+- [x] Works across major browsers
+- [x] Responsive across screen sizes
 
 ---
 
@@ -1047,7 +1047,7 @@ Local file paths don't work correctly on Windows (e.g., `E:\GitHub\...`).
 | #99 (cleanup)           | Medium | High   | **High**       | DONE     |
 | #76 (searchPath)        | Medium | High   | **High**       | DONE     |
 | #81 (.btca folder)      | Medium | Medium | **Medium**     | DONE     |
-| #96 (CSS scroll)        | Small  | Low    | **Low**        | PLANNED  |
+| #96 (CSS scroll)        | Small  | Low    | **Low**        | DONE     |
 | #109 (gateway)          | Small  | High   | High           | DEFERRED |
 | #105/#89 (Windows)      | Large  | High   | High           | DEFERRED |
 | #91 (sub-agent)         | Medium | Medium | Medium         | DEFERRED |
