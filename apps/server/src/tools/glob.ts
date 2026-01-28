@@ -8,6 +8,9 @@ import { z } from 'zod';
 
 import { Ripgrep } from './ripgrep.ts';
 import { Sandbox } from './sandbox.ts';
+import type { ToolContext } from './context.ts';
+import { VirtualSandbox } from './virtual-sandbox.ts';
+import { VirtualFs } from '../vfs/virtual-fs.ts';
 
 export namespace GlobTool {
 	// Configuration
@@ -39,27 +42,43 @@ export namespace GlobTool {
 	/**
 	 * Execute the glob tool
 	 */
-	export async function execute(
-		params: ParametersType,
-		context: { basePath: string }
-	): Promise<Result> {
+	export async function execute(params: ParametersType, context: ToolContext): Promise<Result> {
 		const { basePath } = context;
+		const mode = context.mode ?? 'fs';
 
 		// Resolve search path within sandbox
-		const searchPath = params.path ? Sandbox.resolvePath(basePath, params.path) : basePath;
+		const searchPath = params.path
+			? mode === 'virtual'
+				? VirtualSandbox.resolvePath(basePath, params.path)
+				: Sandbox.resolvePath(basePath, params.path)
+			: basePath;
 
 		// Validate the search path exists and is a directory
 		try {
-			const stats = await fs.stat(searchPath);
-			if (!stats.isDirectory()) {
-				return {
-					title: params.pattern,
-					output: `Path is not a directory: ${params.path || '.'}`,
-					metadata: {
-						count: 0,
-						truncated: false
-					}
-				};
+			if (mode === 'virtual') {
+				const stats = await VirtualFs.stat(searchPath);
+				if (!stats.isDirectory) {
+					return {
+						title: params.pattern,
+						output: `Path is not a directory: ${params.path || '.'}`,
+						metadata: {
+							count: 0,
+							truncated: false
+						}
+					};
+				}
+			} else {
+				const stats = await fs.stat(searchPath);
+				if (!stats.isDirectory()) {
+					return {
+						title: params.pattern,
+						output: `Path is not a directory: ${params.path || '.'}`,
+						metadata: {
+							count: 0,
+							truncated: false
+						}
+					};
+				}
 			}
 		} catch {
 			return {
@@ -76,30 +95,48 @@ export namespace GlobTool {
 		const files: Array<{ path: string; mtime: number }> = [];
 		let truncated = false;
 
-		for await (const file of Ripgrep.files({
-			cwd: searchPath,
-			glob: [params.pattern],
-			hidden: true
-		})) {
-			if (files.length >= MAX_RESULTS) {
-				truncated = true;
-				break;
+		if (mode === 'virtual') {
+			const patternRegex = globToRegExp(params.pattern);
+			const allFiles = await VirtualFs.listFilesRecursive(searchPath);
+			for (const file of allFiles) {
+				if (files.length >= MAX_RESULTS) {
+					truncated = true;
+					break;
+				}
+				const relative = path.posix.relative(searchPath, file);
+				if (!patternRegex.test(relative)) continue;
+				try {
+					const stats = await VirtualFs.stat(file);
+					files.push({ path: file, mtime: stats.mtimeMs });
+				} catch {
+					files.push({ path: file, mtime: 0 });
+				}
 			}
+		} else {
+			for await (const file of Ripgrep.files({
+				cwd: searchPath,
+				glob: [params.pattern],
+				hidden: true
+			})) {
+				if (files.length >= MAX_RESULTS) {
+					truncated = true;
+					break;
+				}
 
-			const fullPath = path.resolve(searchPath, file);
+				const fullPath = path.resolve(searchPath, file);
 
-			try {
-				const stats = await fs.stat(fullPath);
-				files.push({
-					path: fullPath,
-					mtime: stats.mtime.getTime()
-				});
-			} catch {
-				// Skip files we can't stat
-				files.push({
-					path: fullPath,
-					mtime: 0
-				});
+				try {
+					const stats = await fs.stat(fullPath);
+					files.push({
+						path: fullPath,
+						mtime: stats.mtime.getTime()
+					});
+				} catch {
+					files.push({
+						path: fullPath,
+						mtime: 0
+					});
+				}
 			}
 		}
 
@@ -118,7 +155,9 @@ export namespace GlobTool {
 		files.sort((a, b) => b.mtime - a.mtime);
 
 		// Format output with relative paths
-		const outputLines = files.map((f) => path.relative(basePath, f.path));
+		const outputLines = files.map((f) =>
+			mode === 'virtual' ? path.posix.relative(basePath, f.path) : path.relative(basePath, f.path)
+		);
 
 		// Add truncation notice
 		if (truncated) {
@@ -136,5 +175,41 @@ export namespace GlobTool {
 				truncated
 			}
 		};
+	}
+
+	function globToRegExp(pattern: string): RegExp {
+		let regex = '^';
+		let i = 0;
+		while (i < pattern.length) {
+			const char = pattern[i] ?? '';
+			const next = pattern[i + 1] ?? '';
+			if (char === '*' && next === '*') {
+				regexAdd('.*');
+				i += 2;
+				continue;
+			}
+			if (char === '*') {
+				regexAdd('[^/]*');
+				i += 1;
+				continue;
+			}
+			if (char === '?') {
+				regexAdd('[^/]');
+				i += 1;
+				continue;
+			}
+			if ('\\.^$+{}()|[]'.includes(char)) {
+				regexAdd('\\' + char);
+			} else {
+				regexAdd(char);
+			}
+			i += 1;
+		}
+		regex += '$';
+		return new RegExp(regex);
+
+		function regexAdd(value: string) {
+			regex += value;
+		}
 	}
 }

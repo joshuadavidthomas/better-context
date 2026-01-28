@@ -7,6 +7,9 @@ import * as path from 'node:path';
 import { z } from 'zod';
 
 import { Sandbox } from './sandbox.ts';
+import type { ToolContext } from './context.ts';
+import { VirtualSandbox } from './virtual-sandbox.ts';
+import { VirtualFs } from '../vfs/virtual-fs.ts';
 
 export namespace ReadTool {
 	// Configuration
@@ -65,42 +68,48 @@ export namespace ReadTool {
 	/**
 	 * Check if a file is binary by looking for null bytes
 	 */
+	function isBinaryBuffer(bytes: Uint8Array): boolean {
+		for (const byte of bytes) {
+			if (byte === 0) return true;
+		}
+		return false;
+	}
+
 	async function isBinaryFile(filepath: string): Promise<boolean> {
 		const file = Bun.file(filepath);
 		const chunk = await file.slice(0, 8192).arrayBuffer();
-		const bytes = new Uint8Array(chunk);
-
-		for (const byte of bytes) {
-			if (byte === 0) {
-				return true;
-			}
-		}
-
-		return false;
+		return isBinaryBuffer(new Uint8Array(chunk));
 	}
 
 	/**
 	 * Execute the read tool
 	 */
-	export async function execute(
-		params: ParametersType,
-		context: { basePath: string }
-	): Promise<Result> {
+	export async function execute(params: ParametersType, context: ToolContext): Promise<Result> {
 		const { basePath } = context;
+		const mode = context.mode ?? 'fs';
 
 		// Validate and resolve path within sandbox
-		const resolvedPath = await Sandbox.resolvePathWithSymlinks(basePath, params.path);
+		const resolvedPath =
+			mode === 'virtual'
+				? await VirtualSandbox.resolvePathWithSymlinks(basePath, params.path)
+				: await Sandbox.resolvePathWithSymlinks(basePath, params.path);
 
 		// Check if file exists
-		const file = Bun.file(resolvedPath);
-		if (!(await file.exists())) {
+		const exists =
+			mode === 'virtual'
+				? await VirtualFs.exists(resolvedPath)
+				: await Bun.file(resolvedPath).exists();
+		if (!exists) {
 			// Try to provide suggestions
 			const dir = path.dirname(resolvedPath);
 			const filename = path.basename(resolvedPath);
 			let suggestions: string[] = [];
 
 			try {
-				const files = await fs.readdir(dir);
+				const files =
+					mode === 'virtual'
+						? (await VirtualFs.readdir(dir)).map((entry) => entry.name)
+						: await fs.readdir(dir);
 				suggestions = files
 					.filter((f) => f.toLowerCase().includes(filename.toLowerCase().slice(0, 3)))
 					.slice(0, 5);
@@ -127,9 +136,15 @@ export namespace ReadTool {
 
 		// Handle images
 		if (IMAGE_EXTENSIONS.has(ext)) {
-			const bytes = await file.arrayBuffer();
+			const bytes =
+				mode === 'virtual'
+					? await VirtualFs.readFileBuffer(resolvedPath)
+					: new Uint8Array(await Bun.file(resolvedPath).arrayBuffer());
 			const base64 = Buffer.from(bytes).toString('base64');
-			const mime = file.type || 'application/octet-stream';
+			const mime =
+				mode === 'virtual'
+					? getImageMime(ext)
+					: Bun.file(resolvedPath).type || 'application/octet-stream';
 
 			return {
 				title: params.path,
@@ -151,7 +166,10 @@ export namespace ReadTool {
 
 		// Handle PDFs
 		if (PDF_EXTENSIONS.has(ext)) {
-			const bytes = await file.arrayBuffer();
+			const bytes =
+				mode === 'virtual'
+					? await VirtualFs.readFileBuffer(resolvedPath)
+					: new Uint8Array(await Bun.file(resolvedPath).arrayBuffer());
 			const base64 = Buffer.from(bytes).toString('base64');
 
 			return {
@@ -173,7 +191,11 @@ export namespace ReadTool {
 		}
 
 		// Check for binary files
-		if (await isBinaryFile(resolvedPath)) {
+		if (
+			mode === 'virtual'
+				? isBinaryBuffer(await VirtualFs.readFileBuffer(resolvedPath))
+				: await isBinaryFile(resolvedPath)
+		) {
 			return {
 				title: params.path,
 				output: `[Binary file: ${path.basename(resolvedPath)}]`,
@@ -186,7 +208,10 @@ export namespace ReadTool {
 		}
 
 		// Read text file
-		const text = await file.text();
+		const text =
+			mode === 'virtual'
+				? await VirtualFs.readFile(resolvedPath)
+				: await Bun.file(resolvedPath).text();
 		const allLines = text.split('\n');
 
 		const offset = params.offset ?? 0;
@@ -251,5 +276,27 @@ export namespace ReadTool {
 				truncatedByBytes
 			}
 		};
+	}
+
+	function getImageMime(ext: string): string {
+		switch (ext) {
+			case '.png':
+				return 'image/png';
+			case '.jpg':
+			case '.jpeg':
+				return 'image/jpeg';
+			case '.gif':
+				return 'image/gif';
+			case '.webp':
+				return 'image/webp';
+			case '.bmp':
+				return 'image/bmp';
+			case '.ico':
+				return 'image/x-icon';
+			case '.svg':
+				return 'image/svg+xml';
+			default:
+				return 'application/octet-stream';
+		}
 	}
 }

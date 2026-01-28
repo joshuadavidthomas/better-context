@@ -51,6 +51,7 @@ const StoredConfigSchema = z.object({
 	$schema: z.string().optional(),
 	dataDirectory: z.string().optional(),
 	providerTimeoutMs: z.number().int().positive().optional(),
+	virtualizeResources: z.boolean().optional(),
 	resources: z.array(ResourceDefinitionSchema),
 	// Provider and model are optional - defaults are applied when loading
 	model: z.string().optional(),
@@ -118,6 +119,7 @@ export namespace Config {
 		model: string;
 		provider: string;
 		providerTimeoutMs?: number;
+		virtualizeResources: boolean;
 		configPath: string;
 		getResource: (name: string) => ResourceDefinition | undefined;
 		updateModel: (provider: string, model: string) => Promise<{ provider: string; model: string }>;
@@ -440,7 +442,8 @@ export namespace Config {
 			resources: DEFAULT_RESOURCES,
 			model: DEFAULT_MODEL,
 			provider: DEFAULT_PROVIDER,
-			providerTimeoutMs: DEFAULT_PROVIDER_TIMEOUT_MS
+			providerTimeoutMs: DEFAULT_PROVIDER_TIMEOUT_MS,
+			virtualizeResources: false
 		};
 
 		try {
@@ -541,6 +544,9 @@ export namespace Config {
 			},
 			get providerTimeoutMs() {
 				return getActiveConfig().providerTimeoutMs;
+			},
+			get virtualizeResources() {
+				return getActiveConfig().virtualizeResources ?? false;
 			},
 			getResource: (name: string) => getMergedResources().find((r) => r.name === name),
 

@@ -55,7 +55,8 @@ describe('Agent', () => {
 
 			const collection: CollectionResult = {
 				path: collectionPath,
-				agentInstructions: 'This is a test collection with a README file.'
+				agentInstructions: 'This is a test collection with a README file.',
+				mode: 'fs'
 			};
 
 			const result = await agent.ask({
@@ -85,7 +86,8 @@ describe('Agent', () => {
 
 			const collection: CollectionResult = {
 				path: collectionPath,
-				agentInstructions: 'Simple test collection.'
+				agentInstructions: 'Simple test collection.',
+				mode: 'fs'
 			};
 
 			const { stream, model } = await agent.askStream({

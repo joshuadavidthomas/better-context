@@ -8,6 +8,7 @@ import { Metrics } from '../metrics/index.ts';
 import { Resources } from '../resources/service.ts';
 import { FS_RESOURCE_SYSTEM_NOTE, type BtcaFsResource } from '../resources/types.ts';
 import { CollectionError, getCollectionKey, type CollectionResult } from './types.ts';
+import { VirtualFs } from '../vfs/virtual-fs.ts';
 
 export namespace Collections {
 	export type Service = {
@@ -50,16 +51,33 @@ export namespace Collections {
 
 					const sortedNames = [...uniqueNames].sort((a, b) => a.localeCompare(b));
 					const key = getCollectionKey(sortedNames);
-					const collectionPath = path.join(args.config.collectionsDirectory, key);
+					const isVirtual = args.config.virtualizeResources;
+					const collectionPath = isVirtual
+						? path.posix.join('/collections', key)
+						: path.join(args.config.collectionsDirectory, key);
 
-					try {
-						await fs.mkdir(collectionPath, { recursive: true });
-					} catch (cause) {
-						throw new CollectionError({
-							message: `Failed to create collection directory: "${collectionPath}"`,
-							hint: 'Check that you have write permissions to the btca data directory.',
-							cause
-						});
+					if (isVirtual) {
+						try {
+							await VirtualFs.mkdir('/collections', { recursive: true });
+							await VirtualFs.mkdir('/resources', { recursive: true });
+							await VirtualFs.mkdir(collectionPath, { recursive: true });
+						} catch (cause) {
+							throw new CollectionError({
+								message: `Failed to create virtual collection directory: "${collectionPath}"`,
+								hint: 'Check that the virtual filesystem is available.',
+								cause
+							});
+						}
+					} else {
+						try {
+							await fs.mkdir(collectionPath, { recursive: true });
+						} catch (cause) {
+							throw new CollectionError({
+								message: `Failed to create collection directory: "${collectionPath}"`,
+								hint: 'Check that you have write permissions to the btca data directory.',
+								cause
+							});
+						}
 					}
 
 					const loadedResources: BtcaFsResource[] = [];
@@ -92,21 +110,65 @@ export namespace Collections {
 							});
 						}
 
-						const linkPath = path.join(collectionPath, resource.fsName);
-						try {
-							await fs.rm(linkPath, { recursive: true, force: true });
-						} catch {
-							// ignore
-						}
+						if (isVirtual) {
+							const virtualResourcePath = path.posix.join('/resources', resource.fsName);
+							try {
+								await VirtualFs.rm(virtualResourcePath, { recursive: true, force: true });
+							} catch {
+								// ignore
+							}
+							try {
+								await VirtualFs.importDirectoryFromDisk({
+									sourcePath: resourcePath,
+									destinationPath: virtualResourcePath,
+									ignore: (relativePath) => {
+										const normalized = relativePath.split(path.sep).join('/');
+										return (
+											normalized === '.git' ||
+											normalized.startsWith('.git/') ||
+											normalized.includes('/.git/')
+										);
+									}
+								});
+							} catch (cause) {
+								throw new CollectionError({
+									message: `Failed to virtualize resource "${resource.name}"`,
+									hint: CommonHints.CLEAR_CACHE,
+									cause
+								});
+							}
 
-						try {
-							await fs.symlink(resourcePath, linkPath, 'junction');
-						} catch (cause) {
-							throw new CollectionError({
-								message: `Failed to create symlink for resource "${resource.name}"`,
-								hint: 'This may be a filesystem permissions issue or the link already exists.',
-								cause
-							});
+							const linkPath = path.posix.join(collectionPath, resource.fsName);
+							try {
+								await VirtualFs.rm(linkPath, { recursive: true, force: true });
+							} catch {
+								// ignore
+							}
+							try {
+								await VirtualFs.symlink(virtualResourcePath, linkPath);
+							} catch (cause) {
+								throw new CollectionError({
+									message: `Failed to create virtual symlink for resource "${resource.name}"`,
+									hint: 'This may be a virtual filesystem permissions issue.',
+									cause
+								});
+							}
+						} else {
+							const linkPath = path.join(collectionPath, resource.fsName);
+							try {
+								await fs.rm(linkPath, { recursive: true, force: true });
+							} catch {
+								// ignore
+							}
+							try {
+								await fs.symlink(resourcePath, linkPath, 'junction');
+							} catch (cause) {
+								throw new CollectionError({
+									message: `Failed to create symlink for resource "${resource.name}"`,
+									hint: 'This may be a filesystem permissions issue or the link already exists.',
+									cause
+								});
+							}
 						}
 					}
 
@@ -114,7 +176,8 @@ export namespace Collections {
 
 					return {
 						path: collectionPath,
-						agentInstructions: instructionBlocks.join('\n\n')
+						agentInstructions: instructionBlocks.join('\n\n'),
+						mode: isVirtual ? 'virtual' : 'fs'
 					};
 				})
 		};

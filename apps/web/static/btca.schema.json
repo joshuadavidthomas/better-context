@@ -29,6 +29,11 @@
 			"description": "Timeout in milliseconds for provider requests (optional)",
 			"default": 300000
 		},
+		"virtualizeResources": {
+			"type": "boolean",
+			"description": "Load resources into an in-memory virtual filesystem for tool access",
+			"default": false
+		},
 		"resources": {
 			"type": "array",
 			"description": "List of resources (documentation repositories or local directories) to use for context",

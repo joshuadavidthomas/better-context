@@ -7,6 +7,9 @@ import * as path from 'node:path';
 import { z } from 'zod';
 
 import { Sandbox } from './sandbox.ts';
+import type { ToolContext } from './context.ts';
+import { VirtualSandbox } from './virtual-sandbox.ts';
+import { VirtualFs } from '../vfs/virtual-fs.ts';
 
 export namespace ListTool {
 	// Schema for tool parameters
@@ -37,28 +40,44 @@ export namespace ListTool {
 	/**
 	 * Execute the list tool
 	 */
-	export async function execute(
-		params: ParametersType,
-		context: { basePath: string }
-	): Promise<Result> {
+	export async function execute(params: ParametersType, context: ToolContext): Promise<Result> {
 		const { basePath } = context;
+		const mode = context.mode ?? 'fs';
 
 		// Resolve path within sandbox
-		const resolvedPath = Sandbox.resolvePath(basePath, params.path);
+		const resolvedPath =
+			mode === 'virtual'
+				? VirtualSandbox.resolvePath(basePath, params.path)
+				: Sandbox.resolvePath(basePath, params.path);
 
 		// Check if path exists
 		try {
-			const stats = await fs.stat(resolvedPath);
-			if (!stats.isDirectory()) {
-				return {
-					title: params.path,
-					output: `Path is not a directory: ${params.path}`,
-					metadata: {
-						entries: [],
-						fileCount: 0,
-						directoryCount: 0
-					}
-				};
+			if (mode === 'virtual') {
+				const stats = await VirtualFs.stat(resolvedPath);
+				if (!stats.isDirectory) {
+					return {
+						title: params.path,
+						output: `Path is not a directory: ${params.path}`,
+						metadata: {
+							entries: [],
+							fileCount: 0,
+							directoryCount: 0
+						}
+					};
+				}
+			} else {
+				const stats = await fs.stat(resolvedPath);
+				if (!stats.isDirectory()) {
+					return {
+						title: params.path,
+						output: `Path is not a directory: ${params.path}`,
+						metadata: {
+							entries: [],
+							fileCount: 0,
+							directoryCount: 0
+						}
+					};
+				}
 			}
 		} catch {
 			return {
@@ -73,47 +92,67 @@ export namespace ListTool {
 		}
 
 		// Read directory contents
-		const dirents = await fs.readdir(resolvedPath, { withFileTypes: true });
-
-		// Process entries
 		const entries: Entry[] = [];
 
-		for (const dirent of dirents) {
-			let type: Entry['type'] = 'other';
-			let size: number | undefined;
-
-			if (dirent.isDirectory()) {
-				type = 'directory';
-			} else if (dirent.isFile()) {
-				type = 'file';
-				try {
-					const stats = await fs.stat(path.join(resolvedPath, dirent.name));
-					size = stats.size;
-				} catch {
-					// Ignore stat errors
-				}
-			} else if (dirent.isSymbolicLink()) {
-				type = 'symlink';
-				// Try to determine if symlink points to file or directory
-				try {
-					const stats = await fs.stat(path.join(resolvedPath, dirent.name));
-					if (stats.isDirectory()) {
-						type = 'directory';
-					} else if (stats.isFile()) {
-						type = 'file';
+		if (mode === 'virtual') {
+			const dirents = await VirtualFs.readdir(resolvedPath);
+			for (const dirent of dirents) {
+				let type: Entry['type'] = 'other';
+				let size: number | undefined;
+				if (dirent.isDirectory) {
+					type = 'directory';
+				} else if (dirent.isFile) {
+					type = 'file';
+					try {
+						const stats = await VirtualFs.stat(path.posix.join(resolvedPath, dirent.name));
 						size = stats.size;
+					} catch {
+						// Ignore stat errors
 					}
-				} catch {
-					// Keep as symlink if we can't resolve
-					type = 'symlink';
 				}
+				entries.push({
+					name: dirent.name,
+					type,
+					size
+				});
 			}
-
-			entries.push({
-				name: dirent.name,
-				type,
-				size
-			});
+		} else {
+			const dirents = await fs.readdir(resolvedPath, { withFileTypes: true });
+			for (const dirent of dirents) {
+				let type: Entry['type'] = 'other';
+				let size: number | undefined;
+				if (dirent.isDirectory()) {
+					type = 'directory';
+				} else if (dirent.isFile()) {
+					type = 'file';
+					try {
+						const stats = await fs.stat(path.join(resolvedPath, dirent.name));
+						size = stats.size;
+					} catch {
+						// Ignore stat errors
+					}
+				} else if (dirent.isSymbolicLink()) {
+					type = 'symlink';
+					// Try to determine if symlink points to file or directory
+					try {
+						const stats = await fs.stat(path.join(resolvedPath, dirent.name));
+						if (stats.isDirectory()) {
+							type = 'directory';
+						} else if (stats.isFile()) {
+							type = 'file';
+							size = stats.size;
+						}
+					} catch {
+						// Keep as symlink if we can't resolve
+						type = 'symlink';
+					}
+				}
+				entries.push({
+					name: dirent.name,
+					type,
+					size
+				});
+			}
 		}
 
 		// Sort: directories first, then files, alphabetically within each group
