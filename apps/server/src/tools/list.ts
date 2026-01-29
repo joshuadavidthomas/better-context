@@ -2,11 +2,12 @@
  * List Tool
  * Lists directory contents with file types
  */
-import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { z } from 'zod';
 
-import { Sandbox } from './sandbox.ts';
+import type { ToolContext } from './context.ts';
+import { VirtualSandbox } from './virtual-sandbox.ts';
+import { VirtualFs } from '../vfs/virtual-fs.ts';
 
 export namespace ListTool {
 	// Schema for tool parameters
@@ -19,7 +20,7 @@ export namespace ListTool {
 	// Entry type
 	export type Entry = {
 		name: string;
-		type: 'file' | 'directory' | 'symlink' | 'other';
+		type: 'file' | 'directory' | 'other';
 		size?: number;
 	};
 
@@ -37,19 +38,16 @@ export namespace ListTool {
 	/**
 	 * Execute the list tool
 	 */
-	export async function execute(
-		params: ParametersType,
-		context: { basePath: string }
-	): Promise<Result> {
-		const { basePath } = context;
+	export async function execute(params: ParametersType, context: ToolContext): Promise<Result> {
+		const { basePath, vfsId } = context;
 
 		// Resolve path within sandbox
-		const resolvedPath = Sandbox.resolvePath(basePath, params.path);
+		const resolvedPath = VirtualSandbox.resolvePath(basePath, params.path);
 
 		// Check if path exists
 		try {
-			const stats = await fs.stat(resolvedPath);
-			if (!stats.isDirectory()) {
+			const stats = await VirtualFs.stat(resolvedPath, vfsId);
+			if (!stats.isDirectory) {
 				return {
 					title: params.path,
 					output: `Path is not a directory: ${params.path}`,
@@ -73,42 +71,23 @@ export namespace ListTool {
 		}
 
 		// Read directory contents
-		const dirents = await fs.readdir(resolvedPath, { withFileTypes: true });
-
-		// Process entries
 		const entries: Entry[] = [];
 
+		const dirents = await VirtualFs.readdir(resolvedPath, vfsId);
 		for (const dirent of dirents) {
 			let type: Entry['type'] = 'other';
 			let size: number | undefined;
-
-			if (dirent.isDirectory()) {
+			if (dirent.isDirectory) {
 				type = 'directory';
-			} else if (dirent.isFile()) {
+			} else if (dirent.isFile) {
 				type = 'file';
 				try {
-					const stats = await fs.stat(path.join(resolvedPath, dirent.name));
+					const stats = await VirtualFs.stat(path.posix.join(resolvedPath, dirent.name), vfsId);
 					size = stats.size;
 				} catch {
 					// Ignore stat errors
 				}
-			} else if (dirent.isSymbolicLink()) {
-				type = 'symlink';
-				// Try to determine if symlink points to file or directory
-				try {
-					const stats = await fs.stat(path.join(resolvedPath, dirent.name));
-					if (stats.isDirectory()) {
-						type = 'directory';
-					} else if (stats.isFile()) {
-						type = 'file';
-						size = stats.size;
-					}
-				} catch {
-					// Keep as symlink if we can't resolve
-					type = 'symlink';
-				}
 			}
-
 			entries.push({
 				name: dirent.name,
 				type,
@@ -135,8 +114,6 @@ export namespace ListTool {
 
 			if (entry.type === 'directory') {
 				line = `[DIR]  ${entry.name}/`;
-			} else if (entry.type === 'symlink') {
-				line = `[LNK]  ${entry.name}`;
 			} else if (entry.type === 'file') {
 				const sizeStr = entry.size !== undefined ? formatSize(entry.size) : '';
 				line = `[FILE] ${entry.name}${sizeStr ? ` (${sizeStr})` : ''}`;

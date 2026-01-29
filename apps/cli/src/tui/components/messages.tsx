@@ -43,34 +43,37 @@ const LoadingSpinner: Component = () => {
 	return <text fg={colors.success}>{spinnerFrames[frameIndex()]} </text>;
 };
 
-const ToolChunk: Component<{ chunk: Extract<BtcaChunk, { type: 'tool' }> }> = (props) => {
-	const stateIcon = () => {
-		switch (props.chunk.state) {
-			case 'pending':
-				return '○';
-			case 'running':
-				return '◐';
-			case 'completed':
-				return '●';
-		}
-	};
+const summarizeTools = (chunks: BtcaChunk[]) => {
+	const counts = new Map<string, number>();
+	const order: string[] = [];
 
-	const stateColor = () => {
-		switch (props.chunk.state) {
-			case 'pending':
-				return colors.textMuted;
-			case 'running':
-				return colors.accent;
-			case 'completed':
-				return colors.success;
+	for (const chunk of chunks) {
+		if (chunk.type !== 'tool') continue;
+		const name = chunk.toolName;
+		if (!counts.has(name)) {
+			counts.set(name, 0);
+			order.push(name);
 		}
-	};
+		counts.set(name, (counts.get(name) ?? 0) + 1);
+	}
+
+	return order.map((name) => ({ name, count: counts.get(name) ?? 0 }));
+};
+
+const ToolSummary: Component<{ chunks: Extract<BtcaChunk, { type: 'tool' }>[] }> = (props) => {
+	const items = () => summarizeTools(props.chunks);
+	const summaryText = () =>
+		items()
+			.map((item) => `${item.name} ×${item.count}`)
+			.join(' | ');
 
 	return (
-		<box style={{ flexDirection: 'row', gap: 1 }}>
-			<text fg={stateColor()}>{stateIcon()}</text>
-			<text fg={colors.textMuted}>{props.chunk.toolName}</text>
-		</box>
+		<Show when={items().length > 0}>
+			<box style={{ flexDirection: 'row', gap: 1 }}>
+				<text fg={colors.textMuted}>Tools</text>
+				<text fg={colors.textMuted}>{summaryText()}</text>
+			</box>
+		</Show>
 	);
 };
 
@@ -117,7 +120,7 @@ const ChunkRenderer: Component<{ chunk: BtcaChunk; isStreaming: boolean }> = (pr
 	return (
 		<Switch>
 			<Match when={props.chunk.type === 'tool'}>
-				<ToolChunk chunk={props.chunk as Extract<BtcaChunk, { type: 'tool' }>} />
+				<ToolSummary chunks={[props.chunk as Extract<BtcaChunk, { type: 'tool' }>]} />
 			</Match>
 			<Match when={props.chunk.type === 'file'}>
 				<FileChunk chunk={props.chunk as Extract<BtcaChunk, { type: 'file' }>} />
@@ -138,6 +141,10 @@ const ChunkRenderer: Component<{ chunk: BtcaChunk; isStreaming: boolean }> = (pr
 	);
 };
 
+type RenderItem =
+	| { kind: 'chunk'; chunk: BtcaChunk }
+	| { kind: 'tool-summary'; chunks: Extract<BtcaChunk, { type: 'tool' }>[] };
+
 /**
  * Renders chunks in display order: reasoning, tools, text
  * This ensures consistent UX regardless of stream arrival order
@@ -148,10 +155,9 @@ const ChunksRenderer: Component<{
 	isCanceled?: boolean;
 	textColor?: string;
 }> = (props) => {
-	// Sort chunks into display order: reasoning first, then tools, then text
-	const sortedChunks = () => {
+	const renderItems = () => {
 		const reasoning: BtcaChunk[] = [];
-		const tools: BtcaChunk[] = [];
+		const tools: Extract<BtcaChunk, { type: 'tool' }>[] = [];
 		const text: BtcaChunk[] = [];
 		const other: BtcaChunk[] = [];
 
@@ -171,24 +177,61 @@ const ChunksRenderer: Component<{
 			}
 		}
 
-		return [...reasoning, ...tools, ...text, ...other];
+		const items: RenderItem[] = [];
+		for (const chunk of reasoning) {
+			items.push({ kind: 'chunk', chunk });
+		}
+		if (tools.length > 0) {
+			items.push({ kind: 'tool-summary', chunks: tools });
+		}
+		for (const chunk of text) {
+			items.push({ kind: 'chunk', chunk });
+		}
+		for (const chunk of other) {
+			items.push({ kind: 'chunk', chunk });
+		}
+
+		return items;
 	};
 
-	const isLastChunk = (idx: number) => idx === sortedChunks().length - 1;
+	const lastChunkIndex = () => {
+		const items = renderItems();
+		for (let i = items.length - 1; i >= 0; i -= 1) {
+			if (items[i]?.kind === 'chunk') {
+				return i;
+			}
+		}
+		return -1;
+	};
+
+	const isLastChunk = (idx: number) => idx === lastChunkIndex();
 
 	return (
 		<box style={{ flexDirection: 'column', gap: 1 }}>
-			<For each={sortedChunks()}>
-				{(chunk, idx) => (
-					<Show
-						when={props.isCanceled && chunk.type === 'text'}
-						fallback={
-							<ChunkRenderer chunk={chunk} isStreaming={props.isStreaming && isLastChunk(idx())} />
-						}
-					>
-						<text fg={props.textColor}>{stripHistoryTags((chunk as { text: string }).text)}</text>
-					</Show>
-				)}
+			<For each={renderItems()}>
+				{(item, idx) => {
+					if (item.kind === 'tool-summary') {
+						return <ToolSummary chunks={item.chunks} />;
+					}
+
+					const chunk = item.chunk;
+
+					return (
+						<Show
+							when={props.isCanceled && chunk.type === 'text'}
+							fallback={
+								<ChunkRenderer
+									chunk={chunk}
+									isStreaming={props.isStreaming && isLastChunk(idx())}
+								/>
+							}
+						>
+							<text fg={props.textColor}>
+								{stripHistoryTags(chunk.type === 'text' ? chunk.text : '')}
+							</text>
+						</Show>
+					);
+				}}
 			</For>
 		</box>
 	);

@@ -140,7 +140,6 @@ Example config.toml:
 provider = "anthropic"
 model = "claude-3-7-sonnet-20250219"
 resourcesDirectory = "~/.btca/resources"
-collectionsDirectory = "~/.btca/collections"
 
 [[resources]]
 type = "local"

@@ -11,7 +11,7 @@
 		},
 		"dataDirectory": {
 			"type": "string",
-			"description": "Directory for storing btca data (resources, collections). Defaults to ~/.local/share/btca",
+			"description": "Directory for storing btca data (resources). Defaults to ~/.local/share/btca",
 			"default": "~/.local/share/btca"
 		},
 		"model": {

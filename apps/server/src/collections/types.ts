@@ -4,6 +4,7 @@ import { resourceNameToKey } from '../resources/helpers.ts';
 export type CollectionResult = {
 	path: string;
 	agentInstructions: string;
+	vfsId?: string;
 };
 
 export class CollectionError extends Error {

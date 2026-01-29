@@ -14,6 +14,8 @@ import { GitResourceSchema, LocalResourceSchema } from './resources/schema.ts';
 import { StreamService } from './stream/service.ts';
 import type { BtcaStreamMetaEvent } from './stream/types.ts';
 import { LIMITS, normalizeGitHubUrl } from './validation/index.ts';
+import { clearAllVirtualCollectionMetadata } from './collections/virtual-metadata.ts';
+import { VirtualFs } from './vfs/virtual-fs.ts';
 
 /**
  * BTCA Server API
@@ -226,7 +228,6 @@ const createApp = (deps: {
 				model: config.model,
 				providerTimeoutMs: config.providerTimeoutMs ?? null,
 				resourcesDirectory: config.resourcesDirectory,
-				collectionsDirectory: config.collectionsDirectory,
 				resourceCount: config.resources.length
 			});
 		})
@@ -504,8 +505,7 @@ export const startServer = async (options: StartServerOptions = {}): Promise<Ser
 		provider: config.provider,
 		model: config.model,
 		resources: config.resources.map((r) => r.name),
-		resourcesDirectory: config.resourcesDirectory,
-		collectionsDirectory: config.collectionsDirectory
+		resourcesDirectory: config.resourcesDirectory
 	});
 
 	const resources = Resources.create(config);
@@ -526,7 +526,12 @@ export const startServer = async (options: StartServerOptions = {}): Promise<Ser
 	return {
 		port: actualPort,
 		url: `http://localhost:${actualPort}`,
-		stop: () => server.stop()
+		stop: () => {
+			void agent.closeAllInstances();
+			VirtualFs.disposeAll();
+			clearAllVirtualCollectionMetadata();
+			server.stop();
+		}
 	};
 };
 
@@ -536,5 +541,12 @@ export type { BtcaStreamEvent, BtcaStreamMetaEvent } from './stream/types.ts';
 // Auto-start when run directly (not imported)
 const isMainModule = import.meta.main;
 if (isMainModule) {
-	await startServer({ port: PORT });
+	const server = await startServer({ port: PORT });
+	const shutdown = () => {
+		Metrics.info('server.shutdown', { reason: 'signal' });
+		server.stop();
+		process.exit(0);
+	};
+	process.on('SIGINT', shutdown);
+	process.on('SIGTERM', shutdown);
 }

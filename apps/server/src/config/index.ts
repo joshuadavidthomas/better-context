@@ -113,7 +113,6 @@ export namespace Config {
 
 	export type Service = {
 		resourcesDirectory: string;
-		collectionsDirectory: string;
 		resources: readonly ResourceDefinition[];
 		model: string;
 		provider: string;
@@ -477,14 +476,12 @@ export namespace Config {
 	 * @param globalConfig - The global config (always present)
 	 * @param projectConfig - The project config (null if not using project-level config)
 	 * @param resourcesDirectory - Directory for resource data
-	 * @param collectionsDirectory - Directory for collection data
 	 * @param configPath - Path to the config file to save (project if exists, else global)
 	 */
 	const makeService = (
 		globalConfig: StoredConfig,
 		projectConfig: StoredConfig | null,
 		resourcesDirectory: string,
-		collectionsDirectory: string,
 		configPath: string
 	): Service => {
 		// Track configs separately to avoid resource leakage
@@ -528,7 +525,6 @@ export namespace Config {
 
 		const service: Service = {
 			resourcesDirectory,
-			collectionsDirectory,
 			configPath,
 			get resources() {
 				return getMergedResources();
@@ -635,7 +631,7 @@ export namespace Config {
 			},
 
 			clearResources: async () => {
-				// Clear the resources and collections directories
+				// Clear the resources directory
 				let clearedCount = 0;
 
 				try {
@@ -643,15 +639,6 @@ export namespace Config {
 					for (const item of resourcesDir) {
 						await fs.rm(`${resourcesDirectory}/${item}`, { recursive: true, force: true });
 						clearedCount++;
-					}
-				} catch {
-					// Directory might not exist
-				}
-
-				try {
-					const collectionsDir = await fs.readdir(collectionsDirectory).catch(() => []);
-					for (const item of collectionsDir) {
-						await fs.rm(`${collectionsDirectory}/${item}`, { recursive: true, force: true });
 					}
 				} catch {
 					// Directory might not exist
@@ -758,7 +745,6 @@ export namespace Config {
 				globalConfig,
 				projectConfig,
 				`${resolvedProjectDataDir}/resources`,
-				`${resolvedProjectDataDir}/collections`,
 				projectConfigPath
 			);
 		}
@@ -770,12 +756,6 @@ export namespace Config {
 			globalDataDir,
 			expandHome(GLOBAL_CONFIG_DIR)
 		);
-		return makeService(
-			globalConfig,
-			null,
-			`${resolvedGlobalDataDir}/resources`,
-			`${resolvedGlobalDataDir}/collections`,
-			globalConfigPath
-		);
+		return makeService(globalConfig, null, `${resolvedGlobalDataDir}/resources`, globalConfigPath);
 	};
 }

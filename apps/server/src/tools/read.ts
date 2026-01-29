@@ -2,11 +2,12 @@
  * Read Tool
  * Reads file contents with line numbers, truncation, and special file handling
  */
-import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { z } from 'zod';
 
-import { Sandbox } from './sandbox.ts';
+import type { ToolContext } from './context.ts';
+import { VirtualSandbox } from './virtual-sandbox.ts';
+import { VirtualFs } from '../vfs/virtual-fs.ts';
 
 export namespace ReadTool {
 	// Configuration
@@ -65,42 +66,32 @@ export namespace ReadTool {
 	/**
 	 * Check if a file is binary by looking for null bytes
 	 */
-	async function isBinaryFile(filepath: string): Promise<boolean> {
-		const file = Bun.file(filepath);
-		const chunk = await file.slice(0, 8192).arrayBuffer();
-		const bytes = new Uint8Array(chunk);
-
+	function isBinaryBuffer(bytes: Uint8Array): boolean {
 		for (const byte of bytes) {
-			if (byte === 0) {
-				return true;
-			}
+			if (byte === 0) return true;
 		}
-
 		return false;
 	}
 
 	/**
 	 * Execute the read tool
 	 */
-	export async function execute(
-		params: ParametersType,
-		context: { basePath: string }
-	): Promise<Result> {
-		const { basePath } = context;
+	export async function execute(params: ParametersType, context: ToolContext): Promise<Result> {
+		const { basePath, vfsId } = context;
 
 		// Validate and resolve path within sandbox
-		const resolvedPath = await Sandbox.resolvePathWithSymlinks(basePath, params.path);
+		const resolvedPath = await VirtualSandbox.resolvePathWithSymlinks(basePath, params.path, vfsId);
 
 		// Check if file exists
-		const file = Bun.file(resolvedPath);
-		if (!(await file.exists())) {
+		const exists = await VirtualFs.exists(resolvedPath, vfsId);
+		if (!exists) {
 			// Try to provide suggestions
 			const dir = path.dirname(resolvedPath);
 			const filename = path.basename(resolvedPath);
 			let suggestions: string[] = [];
 
 			try {
-				const files = await fs.readdir(dir);
+				const files = (await VirtualFs.readdir(dir, vfsId)).map((entry) => entry.name);
 				suggestions = files
 					.filter((f) => f.toLowerCase().includes(filename.toLowerCase().slice(0, 3)))
 					.slice(0, 5);
@@ -127,9 +118,9 @@ export namespace ReadTool {
 
 		// Handle images
 		if (IMAGE_EXTENSIONS.has(ext)) {
-			const bytes = await file.arrayBuffer();
+			const bytes = await VirtualFs.readFileBuffer(resolvedPath, vfsId);
 			const base64 = Buffer.from(bytes).toString('base64');
-			const mime = file.type || 'application/octet-stream';
+			const mime = getImageMime(ext);
 
 			return {
 				title: params.path,
@@ -151,7 +142,7 @@ export namespace ReadTool {
 
 		// Handle PDFs
 		if (PDF_EXTENSIONS.has(ext)) {
-			const bytes = await file.arrayBuffer();
+			const bytes = await VirtualFs.readFileBuffer(resolvedPath, vfsId);
 			const base64 = Buffer.from(bytes).toString('base64');
 
 			return {
@@ -173,7 +164,7 @@ export namespace ReadTool {
 		}
 
 		// Check for binary files
-		if (await isBinaryFile(resolvedPath)) {
+		if (isBinaryBuffer(await VirtualFs.readFileBuffer(resolvedPath, vfsId))) {
 			return {
 				title: params.path,
 				output: `[Binary file: ${path.basename(resolvedPath)}]`,
@@ -186,7 +177,7 @@ export namespace ReadTool {
 		}
 
 		// Read text file
-		const text = await file.text();
+		const text = await VirtualFs.readFile(resolvedPath, vfsId);
 		const allLines = text.split('\n');
 
 		const offset = params.offset ?? 0;
@@ -251,5 +242,27 @@ export namespace ReadTool {
 				truncatedByBytes
 			}
 		};
+	}
+
+	function getImageMime(ext: string): string {
+		switch (ext) {
+			case '.png':
+				return 'image/png';
+			case '.jpg':
+			case '.jpeg':
+				return 'image/jpeg';
+			case '.gif':
+				return 'image/gif';
+			case '.webp':
+				return 'image/webp';
+			case '.bmp':
+				return 'image/bmp';
+			case '.ico':
+				return 'image/x-icon';
+			case '.svg':
+				return 'image/svg+xml';
+			default:
+				return 'application/octet-stream';
+		}
 	}
 }

@@ -48,10 +48,9 @@ apps/server/
 │   │   └── types.ts
 │   ├── tools/
 │   │   ├── read.ts          # File reading
-│   │   ├── grep.ts          # Regex search (ripgrep)
-│   │   ├── glob.ts          # File pattern matching
-│   │   ├── list.ts          # Directory listing
-│   │   └── ripgrep.ts       # Binary management
+│   │   ├── grep.ts          # Regex search (in-memory)
+│   │   ├── glob.ts          # File pattern matching (in-memory)
+│   │   └── list.ts          # Directory listing
 │   ├── providers/
 │   │   ├── auth.ts          # OpenCode auth wrapper
 │   │   ├── registry.ts      # Provider factories

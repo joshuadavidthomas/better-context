@@ -6,6 +6,11 @@ import os from 'node:os';
 import { Agent } from './service.ts';
 import { Config } from '../config/index.ts';
 import type { CollectionResult } from '../collections/types.ts';
+import {
+	getVirtualCollectionMetadata,
+	setVirtualCollectionMetadata
+} from '../collections/virtual-metadata.ts';
+import { VirtualFs } from '../vfs/virtual-fs.ts';
 
 describe('Agent', () => {
 	let testDir: string;
@@ -41,21 +46,22 @@ describe('Agent', () => {
 	// Run with: BTCA_RUN_INTEGRATION_TESTS=1 bun test
 	describe.skipIf(!process.env.BTCA_RUN_INTEGRATION_TESTS)('Agent.ask (integration)', () => {
 		it('asks a question and receives an answer', async () => {
-			// Create a simple collection directory with a test file
-			const collectionPath = path.join(testDir, 'test-collection');
-			await fs.mkdir(collectionPath, { recursive: true });
-			await fs.writeFile(
-				path.join(collectionPath, 'README.md'),
-				'# Test Documentation\n\nThis is a test file. The answer to life is 42.'
-			);
-
 			process.chdir(testDir);
 			const config = await Config.load();
 			const agent = Agent.create(config);
 
+			const vfsId = VirtualFs.create();
+			await VirtualFs.mkdir('/', { recursive: true }, vfsId);
+			await VirtualFs.writeFile(
+				'/README.md',
+				'# Test Documentation\n\nThis is a test file. The answer to life is 42.',
+				vfsId
+			);
+
 			const collection: CollectionResult = {
-				path: collectionPath,
-				agentInstructions: 'This is a test collection with a README file.'
+				path: '/',
+				agentInstructions: 'This is a test collection with a README file.',
+				vfsId
 			};
 
 			const result = await agent.ask({
@@ -75,17 +81,18 @@ describe('Agent', () => {
 		}, 60000);
 
 		it('handles askStream and receives events', async () => {
-			const collectionPath = path.join(testDir, 'stream-collection');
-			await fs.mkdir(collectionPath, { recursive: true });
-			await fs.writeFile(path.join(collectionPath, 'data.txt'), 'The capital of France is Paris.');
-
 			process.chdir(testDir);
 			const config = await Config.load();
 			const agent = Agent.create(config);
 
+			const vfsId = VirtualFs.create();
+			await VirtualFs.mkdir('/', { recursive: true }, vfsId);
+			await VirtualFs.writeFile('/data.txt', 'The capital of France is Paris.', vfsId);
+
 			const collection: CollectionResult = {
-				path: collectionPath,
-				agentInstructions: 'Simple test collection.'
+				path: '/',
+				agentInstructions: 'Simple test collection.',
+				vfsId
 			};
 
 			const { stream, model } = await agent.askStream({
@@ -106,6 +113,97 @@ describe('Agent', () => {
 			// Should have received some text-delta events
 			const textEvents = events.filter((e) => e.type === 'text-delta');
 			expect(textEvents.length).toBeGreaterThan(0);
+		}, 60000);
+
+		it('cleans up virtual collections after ask', async () => {
+			process.chdir(testDir);
+			const config = await Config.load();
+			const agent = Agent.create(config);
+
+			const vfsId = VirtualFs.create();
+			await VirtualFs.mkdir('/', { recursive: true }, vfsId);
+			await VirtualFs.mkdir('/docs', { recursive: true }, vfsId);
+			await VirtualFs.writeFile('/docs/README.md', 'Virtual README\nThe answer is 42.', vfsId);
+
+			setVirtualCollectionMetadata({
+				vfsId,
+				collectionKey: 'virtual-test',
+				createdAt: new Date().toISOString(),
+				resources: [
+					{
+						name: 'docs',
+						fsName: 'docs',
+						type: 'local',
+						path: '/docs',
+						repoSubPaths: [],
+						loadedAt: new Date().toISOString()
+					}
+				]
+			});
+
+			const collection: CollectionResult = {
+				path: '/',
+				agentInstructions: 'This is a virtual collection with a README file.',
+				vfsId
+			};
+
+			const result = await agent.ask({
+				collection,
+				question: 'What number is the answer according to the README?'
+			});
+
+			expect(result).toBeDefined();
+			expect(VirtualFs.has(vfsId)).toBe(false);
+			expect(getVirtualCollectionMetadata(vfsId)).toBeUndefined();
+		}, 60000);
+
+		it('cleans up virtual collections after askStream', async () => {
+			process.chdir(testDir);
+			const config = await Config.load();
+			const agent = Agent.create(config);
+
+			const vfsId = VirtualFs.create();
+			await VirtualFs.mkdir('/', { recursive: true }, vfsId);
+			await VirtualFs.mkdir('/docs', { recursive: true }, vfsId);
+			await VirtualFs.writeFile(
+				'/docs/README.md',
+				'Virtual README\nThe capital of France is Paris.',
+				vfsId
+			);
+
+			setVirtualCollectionMetadata({
+				vfsId,
+				collectionKey: 'virtual-stream-test',
+				createdAt: new Date().toISOString(),
+				resources: [
+					{
+						name: 'docs',
+						fsName: 'docs',
+						type: 'local',
+						path: '/docs',
+						repoSubPaths: [],
+						loadedAt: new Date().toISOString()
+					}
+				]
+			});
+
+			const collection: CollectionResult = {
+				path: '/',
+				agentInstructions: 'This is a virtual collection with a README file.',
+				vfsId
+			};
+
+			const { stream } = await agent.askStream({
+				collection,
+				question: 'What is the capital of France according to the README?'
+			});
+
+			for await (const _event of stream) {
+				// drain stream to trigger cleanup
+			}
+
+			expect(VirtualFs.has(vfsId)).toBe(false);
+			expect(getVirtualCollectionMetadata(vfsId)).toBeUndefined();
 		}, 60000);
 	});
 });

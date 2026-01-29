@@ -7,9 +7,9 @@
 import { Auth } from './src/providers/auth.ts';
 import { getSupportedProviders } from './src/providers/registry.ts';
 import { Model } from './src/providers/model.ts';
-import { Ripgrep } from './src/tools/ripgrep.ts';
 import { ReadTool, GrepTool, GlobTool, ListTool } from './src/tools/index.ts';
 import { AgentLoop } from './src/agent/loop.ts';
+import { VirtualFs } from './src/vfs/virtual-fs.ts';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -36,16 +36,8 @@ async function main() {
 	);
 	console.log('   ✅ Registry working\n');
 
-	// 3. Test Ripgrep
-	console.log('3. Testing Ripgrep...');
-	const rgPath = await Ripgrep.filepath();
-	console.log(`   Ripgrep path: ${rgPath}`);
-	const rgResult = await Ripgrep.run(['--version']);
-	console.log(`   Version: ${rgResult.stdout.trim().split('\n')[0]}`);
-	console.log('   ✅ Ripgrep working\n');
-
-	// 4. Test Tools with a temp directory
-	console.log('4. Testing Tools...');
+	// 3. Test Tools with a temp directory
+	console.log('3. Testing Tools...');
 	const testDir = await fs.mkdtemp(path.join(os.tmpdir(), 'btca-test-'));
 
 	// Create test files
@@ -53,34 +45,43 @@ async function main() {
 	await fs.mkdir(path.join(testDir, 'subdir'));
 	await fs.writeFile(path.join(testDir, 'subdir', 'nested.ts'), 'export const foo = "bar";');
 
+	const vfsId = VirtualFs.create();
+	await VirtualFs.mkdir('/', { recursive: true }, vfsId);
+	await VirtualFs.importDirectoryFromDisk({
+		sourcePath: testDir,
+		destinationPath: '/',
+		vfsId
+	});
+
 	// Test list
-	const listResult = await ListTool.execute({ path: '.' }, { basePath: testDir });
+	const listResult = await ListTool.execute({ path: '.' }, { basePath: '/', vfsId });
 	console.log(`   List result: ${listResult.output.split('\n').length} entries`);
 
 	// Test read
-	const readResult = await ReadTool.execute({ path: 'hello.txt' }, { basePath: testDir });
+	const readResult = await ReadTool.execute({ path: 'hello.txt' }, { basePath: '/', vfsId });
 	console.log(
 		`   Read result: ${readResult.output.includes('Hello, World!') ? 'content matches' : 'MISMATCH'}`
 	);
 
 	// Test glob
-	const globResult = await GlobTool.execute({ pattern: '**/*.ts' }, { basePath: testDir });
+	const globResult = await GlobTool.execute({ pattern: '**/*.ts' }, { basePath: '/', vfsId });
 	console.log(
 		`   Glob result: ${globResult.output.includes('nested.ts') ? 'found .ts file' : 'NOT FOUND'}`
 	);
 
 	// Test grep
-	const grepResult = await GrepTool.execute({ pattern: 'foo' }, { basePath: testDir });
+	const grepResult = await GrepTool.execute({ pattern: 'foo' }, { basePath: '/', vfsId });
 	console.log(
 		`   Grep result: ${grepResult.output.includes('nested.ts') ? 'found match' : 'NOT FOUND'}`
 	);
 
 	// Cleanup
+	VirtualFs.dispose(vfsId);
 	await fs.rm(testDir, { recursive: true });
 	console.log('   ✅ All tools working\n');
 
-	// 5. Test Model Creation (without calling API)
-	console.log('5. Testing Model Creation...');
+	// 4. Test Model Creation (without calling API)
+	console.log('4. Testing Model Creation...');
 	const firstProvider = providers[0]!;
 	// Use appropriate model ID based on provider
 	// For opencode, use big-pickle (free model) or claude-sonnet-4-5
@@ -95,15 +96,22 @@ async function main() {
 		console.log('   (This might be expected if provider uses non-standard model IDs)\n');
 	}
 
-	// 6. Optional: Full Agent Loop Test (requires API call)
+	// 5. Optional: Full Agent Loop Test (requires API call)
 	const runFullTest = process.argv.includes('--full');
 	if (runFullTest) {
-		console.log('6. Testing Full Agent Loop (API call)...');
+		console.log('5. Testing Full Agent Loop (API call)...');
 		const agentTestDir = await fs.mkdtemp(path.join(os.tmpdir(), 'btca-agent-'));
 		await fs.writeFile(
 			path.join(agentTestDir, 'README.md'),
 			'# Test Project\n\nThis project contains the secret code: ALPHA-123.'
 		);
+		const agentVfsId = VirtualFs.create();
+		await VirtualFs.mkdir('/', { recursive: true }, agentVfsId);
+		await VirtualFs.importDirectoryFromDisk({
+			sourcePath: agentTestDir,
+			destinationPath: '/',
+			vfsId: agentVfsId
+		});
 		// Use appropriate model ID based on provider
 		// For opencode, use big-pickle (free) - uses openai-compatible endpoint
 		const agentModelId = firstProvider === 'opencode' ? 'big-pickle' : 'claude-sonnet-4-20250514';
@@ -111,7 +119,8 @@ async function main() {
 			const result = await AgentLoop.run({
 				providerId: firstProvider,
 				modelId: agentModelId,
-				collectionPath: agentTestDir,
+				collectionPath: '/',
+				vfsId: agentVfsId,
 				agentInstructions: 'This is a test collection.',
 				question: 'What is the secret code mentioned in the README?',
 				maxSteps: 5
@@ -125,9 +134,10 @@ async function main() {
 			console.log(`   ❌ Agent loop failed: ${e}\n`);
 		}
 
+		VirtualFs.dispose(agentVfsId);
 		await fs.rm(agentTestDir, { recursive: true });
 	} else {
-		console.log('6. Skipping full agent loop test (run with --full to enable)\n');
+		console.log('5. Skipping full agent loop test (run with --full to enable)\n');
 	}
 
 	console.log('=== All Phase 1+2 tests passed! ===');
