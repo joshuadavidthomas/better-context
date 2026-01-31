@@ -15,6 +15,11 @@ export const COMMANDS: Command[] = [
 		name: 'clear',
 		description: 'Clear chat history',
 		mode: 'clear'
+	},
+	{
+		name: 'resume',
+		description: 'Resume a previous thread',
+		mode: 'resume'
 	}
 ];
 

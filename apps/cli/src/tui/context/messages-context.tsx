@@ -13,6 +13,7 @@ import type { Message, InputState, CancelState, BtcaChunk } from '../types.ts';
 import { services, type ChunkUpdate } from '../services.ts';
 import { copyToClipboard } from '../clipboard.ts';
 import { formatError } from '../lib/format-error.ts';
+import { createThread, loadThread, saveThread, type LocalThreadMessage } from '../thread-store.ts';
 
 type MessagesState = {
 	// Message history
@@ -31,6 +32,7 @@ type MessagesState = {
 	send: (input: InputState, newResources: string[]) => Promise<void>;
 	requestCancel: () => void;
 	confirmCancel: () => Promise<void>;
+	resumeThread: (threadId: string) => Promise<void>;
 };
 
 const MessagesContext = createContext<MessagesState>();
@@ -54,6 +56,9 @@ export const MessagesProvider: Component<ParentProps> = (props) => {
 	const [threadResources, setThreadResources] = createSignal<string[]>([]);
 	const [isStreaming, setIsStreaming] = createSignal(false);
 	const [cancelState, setCancelState] = createSignal<CancelState>('none');
+	const initialThread = createThread();
+	const [threadId, setThreadId] = createSignal<string>(initialThread.id);
+	const [threadCreatedAt, setThreadCreatedAt] = createSignal(initialThread.createdAt);
 
 	// Internal helpers for message updates
 	const addMessage = (message: Message) => setMessages((prev) => [...prev, message]);
@@ -125,6 +130,73 @@ export const MessagesProvider: Component<ParentProps> = (props) => {
 			}
 			return newHistory;
 		});
+	};
+
+	const toStoredMessages = (items: Message[]): LocalThreadMessage[] => {
+		const now = Date.now();
+		return items.map((message) => {
+			if (message.role === 'user') {
+				return {
+					role: 'user',
+					content: message.content.map((s) => s.content).join(''),
+					createdAt: now
+				};
+			}
+			if (message.role === 'assistant') {
+				return {
+					role: 'assistant',
+					content: message.content,
+					canceled: message.canceled,
+					createdAt: now
+				};
+			}
+			return {
+				role: 'system',
+				content: message.content,
+				createdAt: now
+			};
+		});
+	};
+
+	const toUiMessages = (items: LocalThreadMessage[]): Message[] => {
+		return items.map((message) => {
+			if (message.role === 'user') {
+				return {
+					role: 'user',
+					content: [{ type: 'text', content: String(message.content) }]
+				};
+			}
+			if (message.role === 'assistant') {
+				return {
+					role: 'assistant',
+					content: message.content,
+					canceled: message.canceled
+				};
+			}
+			return { role: 'system', content: message.content };
+		});
+	};
+
+	const buildThreadSnapshot = () => ({
+		id: threadId(),
+		createdAt: threadCreatedAt(),
+		lastActivityAt: Date.now(),
+		resources: threadResources(),
+		messages: toStoredMessages(messages())
+	});
+
+	const persistCurrentThread = async () => {
+		const snapshot = buildThreadSnapshot();
+		await saveThread(snapshot);
+	};
+
+	const startNewThread = async () => {
+		const next = createThread();
+		setThreadId(next.id);
+		setThreadCreatedAt(next.createdAt);
+		setMessages(defaultMessageHistory);
+		setThreadResources([]);
+		await persistCurrentThread();
 	};
 
 	const handleChunkUpdate = (update: ChunkUpdate) => {
@@ -214,6 +286,10 @@ export const MessagesProvider: Component<ParentProps> = (props) => {
 		}
 		setIsStreaming(false);
 		setCancelState('none');
+		const persistResult = await Result.tryPromise(persistCurrentThread);
+		if (persistResult.isErr()) {
+			addMessage({ role: 'system', content: `Error: ${formatError(persistResult.error)}` });
+		}
 	};
 
 	const requestCancel = () => {
@@ -228,11 +304,47 @@ export const MessagesProvider: Component<ParentProps> = (props) => {
 		addMessage({ role: 'system', content: 'Request canceled.' });
 		setIsStreaming(false);
 		setCancelState('none');
+		const persistResult = await Result.tryPromise(persistCurrentThread);
+		if (persistResult.isErr()) {
+			addMessage({ role: 'system', content: `Error: ${formatError(persistResult.error)}` });
+		}
 	};
 
 	const clearMessages = () => {
-		setMessages(defaultMessageHistory);
-		setThreadResources([]);
+		void (async () => {
+			const persistResult = await Result.tryPromise(persistCurrentThread);
+			if (persistResult.isErr()) {
+				addMessage({ role: 'system', content: `Error: ${formatError(persistResult.error)}` });
+				return;
+			}
+			const resetResult = await Result.tryPromise(startNewThread);
+			if (resetResult.isErr()) {
+				addMessage({ role: 'system', content: `Error: ${formatError(resetResult.error)}` });
+			}
+		})();
+	};
+
+	const resumeThread = async (nextThreadId: string) => {
+		if (nextThreadId === threadId()) return;
+		const persistResult = await Result.tryPromise(persistCurrentThread);
+		if (persistResult.isErr()) {
+			addMessage({ role: 'system', content: `Error: ${formatError(persistResult.error)}` });
+			return;
+		}
+		const threadResult = await Result.tryPromise(() => loadThread(nextThreadId));
+		if (threadResult.isErr()) {
+			addMessage({ role: 'system', content: `Error: ${formatError(threadResult.error)}` });
+			return;
+		}
+		const thread = threadResult.value;
+		if (!thread) {
+			addMessage({ role: 'system', content: 'Thread not found.' });
+			return;
+		}
+		setThreadId(thread.id);
+		setThreadCreatedAt(thread.createdAt);
+		setMessages(toUiMessages(thread.messages));
+		setThreadResources(thread.resources);
 	};
 
 	const state: MessagesState = {
@@ -244,8 +356,13 @@ export const MessagesProvider: Component<ParentProps> = (props) => {
 		cancelState,
 		send,
 		requestCancel,
-		confirmCancel
+		confirmCancel,
+		resumeThread
 	};
+
+	queueMicrotask(() => {
+		void Result.tryPromise(persistCurrentThread);
+	});
 
 	return <MessagesContext.Provider value={state}>{props.children}</MessagesContext.Provider>;
 };

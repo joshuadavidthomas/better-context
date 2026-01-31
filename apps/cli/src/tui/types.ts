@@ -47,9 +47,9 @@ export type Message =
 			content: string;
 	  };
 
-export type CommandMode = 'add-repo' | 'select-blessed-model' | 'clear';
+export type CommandMode = 'add-repo' | 'select-blessed-model' | 'clear' | 'resume';
 
-export type ActiveWizard = 'none' | 'add-repo' | 'blessed-model';
+export type ActiveWizard = 'none' | 'add-repo' | 'blessed-model' | 'resume';
 
 export type WizardStep =
 	| 'type'
