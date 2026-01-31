@@ -42,11 +42,11 @@
 
 ## P2 Plan Soon
 ### Implementation TODOs (P2)
-- [ ] #131 add Cursor /ask provider integration and docs
-- [ ] #129 add hide-thinking flag/config for CLI and UI outputs
-- [ ] #94 add official btca opencode tool/plugin + docs
-- [ ] #91 add clean output mode to suppress reasoning/tool traces
-- [ ] #63 add resume flow for existing chat sessions
+- [x] #131 add Cursor /ask provider integration and docs
+- [x] #129 add hide-thinking flag/config for CLI and UI outputs
+- [x] #94 add official btca opencode tool/plugin + docs
+- [x] #91 add clean output mode to suppress reasoning/tool traces
+- [x] #63 add resume flow for existing chat sessions
 
 1) #131 Add Cursor CLI /ask mode
    - Add provider integration + docs and CLI connection flow.
