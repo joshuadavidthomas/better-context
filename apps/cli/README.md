@@ -156,6 +156,16 @@ btca --server http://localhost:3000
 btca --port 3001
 ```
 
+## OpenCode MCP Plugin
+
+Download the official OpenCode MCP config template and add your API key:
+
+```bash
+curl -fsSL https://btca.dev/opencode-mcp.json -o opencode.json
+```
+
+Then replace `YOUR_API_KEY` with your MCP API key (see `btca remote mcp` or the web dashboard).
+
 ## TUI Commands
 
 In the interactive TUI, use `/` to access commands:
