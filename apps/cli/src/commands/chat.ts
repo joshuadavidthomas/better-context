@@ -2,11 +2,11 @@ import { Result } from 'better-result';
 import { Command } from 'commander';
 import { spawn } from 'bun';
 import * as readline from 'readline';
-import { ensureServer } from '../server/manager.ts';
-import { createClient, getResources, getOpencodeInstance, BtcaError } from '../client/index.ts';
+import { BtcaError } from '../client/index.ts';
 import { RemoteClient, type RemoteThread } from '../client/remote.ts';
 import { loadAuth } from '../lib/auth.ts';
 import { dim } from '../lib/utils/colors.ts';
+import { launchTui } from './tui.ts';
 
 /**
  * Format an error for display, including hint if available.
@@ -28,10 +28,34 @@ export const chatCommand = new Command('chat')
 	.option('--thread [id]', 'Resume a previous thread (omit id to select from list)')
 	.option('--project <name>', 'Remote project name (for thread lookup)')
 	.action(async (options, command) => {
-		const globalOpts = command.parent?.opts() as { server?: string; port?: number } | undefined;
+		const globalOpts = command.parent?.opts() as
+			| {
+					server?: string;
+					port?: number;
+					thinking?: boolean;
+					tools?: boolean;
+					subAgent?: boolean;
+			  }
+			| undefined;
 
 		const result = await Result.tryPromise(async () => {
 			const threadOption = options.thread as string | boolean | undefined;
+
+			if (threadOption === undefined) {
+				const resources = (options.resource as string[] | undefined) ?? [];
+				if (resources.length > 0) {
+					console.log('Note: --resource is not supported in the TUI. Use @mentions instead.');
+				}
+
+				await launchTui({
+					server: globalOpts?.server,
+					port: globalOpts?.port,
+					thinking: globalOpts?.thinking,
+					tools: globalOpts?.tools,
+					subAgent: globalOpts?.subAgent
+				});
+				return;
+			}
 
 			if (threadOption !== undefined) {
 				const auth = await loadAuth();
@@ -69,46 +93,13 @@ export const chatCommand = new Command('chat')
 				return;
 			}
 
-			const server = await ensureServer({
-				serverUrl: globalOpts?.server,
-				port: globalOpts?.port
+			await launchTui({
+				server: globalOpts?.server,
+				port: globalOpts?.port,
+				thinking: globalOpts?.thinking,
+				tools: globalOpts?.tools,
+				subAgent: globalOpts?.subAgent
 			});
-
-			const client = createClient(server.url);
-
-			let resourceNames = (options.resource as string[] | undefined) ?? [];
-
-			// If no resources specified, use all available
-			if (resourceNames.length === 0) {
-				const { resources } = await getResources(client);
-				if (resources.length === 0) {
-					console.error('Error: No resources configured.');
-					console.error('Add resources to your btca config file.');
-					process.exit(1);
-				}
-				resourceNames = resources.map((r) => r.name);
-			}
-
-			console.log(`Loading resources: ${resourceNames.join(', ')}...`);
-
-			// Get OpenCode instance URL from server
-			const { url: opencodeUrl, model } = await getOpencodeInstance(client, {
-				resources: resourceNames,
-				quiet: false
-			});
-
-			console.log(`Starting OpenCode TUI (${model.provider}/${model.model})...\n`);
-
-			// Spawn opencode CLI and attach to the server URL
-			const proc = spawn(['opencode', 'attach', opencodeUrl], {
-				stdin: 'inherit',
-				stdout: 'inherit',
-				stderr: 'inherit'
-			});
-
-			await proc.exited;
-
-			server.stop();
 		});
 
 		if (Result.isError(result)) {
