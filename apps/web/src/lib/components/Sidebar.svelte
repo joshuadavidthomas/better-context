@@ -50,7 +50,7 @@
 
 	let searchValue = $state('');
 	let showUserMenu = $state(false);
-	let showProjectsSection = $state(true);
+	let showProjectsSection = $state(false);
 
 	const filteredThreads = $derived.by(() => {
 		const query = searchValue.trim().toLowerCase();
