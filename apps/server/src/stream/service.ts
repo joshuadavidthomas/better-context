@@ -10,6 +10,7 @@ import type {
 	BtcaStreamErrorEvent,
 	BtcaStreamEvent,
 	BtcaStreamMetaEvent,
+	BtcaStreamReasoningDeltaEvent,
 	BtcaStreamTextDeltaEvent,
 	BtcaStreamToolUpdatedEvent
 } from './types.ts';
@@ -37,9 +38,11 @@ export namespace StreamService {
 		// Track accumulated text and tool state
 		let accumulatedText = '';
 		let emittedText = '';
+		let accumulatedReasoning = '';
 		const toolsByCallId = new Map<string, Omit<BtcaStreamToolUpdatedEvent, 'type'>>();
 		let textEvents = 0;
 		let toolEvents = 0;
+		let reasoningEvents = 0;
 
 		// Extract the core question for stripping echoed user message from final response
 		const coreQuestion = extractCoreQuestion(args.question);
@@ -72,6 +75,17 @@ export namespace StreamService {
 										};
 										emit(controller, msg);
 									}
+									break;
+								}
+
+								case 'reasoning-delta': {
+									reasoningEvents += 1;
+									accumulatedReasoning += event.text;
+									const msg: BtcaStreamReasoningDeltaEvent = {
+										type: 'reasoning.delta',
+										delta: event.text
+									};
+									emit(controller, msg);
 									break;
 								}
 
@@ -135,16 +149,18 @@ export namespace StreamService {
 									Metrics.info('stream.done', {
 										collectionKey: args.meta.collection.key,
 										textLength: finalText.length,
+										reasoningLength: accumulatedReasoning.length,
 										toolCount: tools.length,
 										textEvents,
 										toolEvents,
+										reasoningEvents,
 										finishReason: event.finishReason
 									});
 
 									const done: BtcaStreamDoneEvent = {
 										type: 'done',
 										text: finalText,
-										reasoning: '', // We don't have reasoning in the new format
+										reasoning: accumulatedReasoning,
 										tools
 									};
 									emit(controller, done);

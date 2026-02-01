@@ -11,6 +11,7 @@ export namespace AgentLoop {
 	// Event types for streaming
 	export type AgentEvent =
 		| { type: 'text-delta'; text: string }
+		| { type: 'reasoning-delta'; text: string }
 		| { type: 'tool-call'; toolName: string; input: unknown }
 		| { type: 'tool-result'; toolName: string; output: string }
 		| {
@@ -179,6 +180,10 @@ export namespace AgentLoop {
 					events.push({ type: 'text-delta', text: part.text });
 					break;
 
+				case 'reasoning-delta':
+					events.push({ type: 'reasoning-delta', text: part.text });
+					break;
+
 				case 'tool-call':
 					events.push({
 						type: 'tool-call',
@@ -277,6 +282,10 @@ export namespace AgentLoop {
 			switch (part.type) {
 				case 'text-delta':
 					yield { type: 'text-delta', text: part.text };
+					break;
+
+				case 'reasoning-delta':
+					yield { type: 'reasoning-delta', text: part.text };
 					break;
 
 				case 'tool-call':
