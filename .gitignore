@@ -1,9 +1,9 @@
 # dependencies (bun install)
 node_modules
 
-remotion/
+*.mov
 
-.opencode/
+launch/
 
 # output
 out

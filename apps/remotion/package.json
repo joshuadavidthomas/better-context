@@ -1,0 +1,21 @@
+{
+	"name": "@btca/remotion",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"check": "tsgo --noEmit",
+		"format": "prettier --write ."
+	},
+	"dependencies": {
+		"@remotion/media": "^4.0.416",
+		"@remotion/transitions": "^4.0.416",
+		"react": "18.2.0",
+		"react-dom": "18.2.0",
+		"remotion": "^4.0.416"
+	},
+	"devDependencies": {
+		"@remotion/cli": "4.0.416",
+		"@types/react": "18.2.79",
+		"@types/react-dom": "18.2.25"
+	}
+}
