@@ -92,6 +92,8 @@
 
 ## MCP Audit
 
+What to add to your AGENTS.md file:
+
 ```
 # btca MCP Usage Instructions
 
@@ -126,4 +128,71 @@ The resources available are defined by the end user in their btca dashboard. If 
 
 ```
 
+```
+
+- cursor
+
+IN THE .cursor/mcp.json file
+
+https://cursor.com/docs/context/mcp#using-mcpjson
+
+```
+{
+  "mcpServers": {
+    "server-name": {
+      "url": "https://btca.dev/api/mcp",
+      "headers": {
+        "Authorization": "Bearer ak..."
+      }
+    }
+  }
+}
+```
+
+- codex
+
+IN THE config.toml file
+
+and add the api key to your env vars, probably like .zshenv
+
+https://developers.openai.com/codex/mcp/
+
+```
+[mcp_servers.btca]
+bearer_token_env_var = "BTCA_API_KEY"
+enabled = true
+url = "https://btca.dev/api/mcp"
+```
+
+- claude code
+
+IN THE CLI
+
+https://code.claude.com/docs/en/mcp#installing-mcp-servers
+
+```
+claude mcp add --transport http better-context https://btca.dev/api/mcp \
+ --header "Authorization: Bearer ak..."
+```
+
+- opencode
+
+IN THE opencode.json file
+
+https://opencode.ai/docs/mcp-servers/
+
+```
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "better-context": {
+      "type": "remote",
+      "url": "https://btca.dev/api/mcp",
+      "enabled": true,
+      "headers": {
+        "Authorization": "Bearer ak..."
+      }
+    }
+  }
+}
 ```

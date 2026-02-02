@@ -87,6 +87,7 @@
 	let showCreateModal = $state(false);
 	let isRedirecting = $state(false);
 	let errorMessage = $state<string | null>(null);
+	let copiedAgents = $state(false);
 
 	// Load API keys from Clerk
 	async function loadApiKeys() {
@@ -115,7 +116,7 @@
 		}
 	});
 
-	type McpTool = 'opencode' | 'claude-code';
+	type McpTool = 'opencode' | 'claude-code' | 'cursor' | 'codex';
 	let selectedTool = $state<McpTool>('opencode');
 	let modalSelectedTool = $state<McpTool>('opencode');
 
@@ -123,11 +124,27 @@
 		page.url.hostname === 'localhost' ? `${page.url.origin}/api/mcp` : 'https://btca.dev/api/mcp'
 	);
 
+	type ToolConfig = {
+		name: string;
+		docsUrl: string;
+		kind: 'file' | 'command';
+		filename?: string;
+		language: string;
+		config: string;
+		envVarSnippet?: string;
+		envVarLanguage?: string;
+		hasKeyInConfig?: boolean;
+		hasKeyInEnv?: boolean;
+	};
+
 	const toolConfigs = $derived({
 		opencode: {
 			name: 'OpenCode',
 			docsUrl: 'https://opencode.ai/docs/mcp-servers/#remote',
+			kind: 'file',
 			filename: 'opencode.json',
+			language: 'json',
+			hasKeyInConfig: true,
 			config: JSON.stringify(
 				{
 					$schema: 'https://opencode.ai/config.json',
@@ -149,57 +166,89 @@
 		'claude-code': {
 			name: 'Claude Code',
 			docsUrl: 'https://code.claude.com/docs/en/mcp#option-1:-add-a-remote-http-server',
-			filename: 'Terminal command',
+			kind: 'command',
+			language: 'bash',
+			hasKeyInConfig: true,
 			config: `claude mcp add --transport http better-context ${mcpUrl} \\
   --header "Authorization: Bearer YOUR_API_KEY"`
-		}
-	});
-
-	const currentConfig = $derived(toolConfigs[selectedTool]);
-	const shikiTheme = $derived(themeStore.theme === 'dark' ? 'dark-plus' : 'light-plus');
-
-	// Config with actual API key for the modal
-	const getConfigWithKey = (tool: McpTool, apiKey: string) => {
-		if (tool === 'opencode') {
-			return JSON.stringify(
+		},
+		cursor: {
+			name: 'Cursor',
+			docsUrl: 'https://cursor.com/docs/context/mcp#using-mcpjson',
+			kind: 'file',
+			filename: '.cursor/mcp.json',
+			language: 'json',
+			hasKeyInConfig: true,
+			config: JSON.stringify(
 				{
-					$schema: 'https://opencode.ai/config.json',
-					mcp: {
+					mcpServers: {
 						'better-context': {
-							type: 'remote',
 							url: mcpUrl,
-							enabled: true,
 							headers: {
-								Authorization: `Bearer ${apiKey}`
+								Authorization: 'Bearer YOUR_API_KEY'
 							}
 						}
 					}
 				},
 				null,
 				2
-			);
-		} else {
-			return `claude mcp add --transport http better-context ${mcpUrl} \\
-  --header "Authorization: Bearer ${apiKey}"`;
+			)
+		},
+		codex: {
+			name: 'Codex',
+			docsUrl: 'https://developers.openai.com/codex/mcp/',
+			kind: 'file',
+			filename: 'config.toml',
+			language: 'toml',
+			envVarSnippet: 'export BTCA_API_KEY="YOUR_API_KEY"',
+			envVarLanguage: 'bash',
+			hasKeyInEnv: true,
+			config: `[mcp_servers.btca]
+bearer_token_env_var = "BTCA_API_KEY"
+enabled = true
+url = "${mcpUrl}"`
 		}
-	};
-	const modalConfig = $derived(
-		newlyCreatedKey ? getConfigWithKey(modalSelectedTool, newlyCreatedKey) : ''
-	);
+	} as Record<McpTool, ToolConfig>);
 
-	const agentInstructions = `## Better Context MCP
+	const currentConfig = $derived(toolConfigs[selectedTool]);
+	const shikiTheme = $derived(themeStore.theme === 'dark' ? 'dark-plus' : 'light-plus');
 
-Use the Better Context MCP for documentation questions.
+	// Config with actual API key for the modal
+	const getConfigWithKey = (tool: McpTool, apiKey: string) =>
+		toolConfigs[tool].config.replaceAll('YOUR_API_KEY', apiKey);
+	const getEnvVarWithKey = (tool: McpTool, apiKey: string) =>
+		toolConfigs[tool].envVarSnippet?.replaceAll('YOUR_API_KEY', apiKey) ?? '';
+	const agentInstructions = `# btca MCP Usage Instructions
 
-**Required workflow:**
-1. Call \`listResources\` first to see available resources
-2. Call \`ask\` with your question and resource names from step 1
+btca runs a cloud subagent that searches open source repos
 
-**Rules:**
-- Always call \`listResources\` before \`ask\`
-- Use exact \`name\` values from \`listResources\` in the \`resources\` array
-- Include at least one resource in every \`ask\` call
-- Only include resources relevant to your question`;
+Use it whenever the user says "use btca", or when you need info that should come from the listed resources.
+
+## Tools
+
+The btca MCP server provides these tools:
+
+- \`listResources\` - List all available documentation resources
+- \`ask\` - Ask a question about specific resources
+
+## resources
+
+The resources available are defined by the end user in their btca dashboard. If there's a resource you need but it's not available in \`listResources\`, proceed without btca. When your task is done, clearly note that you'd like access to the missing resource.
+
+## Critical Workflow
+
+**Always call \`listResources\` first** before using \`ask\`. The \`ask\` tool requires exact resource names from the list.
+
+### Example
+
+\`\`\`
+1. Call listResources to get available resources
+2. Note the "name" field for each resource (e.g., "svelteKit", not "SvelteKit" or "svelte-kit")
+3. Call ask with:
+   - question: "How do I create a load function?"
+   - resources: ["svelteKit"]
+\`\`\`
+`;
 
 	const usage = $derived(billingStore.summary?.usage);
 	const maxUsedPct = $derived(
@@ -277,7 +326,16 @@ Use the Better Context MCP for documentation questions.
 		newlyCreatedKey = null;
 		newKeyName = '';
 		modalSelectedTool = 'opencode';
+		copiedAgents = false;
 	}
+
+	const copyAgentsInstructions = async () => {
+		await navigator.clipboard.writeText(agentInstructions);
+		copiedAgents = true;
+		window.setTimeout(() => {
+			copiedAgents = false;
+		}, 1400);
+	};
 
 	const formatPercent = (value: number | undefined) =>
 		Number.isFinite(value) ? `${Math.round(value ?? 0)}%` : '0%';
@@ -564,7 +622,7 @@ Use the Better Context MCP for documentation questions.
 
 								<div class="mb-3 flex items-center justify-between">
 									<p class="bc-muted text-sm">
-										{#if selectedTool === 'claude-code'}
+										{#if currentConfig.kind === 'command'}
 											Run this command in your terminal:
 										{:else}
 											Add this to <code class="rounded bg-[hsl(var(--bc-bg-secondary))] px-1"
@@ -588,7 +646,7 @@ Use the Better Context MCP for documentation questions.
 											{#if shikiStore.highlighter}
 												{@html shikiStore.highlighter.codeToHtml(currentConfig.config, {
 													theme: shikiTheme,
-													lang: selectedTool === 'claude-code' ? 'bash' : 'json',
+													lang: currentConfig.language,
 													rootStyle: 'background-color: transparent; padding: 0; margin: 0;'
 												})}
 											{:else}
@@ -600,15 +658,52 @@ Use the Better Context MCP for documentation questions.
 										<CopyButton text={currentConfig.config} label="Copy configuration" />
 									</div>
 								</div>
-								<p class="bc-muted mt-3 text-sm">
-									Replace <code class="rounded bg-[hsl(var(--bc-bg-secondary))] px-1"
-										>YOUR_API_KEY</code
-									> with an API key from above.
-								</p>
+								{#if currentConfig.hasKeyInConfig}
+									<p class="bc-muted mt-3 text-sm">
+										Replace <code class="rounded bg-[hsl(var(--bc-bg-secondary))] px-1"
+											>YOUR_API_KEY</code
+										> with an API key from above.
+									</p>
+								{/if}
+								{#if currentConfig.envVarSnippet}
+									<div class="mt-4 space-y-2">
+										<p class="bc-muted text-sm">Set environment variable:</p>
+										<div class="bc-codeFrame">
+											<div class="flex items-center justify-between gap-3 p-4">
+												<div class="min-w-0 flex-1 overflow-x-auto">
+													{#if shikiStore.highlighter}
+														{@html shikiStore.highlighter.codeToHtml(currentConfig.envVarSnippet, {
+															theme: shikiTheme,
+															lang: currentConfig.envVarLanguage ?? 'bash',
+															rootStyle: 'background-color: transparent; padding: 0; margin: 0;'
+														})}
+													{:else}
+														<pre class="m-0 whitespace-pre text-sm leading-relaxed"><code
+																>{currentConfig.envVarSnippet}</code
+															></pre>
+													{/if}
+												</div>
+												<CopyButton text={currentConfig.envVarSnippet} label="Copy env var" />
+											</div>
+										</div>
+										<p class="bc-muted text-xs">
+											Add this to <code class="rounded bg-[hsl(var(--bc-bg-secondary))] px-1"
+												>.zshenv</code
+											> or your shell profile.
+										</p>
+										{#if currentConfig.hasKeyInEnv}
+											<p class="bc-muted text-xs">
+												Replace <code class="rounded bg-[hsl(var(--bc-bg-secondary))] px-1"
+													>YOUR_API_KEY</code
+												> with an API key from above.
+											</p>
+										{/if}
+									</div>
+								{/if}
 							</div>
 
 							<div class="bc-card p-5">
-								<h3 class="mb-3 font-medium">2. Add agent instructions (optional)</h3>
+								<h3 class="mb-3 font-medium">2. MCP Audit (optional)</h3>
 								<p class="bc-muted mb-3 text-sm">
 									Add this to your <code class="rounded bg-[hsl(var(--bc-bg-secondary))] px-1"
 										>AGENTS.md</code
@@ -621,7 +716,7 @@ Use the Better Context MCP for documentation questions.
 													>{agentInstructions}</code
 												></pre>
 										</div>
-										<CopyButton text={agentInstructions} label="Copy agent instructions" />
+										<CopyButton text={agentInstructions} label="Copy AGENTS.md instructions" />
 									</div>
 								</div>
 							</div>
@@ -774,6 +869,8 @@ Use the Better Context MCP for documentation questions.
 		></div>
 		<div class="bc-card relative z-10 w-full max-w-xl p-6">
 			{#if newlyCreatedKey}
+				{@const modalConfig = getConfigWithKey(modalSelectedTool, newlyCreatedKey)}
+				{@const modalEnvVarSnippet = getEnvVarWithKey(modalSelectedTool, newlyCreatedKey)}
 				<h3 class="text-lg font-semibold">API Key Created</h3>
 				<p class="bc-muted mt-2 text-sm">
 					Copy your configuration below. You won't be able to see this key again.
@@ -800,7 +897,7 @@ Use the Better Context MCP for documentation questions.
 							{#if shikiStore.highlighter}
 								{@html shikiStore.highlighter.codeToHtml(modalConfig, {
 									theme: shikiTheme,
-									lang: modalSelectedTool === 'claude-code' ? 'bash' : 'json',
+									lang: toolConfigs[modalSelectedTool].language,
 									rootStyle: 'background-color: transparent; padding: 0; margin: 0;'
 								})}
 							{:else}
@@ -813,7 +910,7 @@ Use the Better Context MCP for documentation questions.
 				</div>
 
 				<p class="bc-muted mt-3 text-xs">
-					{#if modalSelectedTool === 'claude-code'}
+					{#if toolConfigs[modalSelectedTool].kind === 'command'}
 						Run this command in your terminal.
 					{:else}
 						Add this to <code class="rounded bg-[hsl(var(--bc-bg-secondary))] px-1"
@@ -822,7 +919,42 @@ Use the Better Context MCP for documentation questions.
 					{/if}
 				</p>
 
-				<button type="button" class="bc-btn mt-4 w-full" onclick={closeCreateModal}>Done</button>
+				{#if modalEnvVarSnippet}
+					<div class="mt-4 space-y-2">
+						<p class="bc-muted text-xs">Set environment variable:</p>
+						<div class="bc-codeFrame">
+							<div class="flex items-start justify-between gap-3 p-4">
+								<div class="min-w-0 flex-1 overflow-x-auto">
+									{#if shikiStore.highlighter}
+										{@html shikiStore.highlighter.codeToHtml(modalEnvVarSnippet, {
+											theme: shikiTheme,
+											lang: toolConfigs[modalSelectedTool].envVarLanguage ?? 'bash',
+											rootStyle: 'background-color: transparent; padding: 0; margin: 0;'
+										})}
+									{:else}
+										<pre class="m-0 whitespace-pre text-sm leading-relaxed"><code
+												>{modalEnvVarSnippet}</code
+											></pre>
+									{/if}
+								</div>
+								<CopyButton text={modalEnvVarSnippet} label="Copy env var" />
+							</div>
+						</div>
+						<p class="bc-muted text-xs">
+							Add this to <code class="rounded bg-[hsl(var(--bc-bg-secondary))] px-1">.zshenv</code>
+							or your shell profile.
+						</p>
+					</div>
+				{/if}
+
+				<button type="button" class="bc-btn mt-4 w-full" onclick={copyAgentsInstructions}>
+					{#if copiedAgents}
+						Copied AGENTS.md instructions
+					{:else}
+						Copy AGENTS.md instructions
+					{/if}
+				</button>
+				<button type="button" class="bc-btn mt-2 w-full" onclick={closeCreateModal}>Done</button>
 			{:else}
 				<h3 class="text-lg font-semibold">Create API Key</h3>
 				<p class="bc-muted mt-2 text-sm">
