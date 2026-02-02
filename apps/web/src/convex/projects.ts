@@ -361,29 +361,99 @@ const mcpQuestionValidator = v.object({
  * List MCP questions for a project
  */
 export const listQuestions = query({
-	args: { projectId: v.id('projects') },
-	returns: v.array(mcpQuestionValidator),
+	args: {
+		projectId: v.id('projects'),
+		page: v.optional(v.number()),
+		pageSize: v.optional(v.number()),
+		resource: v.optional(v.string()),
+		sort: v.optional(v.union(v.literal('asc'), v.literal('desc'))),
+		search: v.optional(v.string())
+	},
+	returns: v.object({
+		page: v.number(),
+		pageSize: v.number(),
+		total: v.number(),
+		totalAll: v.number(),
+		totalPages: v.number(),
+		resources: v.array(v.object({ name: v.string(), count: v.number() })),
+		items: v.array(mcpQuestionValidator)
+	}),
 	handler: async (ctx, args) => {
 		const instance = await getAuthenticatedInstance(ctx);
 		const project = await ctx.db.get(args.projectId);
 
 		if (!project || project.instanceId !== instance._id) {
-			return [];
+			return {
+				page: 1,
+				pageSize: 20,
+				total: 0,
+				totalAll: 0,
+				totalPages: 1,
+				resources: [],
+				items: []
+			};
 		}
+
+		const pageSize = Math.min(Math.max(args.pageSize ?? 20, 10), 100);
+		const requestedPage = Math.max(1, args.page ?? 1);
+		const sort = args.sort ?? 'desc';
+		const resourceFilter = (args.resource ?? '').trim();
+		const search = (args.search ?? '').trim().toLowerCase();
 
 		const questions = await ctx.db
 			.query('mcpQuestions')
 			.withIndex('by_project', (q) => q.eq('projectId', args.projectId))
 			.collect();
 
-		return questions
-			.map((q) => ({
-				_id: q._id,
-				question: q.question,
-				resources: q.resources,
-				answer: q.answer,
-				createdAt: q.createdAt
-			}))
-			.sort((a, b) => b.createdAt - a.createdAt);
+		const searchFiltered = search
+			? questions.filter((question) => {
+					const text = `${question.question}\n${question.answer}`.toLowerCase();
+					return (
+						text.includes(search) ||
+						question.resources.some((resource) => resource.toLowerCase().includes(search))
+					);
+				})
+			: questions;
+
+		const resourceCounts = new Map<string, number>();
+		for (const question of searchFiltered) {
+			for (const resource of question.resources) {
+				resourceCounts.set(resource, (resourceCounts.get(resource) ?? 0) + 1);
+			}
+		}
+
+		const resources = Array.from(resourceCounts.entries())
+			.map(([name, count]) => ({ name, count }))
+			.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+
+		const filtered = resourceFilter
+			? searchFiltered.filter((question) => question.resources.includes(resourceFilter))
+			: searchFiltered;
+
+		const sorted = filtered
+			.slice()
+			.sort((a, b) => (sort === 'asc' ? a.createdAt - b.createdAt : b.createdAt - a.createdAt));
+
+		const total = sorted.length;
+		const totalPages = Math.max(1, Math.ceil(total / pageSize));
+		const page = Math.min(requestedPage, totalPages);
+		const start = (page - 1) * pageSize;
+		const items = sorted.slice(start, start + pageSize).map((question) => ({
+			_id: question._id,
+			question: question.question,
+			resources: question.resources,
+			answer: question.answer,
+			createdAt: question.createdAt
+		}));
+
+		return {
+			page,
+			pageSize,
+			total,
+			totalAll: questions.length,
+			totalPages,
+			resources,
+			items
+		};
 	}
 });

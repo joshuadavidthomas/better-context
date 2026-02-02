@@ -35,7 +35,14 @@
 
 		<div class="flex flex-col gap-3 sm:flex-row sm:items-center bc-reveal" style="--delay: 230ms">
 			<a href="/app" class="bc-chip bc-btnPrimary justify-center">Go to the app</a>
-			<a href="/cli" class="bc-chip justify-center">Use the CLI</a>
+			<a
+				href="https://docs.btca.dev/guides/quickstart"
+				class="bc-chip justify-center"
+				target="_blank"
+				rel="noreferrer"
+			>
+				Use the CLI
+			</a>
 			<a href="/pricing" class="bc-chip justify-center">See pricing</a>
 		</div>
 	</section>
@@ -96,9 +103,16 @@
 			<div class="flex flex-wrap gap-3">
 				<a href="/pricing" class="bc-chip">Pricing</a>
 				<a href="/resources" class="bc-chip">Resources</a>
-				<a href="/cli" class="bc-chip">CLI</a>
+				<a href="https://docs.btca.dev" class="bc-chip" target="_blank" rel="noreferrer"> Docs </a>
 				<a href="/web" class="bc-chip">Web app</a>
-				<a href="/config" class="bc-chip">Config</a>
+				<a
+					href="https://docs.btca.dev/guides/configuration"
+					class="bc-chip"
+					target="_blank"
+					rel="noreferrer"
+				>
+					Configuration
+				</a>
 			</div>
 		</div>
 	</section>

@@ -31,7 +31,7 @@ Paste this into your AI coding agent to set up btca for your project:
 Set up btca for this project: scan package.json for major dependencies (frameworks, libraries, tools), suggest adding each as a btca resource with sensible defaults, then create a btca.config.jsonc file in the project root and update AGENTS.md with usage instructions. Ask me to confirm each resource before adding.
 ```
 
-See the full [Getting Started guide](https://btca.dev/getting-started) for more details.
+See the full [Getting Started guide](https://docs.btca.dev/guides/quickstart) for more details.
 
 ## Development
 

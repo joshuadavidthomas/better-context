@@ -3,6 +3,7 @@ import { createHighlighterCore, type HighlighterCore } from 'shiki/core';
 import { createJavaScriptRegexEngine } from 'shiki/engine/javascript';
 import bash from '@shikijs/langs/bash';
 import json from '@shikijs/langs/json';
+import toml from '@shikijs/langs/toml';
 import darkPlus from '@shikijs/themes/dark-plus';
 import lightPlus from '@shikijs/themes/light-plus';
 
@@ -15,7 +16,7 @@ const getCoreHighlighter = () => {
 		generation += 1;
 		const current = generation;
 		highlighterPromise = createHighlighterCore({
-			langs: [bash, json],
+			langs: [bash, json, toml],
 			themes: [darkPlus, lightPlus],
 			engine: createJavaScriptRegexEngine()
 		}).then((highlighter) => {

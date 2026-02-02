@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { useQuery, useConvexClient } from 'convex-svelte';
+	import { useQuery } from 'convex-svelte';
 	import {
 		MessageSquare,
 		Loader2,
@@ -10,123 +10,121 @@
 		Copy,
 		Check,
 		Settings,
-		Key,
-		Plus,
-		Trash2,
-		ExternalLink
+		Search,
+		SortAsc,
+		SortDesc,
+		ChevronLeft,
+		ChevronRight
 	} from '@lucide/svelte';
 	import { marked } from 'marked';
 	import DOMPurify from 'isomorphic-dompurify';
-	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
 	import { api } from '../../../../convex/_generated/api';
-	import { getAuthState } from '$lib/stores/auth.svelte';
 	import { getProjectStore } from '$lib/stores/project.svelte';
-	import { getShikiStore } from '$lib/stores/ShikiStore.svelte';
-	import { getThemeStore } from '$lib/stores/theme.svelte';
-	import CopyButton from '$lib/CopyButton.svelte';
-	import { getClerk } from '$lib/clerk';
+	import Dropdown from '$lib/components/Dropdown.svelte';
 
-	const auth = getAuthState();
 	const projectStore = getProjectStore();
-	const client = useConvexClient();
-	const shikiStore = getShikiStore();
-	const themeStore = getThemeStore();
 
 	const selectedProject = $derived(projectStore.selectedProject);
 	const projectId = $derived(selectedProject?._id);
-	const instanceId = $derived(auth.instanceId);
 
-	const questionsQuery = $derived(
-		projectId ? useQuery(api.projects.listQuestions, { projectId }) : null
+	type SortDirection = 'desc' | 'asc';
+
+	let currentPage = $state(1);
+	let pageSize = $state(20);
+	let resourceFilter = $state('');
+	let sortDirection = $state<SortDirection>('desc');
+	let searchInput = $state('');
+	let searchQuery = $state('');
+
+	const filtersKey = $derived(
+		`${projectId ?? ''}|${resourceFilter}|${sortDirection}|${searchQuery}|${pageSize}`
 	);
-	const questions = $derived(questionsQuery?.data ?? []);
-	const isLoading = $derived(questionsQuery?.isLoading ?? false);
+	let lastFiltersKey = $state('');
+	let filtersInitialized = $state(false);
 
-	// API Keys state (using Clerk)
-	let clerkApiKeys = $state<
-		Array<{
-			id: string;
-			name: string | null;
-			createdAt: number;
-		}>
-	>([]);
-	let isLoadingKeys = $state(true);
-
-	// Load API keys from Clerk
-	async function loadApiKeys() {
-		const clerk = getClerk();
-		if (!clerk) return;
-
-		isLoadingKeys = true;
-		try {
-			const result = await clerk.apiKeys.getAll();
-			clerkApiKeys = result.data.map((key) => ({
-				id: key.id,
-				name: key.name,
-				createdAt: key.createdAt.getTime()
-			}));
-		} catch (error) {
-			console.error('Failed to load API keys:', error);
-		} finally {
-			isLoadingKeys = false;
-		}
-	}
-
-	// Load keys when auth is ready
 	$effect(() => {
-		if (auth.isSignedIn) {
-			loadApiKeys();
+		if (!filtersInitialized) {
+			lastFiltersKey = filtersKey;
+			filtersInitialized = true;
+			return;
+		}
+
+		if (filtersKey !== lastFiltersKey) {
+			lastFiltersKey = filtersKey;
+			currentPage = 1;
+		}
+	});
+
+	$effect(() => {
+		const value = searchInput.trim();
+		const handle = setTimeout(() => {
+			searchQuery = value;
+		}, 250);
+		return () => clearTimeout(handle);
+	});
+
+	const questionsArgs = $derived(
+		projectId
+			? {
+					projectId,
+					page: currentPage,
+					pageSize,
+					sort: sortDirection,
+					resource: resourceFilter || undefined,
+					search: searchQuery || undefined
+				}
+			: null
+	);
+	const questionsQuery = $derived(
+		questionsArgs ? useQuery(api.projects.listQuestions, questionsArgs) : null
+	);
+	const questionsResult = $derived(questionsQuery?.data ?? null);
+	const questions = $derived(questionsResult?.items ?? []);
+	const total = $derived(questionsResult?.total ?? 0);
+	const totalAll = $derived(questionsResult?.totalAll ?? 0);
+	const totalPages = $derived(questionsResult?.totalPages ?? 1);
+	const resourceOptions = $derived(questionsResult?.resources ?? []);
+	const resourceSelectOptions = $derived(
+		resourceFilter && !resourceOptions.some((option) => option.name === resourceFilter)
+			? [{ name: resourceFilter, count: 0 }, ...resourceOptions]
+			: resourceOptions
+	);
+	const isLoading = $derived(questionsQuery?.isLoading ?? false);
+	const startIndex = $derived(total === 0 ? 0 : (currentPage - 1) * pageSize + 1);
+	const endIndex = $derived(total === 0 ? 0 : Math.min(currentPage * pageSize, total));
+	const hasActiveFilters = $derived(
+		Boolean(resourceFilter || searchQuery || sortDirection !== 'desc' || pageSize !== 20)
+	);
+	const hasQueryFilters = $derived(Boolean(resourceFilter || searchQuery));
+
+	$effect(() => {
+		const serverPage = questionsResult?.page;
+		if (serverPage && serverPage !== currentPage) {
+			currentPage = serverPage;
 		}
 	});
 
 	let expandedQuestions = $state<Set<string>>(new Set());
 	let copiedId = $state<string | null>(null);
-	let showConfigureModal = $state(false);
-	let newKeyName = $state('');
-	let newlyCreatedKey = $state<string | null>(null);
-	let isCreatingKey = $state(false);
 
-	type McpTool = 'opencode' | 'claude-code';
-	let selectedTool = $state<McpTool>('opencode');
+	const contentKey = $derived(`${filtersKey}|${currentPage}`);
+	let lastContentKey = $state('');
+	let contentInitialized = $state(false);
 
-	const mcpUrl = $derived(
-		page.url.hostname === 'localhost' ? `${page.url.origin}/api/mcp` : 'https://btca.dev/api/mcp'
-	);
+	$effect(() => {
+		if (!contentInitialized) {
+			lastContentKey = contentKey;
+			contentInitialized = true;
+			return;
+		}
 
-	const toolConfigs = $derived({
-		opencode: {
-			name: 'OpenCode',
-			docsUrl: 'https://opencode.ai/docs/mcp-servers/#remote',
-			filename: 'opencode.json',
-			config: JSON.stringify(
-				{
-					$schema: 'https://opencode.ai/config.json',
-					mcp: {
-						'better-context': {
-							type: 'remote',
-							url: mcpUrl,
-							enabled: true,
-							headers: {
-								Authorization: 'Bearer YOUR_API_KEY'
-							}
-						}
-					}
-				},
-				null,
-				2
-			)
-		},
-		'claude-code': {
-			name: 'Claude Code',
-			docsUrl: 'https://code.claude.com/docs/en/mcp#option-1:-add-a-remote-http-server',
-			filename: 'Terminal command',
-			config: `claude mcp add --transport http better-context ${mcpUrl} \\
-  --header "Authorization: Bearer YOUR_API_KEY"`
+		if (contentKey !== lastContentKey) {
+			lastContentKey = contentKey;
+			expandedQuestions = new Set();
+			copiedId = null;
 		}
 	});
-
-	const currentConfig = $derived(toolConfigs[selectedTool]);
-	const shikiTheme = $derived(themeStore.theme === 'dark' ? 'dark-plus' : 'light-plus');
 
 	function toggleExpanded(id: string) {
 		const newSet = new Set(expandedQuestions);
@@ -136,6 +134,23 @@
 			newSet.add(id);
 		}
 		expandedQuestions = newSet;
+	}
+
+	function toggleSortDirection() {
+		sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
+	}
+
+	function resetFilters() {
+		resourceFilter = '';
+		searchInput = '';
+		searchQuery = '';
+		sortDirection = 'desc';
+		pageSize = 20;
+		currentPage = 1;
+	}
+
+	function goToPage(nextPage: number) {
+		currentPage = Math.min(Math.max(1, nextPage), totalPages);
 	}
 
 	function formatDate(timestamp: number): string {
@@ -217,47 +232,6 @@
 			copiedId = null;
 		}, 2000);
 	}
-
-	// Create a new API key via Clerk
-	async function handleCreateKey() {
-		const clerk = getClerk();
-		if (!clerk || !newKeyName.trim()) return;
-
-		isCreatingKey = true;
-		try {
-			const result = await clerk.apiKeys.create({
-				name: newKeyName.trim()
-			});
-			// IMPORTANT: result.secret is only available immediately after creation!
-			newlyCreatedKey = result.secret ?? null;
-			newKeyName = '';
-			await loadApiKeys();
-		} catch (error) {
-			console.error('Failed to create API key:', error);
-		} finally {
-			isCreatingKey = false;
-		}
-	}
-
-	// Revoke an API key via Clerk
-	async function handleRevokeKey(keyId: string) {
-		const clerk = getClerk();
-		if (!clerk) return;
-		if (!confirm('Are you sure you want to revoke this API key? This cannot be undone.')) return;
-
-		try {
-			await clerk.apiKeys.revoke({ apiKeyID: keyId });
-			await loadApiKeys();
-		} catch (error) {
-			console.error('Failed to revoke API key:', error);
-		}
-	}
-
-	function closeConfigureModal() {
-		showConfigureModal = false;
-		newlyCreatedKey = null;
-		newKeyName = '';
-	}
 </script>
 
 <div class="flex flex-1 overflow-y-auto">
@@ -275,11 +249,126 @@
 					project.
 				</p>
 			</div>
-			<button type="button" class="bc-btn text-sm" onclick={() => (showConfigureModal = true)}>
+			<button type="button" class="bc-btn text-sm" onclick={() => goto('/app/settings?tab=mcp')}>
 				<Settings size={16} />
 				Configure
 			</button>
 		</div>
+
+		{#if selectedProject}
+			<div class="bc-card p-4">
+				<div class="flex flex-col gap-4">
+					<div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+						<div class="min-w-0">
+							<label for="mcp-search" class="text-xs font-medium uppercase tracking-wide bc-muted">
+								Search
+							</label>
+							<div class="relative mt-2">
+								<Search size={14} class="bc-muted absolute left-3 top-1/2 -translate-y-1/2" />
+								<input
+									id="mcp-search"
+									type="text"
+									bind:value={searchInput}
+									placeholder="Search questions, answers, resources"
+									class="bc-input w-full pl-9 text-sm"
+								/>
+							</div>
+						</div>
+
+						<div class="min-w-0">
+							<label
+								for="mcp-resource"
+								class="text-xs font-medium uppercase tracking-wide bc-muted"
+							>
+								Resource
+							</label>
+							<Dropdown
+								id="mcp-resource"
+								class="mt-2 text-sm"
+								bind:value={resourceFilter}
+								placeholder="All resources"
+								options={[
+									{ value: '', label: 'All resources' },
+									...resourceSelectOptions.map((r) => ({
+										value: r.name,
+										label: `@${r.name} (${r.count})`
+									}))
+								]}
+							/>
+						</div>
+
+						<div class="min-w-0">
+							<label for="mcp-sort" class="text-xs font-medium uppercase tracking-wide bc-muted">
+								Sort
+							</label>
+							<button
+								id="mcp-sort"
+								type="button"
+								class="bc-input mt-2 flex w-full items-center gap-2 text-sm"
+								onclick={toggleSortDirection}
+								aria-label="Sort questions by date"
+							>
+								{#if sortDirection === 'desc'}
+									<SortDesc size={14} />
+									<span>Newest first</span>
+								{:else}
+									<SortAsc size={14} />
+									<span>Oldest first</span>
+								{/if}
+							</button>
+						</div>
+
+						<div class="min-w-0">
+							<label
+								for="mcp-page-size"
+								class="text-xs font-medium uppercase tracking-wide bc-muted"
+							>
+								Per page
+							</label>
+							<select id="mcp-page-size" class="bc-input mt-2 w-full text-sm" bind:value={pageSize}>
+								<option value={10}>10</option>
+								<option value={20}>20</option>
+								<option value={50}>50</option>
+							</select>
+						</div>
+
+						<div class="min-w-0 self-end">
+							<button
+								type="button"
+								class="bc-btn w-full text-xs"
+								onclick={resetFilters}
+								disabled={!hasActiveFilters}
+							>
+								Reset
+							</button>
+						</div>
+					</div>
+
+					<div class="flex flex-wrap items-center justify-between gap-2 text-xs">
+						<p class="bc-muted">
+							{#if total === 0}
+								No results
+							{:else}
+								Showing {startIndex}-{endIndex} of {total}
+								{#if totalAll !== total}
+									<span class="bc-muted"> (filtered from {totalAll})</span>
+								{/if}
+							{/if}
+						</p>
+						{#if hasQueryFilters}
+							<div class="flex flex-wrap gap-2">
+								{#if searchQuery}
+									<span class="filter-chip">Search: "{searchQuery}"</span>
+								{/if}
+								{#if resourceFilter}
+									<span class="filter-chip">Resource: @{resourceFilter}</span>
+								{/if}
+							</div>
+						{/if}
+					</div>
+				</div>
+			</div>
+		{/if}
 
 		{#if !selectedProject}
 			<div class="bc-card p-8 text-center">
@@ -297,7 +386,7 @@
 			<div class="bc-card flex items-center justify-center p-12">
 				<Loader2 size={24} class="animate-spin" />
 			</div>
-		{:else if questions.length === 0}
+		{:else if totalAll === 0}
 			<div class="bc-card p-8 text-center">
 				<div
 					class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-[hsl(var(--bc-surface-2))]"
@@ -309,6 +398,26 @@
 					Questions asked via MCP will appear here. Use the <code class="bc-code">ask</code> tool from
 					your MCP client to get started.
 				</p>
+			</div>
+		{:else if total === 0}
+			<div class="bc-card p-8 text-center">
+				<div
+					class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-[hsl(var(--bc-surface-2))]"
+				>
+					<MessageSquare size={24} class="bc-muted" />
+				</div>
+				<p class="font-medium">No results for these filters</p>
+				<p class="bc-muted mx-auto mt-2 max-w-md text-sm">
+					Try removing a filter or adjusting your search to see more questions.
+				</p>
+				<button
+					type="button"
+					class="bc-btn mt-4 text-xs"
+					onclick={resetFilters}
+					disabled={!hasActiveFilters}
+				>
+					Reset filters
+				</button>
 			</div>
 		{:else}
 			<div class="space-y-4">
@@ -392,210 +501,36 @@
 				{/each}
 			</div>
 
-			<div class="bc-muted pb-4 text-center text-xs">
-				{questions.length} question{questions.length === 1 ? '' : 's'}
+			<div
+				class="bc-card mt-6 flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between"
+			>
+				<p class="bc-muted text-xs">
+					Page {currentPage} of {totalPages}
+				</p>
+				<div class="flex items-center gap-2">
+					<button
+						type="button"
+						class="bc-btn text-xs"
+						onclick={() => goToPage(currentPage - 1)}
+						disabled={currentPage <= 1}
+					>
+						<ChevronLeft size={14} />
+						Previous
+					</button>
+					<button
+						type="button"
+						class="bc-btn text-xs"
+						onclick={() => goToPage(currentPage + 1)}
+						disabled={currentPage >= totalPages}
+					>
+						Next
+						<ChevronRight size={14} />
+					</button>
+				</div>
 			</div>
 		{/if}
 	</div>
 </div>
-
-{#if showConfigureModal}
-	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-		<div
-			class="absolute inset-0"
-			role="button"
-			tabindex="-1"
-			onclick={closeConfigureModal}
-			onkeydown={(e) => e.key === 'Escape' && closeConfigureModal()}
-		></div>
-		<div class="bc-card relative z-10 max-h-[90vh] w-full max-w-2xl overflow-y-auto p-6">
-			<div class="mb-6 flex items-center justify-between">
-				<h2 class="text-xl font-semibold">MCP Configuration</h2>
-				<button
-					type="button"
-					class="bc-muted hover:text-[hsl(var(--bc-text))]"
-					onclick={closeConfigureModal}
-					aria-label="Close MCP configuration"
-				>
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						width="20"
-						height="20"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						stroke-linecap="round"
-						stroke-linejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg
-					>
-				</button>
-			</div>
-
-			<div class="space-y-6">
-				<div>
-					<h3 class="mb-2 font-medium">MCP Server URL</h3>
-					<div class="flex items-center gap-2">
-						<code class="flex-1 rounded bg-[hsl(var(--bc-bg-secondary))] px-3 py-2 text-sm">
-							{mcpUrl}
-						</code>
-						<CopyButton text={mcpUrl} label="Copy URL" />
-					</div>
-				</div>
-
-				<div>
-					<div class="mb-3 flex items-center justify-between">
-						<h3 class="font-medium">API Keys</h3>
-					</div>
-
-					{#if newlyCreatedKey}
-						<div class="bc-card border-green-500/30 bg-green-500/5 p-4">
-							<p class="mb-2 text-sm font-medium text-green-500">API Key Created</p>
-							<p class="bc-muted mb-3 text-xs">
-								Copy your API key now. You won't be able to see it again.
-							</p>
-							<div class="flex items-center gap-2">
-								<code
-									class="flex-1 break-all rounded bg-[hsl(var(--bc-bg))] px-3 py-2 text-sm text-green-500"
-								>
-									{newlyCreatedKey}
-								</code>
-								<CopyButton text={newlyCreatedKey} label="Copy API key" />
-							</div>
-							<button
-								type="button"
-								class="bc-btn mt-3 w-full text-xs"
-								onclick={() => (newlyCreatedKey = null)}
-							>
-								Done
-							</button>
-						</div>
-					{:else}
-						<div class="mb-3 flex gap-2">
-							<input
-								type="text"
-								bind:value={newKeyName}
-								placeholder="Key name (e.g., OpenCode, Claude)"
-								class="bc-input flex-1 text-sm"
-								onkeydown={(e) => e.key === 'Enter' && handleCreateKey()}
-							/>
-							<button
-								type="button"
-								class="bc-btn bc-btn-primary text-xs"
-								onclick={handleCreateKey}
-								disabled={isCreatingKey || !newKeyName.trim()}
-							>
-								{#if isCreatingKey}
-									<Loader2 size={14} class="animate-spin" />
-								{:else}
-									Create
-								{/if}
-							</button>
-						</div>
-
-						{#if isLoadingKeys}
-							<div class="flex items-center justify-center py-4">
-								<Loader2 size={20} class="animate-spin" />
-							</div>
-						{:else if clerkApiKeys.length === 0}
-							<div class="bc-card p-4 text-center">
-								<Key size={20} class="bc-muted mx-auto mb-2" />
-								<p class="bc-muted text-sm">No API keys yet</p>
-							</div>
-						{:else}
-							<div class="space-y-2">
-								{#each clerkApiKeys as key}
-									<div
-										class="flex items-center justify-between rounded border border-[hsl(var(--bc-border))] px-3 py-2 text-sm"
-									>
-										<div class="flex items-center gap-3">
-											<span class="font-medium">{key.name ?? 'Unnamed key'}</span>
-											<span class="bc-muted font-mono text-xs">{key.id}</span>
-											<span class="rounded-full bg-green-500/10 px-2 py-0.5 text-xs text-green-500">
-												Active
-											</span>
-										</div>
-										<button
-											type="button"
-											class="bc-muted hover:text-red-500"
-											onclick={() => handleRevokeKey(key.id)}
-											title="Revoke key"
-										>
-											<Trash2 size={14} />
-										</button>
-									</div>
-								{/each}
-							</div>
-						{/if}
-					{/if}
-				</div>
-
-				<div>
-					<h3 class="mb-3 font-medium">Setup Instructions</h3>
-
-					<div class="mb-3 flex gap-1 rounded-lg bg-[hsl(var(--bc-bg-secondary))] p-1">
-						{#each Object.entries(toolConfigs) as [key, tool]}
-							<button
-								type="button"
-								class="flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors {selectedTool ===
-								key
-									? 'bg-[hsl(var(--bc-bg))] shadow-sm'
-									: 'bc-muted hover:text-[hsl(var(--bc-text))]'}"
-								onclick={() => (selectedTool = key as McpTool)}
-							>
-								{tool.name}
-							</button>
-						{/each}
-					</div>
-
-					<div class="mb-2 flex items-center justify-between">
-						<p class="bc-muted text-xs">
-							{#if selectedTool === 'claude-code'}
-								Run in terminal:
-							{:else}
-								Add to <code class="rounded bg-[hsl(var(--bc-bg-secondary))] px-1"
-									>{currentConfig.filename}</code
-								>:
-							{/if}
-						</p>
-						<a
-							href={currentConfig.docsUrl}
-							target="_blank"
-							rel="noopener noreferrer"
-							class="bc-muted flex items-center gap-1 text-xs hover:text-[hsl(var(--bc-text))]"
-						>
-							Docs
-							<ExternalLink size={10} />
-						</a>
-					</div>
-
-					<div class="bc-codeFrame">
-						<div class="flex items-center justify-between gap-3 p-3">
-							<div class="min-w-0 flex-1 overflow-x-auto">
-								{#if shikiStore.highlighter}
-									{@html shikiStore.highlighter.codeToHtml(currentConfig.config, {
-										theme: shikiTheme,
-										lang: selectedTool === 'claude-code' ? 'bash' : 'json',
-										rootStyle:
-											'background-color: transparent; padding: 0; margin: 0; font-size: 0.75rem;'
-									})}
-								{:else}
-									<pre class="m-0 whitespace-pre text-xs leading-relaxed"><code
-											>{currentConfig.config}</code
-										></pre>
-								{/if}
-							</div>
-							<CopyButton text={currentConfig.config} label="Copy configuration" />
-						</div>
-					</div>
-					<p class="bc-muted mt-2 text-xs">
-						Replace <code class="rounded bg-[hsl(var(--bc-bg-secondary))] px-1">YOUR_API_KEY</code> with
-						an API key from above.
-					</p>
-				</div>
-			</div>
-		</div>
-	</div>
-{/if}
 
 <style>
 	.question-card {
@@ -774,5 +709,17 @@
 		border-radius: 0;
 		font-family: ui-monospace, monospace;
 		font-size: 0.85em;
+	}
+
+	.filter-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		padding: 4px 10px;
+		border: 1px solid hsl(var(--bc-border));
+		background: hsl(var(--bc-surface-2));
+		border-radius: 999px;
+		font-size: 0.6875rem;
+		color: hsl(var(--bc-fg-muted));
 	}
 </style>
