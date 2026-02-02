@@ -48,15 +48,10 @@
 		const searchPath = resource.searchPath ?? resource.searchPaths?.[0];
 		const parts = [
 			'btca',
-			'config',
-			'resources',
 			'add',
+			resource.url,
 			'--name',
 			resource.name,
-			'--type',
-			resource.type,
-			'--url',
-			resource.url,
 			'--branch',
 			resource.branch
 		];
@@ -83,6 +78,9 @@
 		<p class="bc-prose max-w-2xl text-pretty text-base sm:text-lg">
 			Some useful resources to add to btca. You can also add any other git repo!
 		</p>
+		<div class="flex flex-wrap gap-3">
+			<a href="https://docs.btca.dev" class="bc-chip" target="_blank" rel="noreferrer">Docs</a>
+		</div>
 	</header>
 
 	<div class="bc-card bc-ring flex flex-col gap-3 p-4 sm:flex-row sm:items-center">

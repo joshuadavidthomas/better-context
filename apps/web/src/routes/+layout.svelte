@@ -108,7 +108,9 @@
 				</a>
 
 				<nav aria-label="Primary" class="hidden items-center gap-1 sm:flex">
-					<a class={`bc-navLink ${isActive('/cli') ? 'bc-navLink-active' : ''}`} href="/cli">CLI</a>
+					<a class="bc-navLink" href="https://docs.btca.dev" target="_blank" rel="noreferrer">
+						Docs
+					</a>
 					<a class={`bc-navLink ${isActive('/web') ? 'bc-navLink-active' : ''}`} href="/web">Web</a>
 					<a class={`bc-navLink ${isActive('/pricing') ? 'bc-navLink-active' : ''}`} href="/pricing"
 						>Pricing</a
@@ -167,9 +169,9 @@
 				<div class="bc-container pb-4 sm:hidden">
 					<div class="bc-card bc-ring p-2">
 						<nav aria-label="Mobile" class="flex flex-col">
-							<a class={`bc-navLink ${isActive('/cli') ? 'bc-navLink-active' : ''}`} href="/cli"
-								>CLI</a
-							>
+							<a class="bc-navLink" href="https://docs.btca.dev" target="_blank" rel="noreferrer">
+								Docs
+							</a>
 							<a class={`bc-navLink ${isActive('/web') ? 'bc-navLink-active' : ''}`} href="/web"
 								>Web</a
 							>
@@ -211,7 +213,9 @@
 				</div>
 
 				<div class="flex flex-wrap items-start gap-2 sm:justify-end">
-					<a class="bc-chip" href="/cli">CLI</a>
+					<a class="bc-chip" href="https://docs.btca.dev" target="_blank" rel="noreferrer">
+						Docs
+					</a>
 					<a class="bc-chip" href="/web">Web</a>
 					<a class="bc-chip" href="/pricing">Pricing</a>
 					<a class="bc-chip" href="/resources">Resources</a>

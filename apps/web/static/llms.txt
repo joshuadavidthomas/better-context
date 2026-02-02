@@ -7,7 +7,7 @@
 It ships:
 - A CLI (built with Effect + Bun)
 - An interactive terminal UI (TUI) for multi-resource Q&A
-- This docs website (`btca.dev`)
+- The docs website (`docs.btca.dev`)
 
 ## What btca can do
 
@@ -72,11 +72,12 @@ Key fields:
   - `searchPath` (optional, git only): limit search to a subdirectory
 - `provider` + `model`: provider/model IDs used for answers
 
-## Documentation (btca.dev)
+## Documentation (docs.btca.dev)
 
-- [Getting started](https://btca.dev/getting-started): install, defaults, config example
-- [Commands](https://btca.dev/commands): command list + examples
-- [Models](https://btca.dev/models): recommended models + provider setup links
+- [Quickstart](https://docs.btca.dev/guides/quickstart): install, connect, first question
+- [Authentication](https://docs.btca.dev/guides/authentication): provider auth + keys
+- [Configuration](https://docs.btca.dev/guides/configuration): config file + resources
+- [API reference](https://docs.btca.dev/api-reference/introduction): endpoints and schema
 
 ## Source code & repo layout
 
