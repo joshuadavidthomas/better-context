@@ -5,6 +5,7 @@ import { v } from 'convex/values';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import { action } from './_generated/server';
+import { AnalyticsEvents } from './analyticsEvents';
 import { instances } from './apiHelpers';
 import type { ApiKeyValidationResult } from './clerkApiKeys';
 
@@ -147,16 +148,38 @@ export const ask = action({
 			return { ok: false as const, error: validation.error };
 		}
 
-		const instanceId = validation.instanceId;
+		const { instanceId, clerkUserId } = validation;
+		const effectiveProjectName = projectName || 'default';
+		const baseProperties = {
+			instanceId,
+			project: effectiveProjectName,
+			resourceCount: resources.length,
+			resources,
+			questionLength: question.length
+		};
+		const trackAskEvent = (event: string, properties: Record<string, unknown>) =>
+			ctx.scheduler.runAfter(0, internal.analytics.trackEvent, {
+				distinctId: clerkUserId,
+				event,
+				properties
+			});
+		const trackAskFailure = (error: string, properties: Record<string, unknown> = {}) =>
+			trackAskEvent(AnalyticsEvents.MCP_ASK_FAILED, {
+				...baseProperties,
+				...properties,
+				error
+			});
 
 		// Get instance
 		const instance = await ctx.runQuery(instances.internalQueries.getInternal, { id: instanceId });
 		if (!instance) {
+			await trackAskFailure('Instance not found');
 			return { ok: false as const, error: 'Instance not found' };
 		}
 
 		// Get or create the project
 		const projectId = await getOrCreateProject(ctx, instanceId, projectName);
+		const projectProperties = { ...baseProperties, projectId };
 
 		// Note: Usage tracking is handled in the validate action via touchUsage
 
@@ -174,6 +197,7 @@ export const ask = action({
 			(r: string) => !allResourceNames.includes(r)
 		);
 		if (invalidResources.length > 0) {
+			await trackAskFailure('Invalid resources', { ...projectProperties, invalidResources });
 			return {
 				ok: false as const,
 				error: `Invalid resources: ${invalidResources.join(', ')}. Use listResources to see available resources.`
@@ -181,22 +205,32 @@ export const ask = action({
 		}
 
 		if (instance.state === 'error') {
+			await trackAskFailure('Instance is in an error state', {
+				...projectProperties,
+				instanceState: instance.state
+			});
 			return { ok: false as const, error: 'Instance is in an error state' };
 		}
 
 		if (instance.state === 'provisioning' || instance.state === 'unprovisioned') {
+			await trackAskFailure('Instance is still provisioning', {
+				...projectProperties,
+				instanceState: instance.state
+			});
 			return { ok: false as const, error: 'Instance is still provisioning' };
 		}
 
 		let serverUrl = instance.serverUrl;
 		if (instance.state !== 'running' || !serverUrl) {
 			if (!instance.sandboxId) {
+				await trackAskFailure('Instance does not have a sandbox', projectProperties);
 				return { ok: false as const, error: 'Instance does not have a sandbox' };
 			}
 			// Pass projectId to wake so it uses project-specific resources
 			const wakeResult = await ctx.runAction(instanceActions.wake, { instanceId, projectId });
 			serverUrl = wakeResult.serverUrl;
 			if (!serverUrl) {
+				await trackAskFailure('Failed to wake instance', projectProperties);
 				return { ok: false as const, error: 'Failed to wake instance' };
 			}
 		} else {
@@ -204,10 +238,7 @@ export const ask = action({
 			await ctx.runAction(internal.instances.actions.syncResources, { instanceId, projectId });
 		}
 
-		// Pass project name to sandbox for future project-aware directory structure
-		// For now, "default" project uses root config, other projects will use project subdirectories
-		const effectiveProjectName = projectName || 'default';
-
+		const startedAt = Date.now();
 		const response = await fetch(`${serverUrl}/question`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
@@ -221,6 +252,11 @@ export const ask = action({
 
 		if (!response.ok) {
 			const errorText = await response.text();
+			await trackAskFailure(errorText || `Server error: ${response.status}`, {
+				...projectProperties,
+				status: response.status,
+				durationMs: Date.now() - startedAt
+			});
 			return { ok: false as const, error: errorText || `Server error: ${response.status}` };
 		}
 
@@ -236,6 +272,11 @@ export const ask = action({
 		});
 
 		await ctx.runMutation(instanceMutations.touchActivity, { instanceId });
+
+		await trackAskEvent(AnalyticsEvents.MCP_ASK, {
+			...projectProperties,
+			durationMs: Date.now() - startedAt
+		});
 
 		return {
 			ok: true as const,
