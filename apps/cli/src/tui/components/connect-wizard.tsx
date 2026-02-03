@@ -516,7 +516,15 @@ export const ConnectWizard: Component<ConnectWizardProps> = (props) => {
 
 	usePaste((text) => {
 		const currentStep = step();
-		if (currentStep !== 'api-key' && currentStep !== 'model-input') return;
+		if (
+			currentStep !== 'api-key' &&
+			currentStep !== 'model-input' &&
+			currentStep !== 'compat-base-url' &&
+			currentStep !== 'compat-name' &&
+			currentStep !== 'compat-model' &&
+			currentStep !== 'compat-api-key'
+		)
+			return;
 		const sanitized = sanitizePaste(text.text);
 		if (!sanitized) return;
 		setWizardInput((prev) => `${prev}${sanitized}`);
