@@ -203,42 +203,43 @@ function extractApiKey(request: Request): string | null {
 	return authHeader.slice(7) || null;
 }
 
-export const POST: RequestHandler = async ({ request }) => {
+const jsonError = (status: number, error: string) =>
+	new Response(JSON.stringify({ error }), {
+		status,
+		headers: { 'Content-Type': 'application/json' }
+	});
+
+const respondWithMcp = async (request: Request) => {
 	const apiKey = extractApiKey(request);
 	if (!apiKey) {
-		return new Response(JSON.stringify({ error: 'Missing or invalid Authorization header' }), {
-			status: 401,
-			headers: { 'Content-Type': 'application/json' }
-		});
+		return jsonError(401, 'Missing or invalid Authorization header');
 	}
 
-	// Pass the API key to the MCP context - validation happens in the Convex actions
-	const response = await transport.respond(request, { apiKey });
-	return response ?? new Response('Not Found', { status: 404 });
+	try {
+		// Pass the API key to the MCP context - validation happens in the Convex actions
+		const response = await transport.respond(request, { apiKey });
+		return response ?? new Response('Not Found', { status: 404 });
+	} catch (error) {
+		const isValidationError = error instanceof Error && error.name === 'ValiError';
+		if (!isValidationError) {
+			console.error('MCP transport error:', error);
+		}
+
+		return jsonError(
+			isValidationError ? 400 : 500,
+			isValidationError ? 'Invalid MCP request payload' : 'MCP request failed'
+		);
+	}
+};
+
+export const POST: RequestHandler = async ({ request }) => {
+	return respondWithMcp(request);
 };
 
 export const GET: RequestHandler = async ({ request }) => {
-	const apiKey = extractApiKey(request);
-	if (!apiKey) {
-		return new Response(JSON.stringify({ error: 'Missing or invalid Authorization header' }), {
-			status: 401,
-			headers: { 'Content-Type': 'application/json' }
-		});
-	}
-
-	const response = await transport.respond(request, { apiKey });
-	return response ?? new Response('Not Found', { status: 404 });
+	return respondWithMcp(request);
 };
 
 export const DELETE: RequestHandler = async ({ request }) => {
-	const apiKey = extractApiKey(request);
-	if (!apiKey) {
-		return new Response(JSON.stringify({ error: 'Missing or invalid Authorization header' }), {
-			status: 401,
-			headers: { 'Content-Type': 'application/json' }
-		});
-	}
-
-	const response = await transport.respond(request, { apiKey });
-	return response ?? new Response('Not Found', { status: 404 });
+	return respondWithMcp(request);
 };
