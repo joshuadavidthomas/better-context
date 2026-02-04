@@ -97,6 +97,10 @@ Options:
 
 Behavior: If omitted, it opens an interactive picker.
 
+## `btca skill`
+
+Prints the skills.sh install command for the btca CLI skill.
+
 ## `btca init`
 
 Project setup wizard.
@@ -105,7 +109,7 @@ Options:
 
 - `-f, --force` overwrites existing config.
 
-Behavior: Prompts for setup type: MCP (remote) or CLI (local). The MCP path validates an API key if needed, creates `btca.remote.config.jsonc`, and writes `.claude/skills/btca-remote/SKILL.md`. The CLI path creates `btca.config.jsonc`, handles `.btca/` and `.gitignore`, and writes `.claude/skills/btca-local/SKILL.md`.
+Behavior: Prompts for setup type: MCP (remote) or CLI (local). The MCP path validates an API key if needed and creates `btca.remote.config.jsonc`. The CLI path creates `btca.config.jsonc` and handles `.btca/` and `.gitignore`.
 
 ## `btca clear`
 

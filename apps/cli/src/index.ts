@@ -10,6 +10,7 @@ import { removeCommand } from './commands/remove.ts';
 import { resourcesCommand } from './commands/resources.ts';
 import { remoteCommand } from './commands/remote.ts';
 import { serveCommand } from './commands/serve.ts';
+import { skillCommand } from './commands/skill.ts';
 import { telemetryCommand } from './commands/telemetry.ts';
 import { launchTui } from './commands/tui.ts';
 import { launchRepl } from './commands/repl.ts';
@@ -50,6 +51,7 @@ program.addCommand(askCommand);
 program.addCommand(connectCommand);
 program.addCommand(disconnectCommand);
 program.addCommand(initCommand);
+program.addCommand(skillCommand);
 
 // Utility commands
 program.addCommand(clearCommand);

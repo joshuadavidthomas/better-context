@@ -14,96 +14,6 @@ const DEFAULT_MODEL = 'claude-haiku-4-5';
 const DEFAULT_PROVIDER = 'opencode';
 const MCP_API_KEY_URL = 'https://btca.dev/app/settings?tab=mcp';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Skill Templates
-// ─────────────────────────────────────────────────────────────────────────────
-
-const BTCA_REMOTE_SKILL_CONTENT = `---
-name: btca-remote
-description: Query cloud-hosted btca resources via MCP for source-first answers
----
-
-## What I do
-
-- Query btca's cloud-hosted resources through MCP
-- Provide source-first answers about technologies
-- Access resources provisioned in the btca dashboard
-
-## When to use me
-
-Use this skill when you need up-to-date information about technologies configured in the project's btca cloud instance.
-
-## Getting resources
-
-Check \`btca.remote.config.jsonc\` for the list of available resources in this project.
-
-## Workflow
-
-1. Call \`listResources\` to see available resources
-2. Call \`ask\` with your question and exact resource names from step 1
-
-## Rules
-
-- Always call \`listResources\` before \`ask\`
-- \`ask\` requires at least one resource in the \`resources\` array
-- Use only resource names returned by \`listResources\`
-- Include only resources relevant to the question
-
-## Common errors
-
-- "Invalid resources" -> re-run \`listResources\` and use exact names
-- "Instance is provisioning / error state" -> wait or retry after a minute
-- "Missing or invalid Authorization header" -> MCP auth is invalid; fix it in https://btca.dev/app/settings/
-- MCP server doesn't exist -> Prompt the user to set it up at https://btca.dev/app/settings/
-`;
-
-const BTCA_LOCAL_SKILL_CONTENT = `---
-name: btca-local
-description: Query local btca resources via CLI for source-first answers
----
-
-## What I do
-
-- Query locally-cloned resources using the btca CLI
-- Provide source-first answers about technologies stored in .btca/ or ~/.local/share/btca/
-
-## When to use me
-
-Use this skill when you need information about technologies stored in the project's local btca resources.
-
-## Getting resources
-
-Check \`btca.config.jsonc\` for the list of available resources in this project.
-
-## Commands
-
-Ask a question about one or more resources:
-
-\`\`\`bash
-# Single resource
-btca ask --resource <resource> --question "<question>"
-
-# Multiple resources
-btca ask --resource svelte --resource effect --question "How do I integrate Effect with Svelte?"
-
-# Using @mentions in the question
-btca ask --question "@svelte @tailwind How do I style components?"
-\`\`\`
-
-## Managing Resources
-
-\`\`\`bash
-# Add a git resource
-btca add https://github.com/owner/repo
-
-# Add a local directory
-btca add ./docs
-
-# Remove a resource
-btca remove <name>
-\`\`\`
-`;
-
 type SetupType = 'mcp' | 'cli';
 type StorageType = 'local' | 'global';
 
@@ -210,17 +120,6 @@ async function isGitRepo(dir: string): Promise<boolean> {
 async function fileExists(filePath: string): Promise<boolean> {
 	const result = await Result.tryPromise(() => fs.access(filePath));
 	return Result.isOk(result);
-}
-
-/**
- * Create a skill file in .claude/skills/<skillName>/SKILL.md
- */
-async function createSkillFile(cwd: string, skillName: string, content: string): Promise<void> {
-	const skillDir = path.join(cwd, '.claude', 'skills', skillName);
-	const skillPath = path.join(skillDir, 'SKILL.md');
-
-	await fs.mkdir(skillDir, { recursive: true });
-	await fs.writeFile(skillPath, content, 'utf-8');
 }
 
 /**
@@ -333,11 +232,7 @@ async function handleMcpSetup(cwd: string, force?: boolean): Promise<void> {
 	await fs.writeFile(configPath, JSON.stringify(config, null, '\t'), 'utf-8');
 	console.log(`Created ${REMOTE_CONFIG_FILENAME}`);
 
-	// Step 4: Create skill file
-	await createSkillFile(cwd, 'btca-remote', BTCA_REMOTE_SKILL_CONTENT);
-	console.log('Created .claude/skills/btca-remote/SKILL.md');
-
-	// Step 5: Print next steps
+	// Step 4: Print next steps
 	console.log('\n--- Setup Complete (MCP) ---\n');
 	console.log('Next steps:');
 	console.log('  1. Add resources: btca remote add https://github.com/owner/repo');
@@ -402,10 +297,6 @@ async function handleCliSetup(cwd: string, configPath: string, force?: boolean):
 			console.log("If you initialize git later, add '.btca/' to your .gitignore.");
 		}
 	}
-
-	// Create skill file
-	await createSkillFile(cwd, 'btca-local', BTCA_LOCAL_SKILL_CONTENT);
-	console.log('Created .claude/skills/btca-local/SKILL.md');
 
 	// Print summary
 	if (storageType === 'local') {

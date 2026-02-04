@@ -11,7 +11,15 @@ btca requires Bun.
 bun add -g btca
 ```
 
-## 2) Initialize a project
+## 2) Install the btca CLI skill (optional)
+
+```bash
+btca skill
+```
+
+Run the printed `skills.sh` command to install the skill for your editor/agent.
+
+## 3) Initialize a project
 
 From your repo root:
 
@@ -22,13 +30,13 @@ btca init
 Choose **CLI** for local resources or **MCP** for cloud resources. The wizard writes
 `btca.config.jsonc` or `btca.remote.config.jsonc`.
 
-## 3) Add a resource
+## 4) Add a resource
 
 ```bash
 btca add -n svelte-dev https://github.com/sveltejs/svelte.dev
 ```
 
-## 4) Ask a question
+## 5) Ask a question
 
 ```bash
 btca ask -r svelte-dev -q "How do I define remote functions?"

@@ -292,7 +292,11 @@ Behavior:
 
 - If omitted, interactive picker.
 
-### 4.9 `btca init`
+### 4.9 `btca skill`
+
+Print the skills.sh install command for the btca CLI skill.
+
+### 4.10 `btca init`
 
 Project setup wizard.
 
@@ -306,17 +310,15 @@ Behavior:
 - MCP path:
   - Prompts for API key (if missing), validates it
   - Creates `btca.remote.config.jsonc`
-  - Writes `.claude/skills/btca-remote/SKILL.md`
 - CLI path:
   - Creates `btca.config.jsonc`
   - Handles `.btca/` and `.gitignore`
-  - Writes `.claude/skills/btca-local/SKILL.md`
 
-### 4.10 `btca clear`
+### 4.11 `btca clear`
 
 Clears all locally cloned resources.
 
-### 4.11 `btca serve`
+### 4.12 `btca serve`
 
 Starts local server.
 
