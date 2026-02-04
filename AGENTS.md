@@ -23,7 +23,6 @@ After making changes in a specific package, run its check script:
 | Package              | Check Command                 | Format Command                 |
 | -------------------- | ----------------------------- | ------------------------------ |
 | `apps/cli`           | `bun run check:cli`           | `bun run format:cli`           |
-| `apps/remotion`      | `bun run check:remotion`      | `bun run format:remotion`      |
 | `apps/web`           | `bun run check:web`           | `bun run format:web`           |
 | `apps/server`        | `bun run check:server`        | `bun run format:server`        |
 | `apps/sandbox`       | `bun run check:sandbox`       | `bun run format:sandbox`       |
