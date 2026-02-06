@@ -1,6 +1,6 @@
 {
 	"compilerOptions": {
-		"lib": ["ESNext"],
+		"lib": ["ESNext", "DOM", "DOM.Iterable", "DOM.AsyncIterable"],
 		"target": "ESNext",
 		"module": "Preserve",
 		"moduleDetection": "force",
