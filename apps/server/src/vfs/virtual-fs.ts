@@ -152,8 +152,16 @@ export namespace VirtualFs {
 		return getInstance(vfsId).readFileBuffer(normalize(filePath));
 	}
 
-	export async function writeFile(filePath: string, data: string | Uint8Array, vfsId?: string) {
-		await getInstance(vfsId).writeFile(normalize(filePath), data);
+	export async function writeFile(
+		filePath: string,
+		data: string | ArrayBufferView,
+		vfsId?: string
+	) {
+		const content =
+			typeof data === 'string'
+				? data
+				: new Uint8Array(data.buffer as ArrayBufferLike, data.byteOffset, data.byteLength);
+		await getInstance(vfsId).writeFile(normalize(filePath), content);
 	}
 
 	export async function symlink(targetPath: string, linkPath: string, vfsId?: string) {
