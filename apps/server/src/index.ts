@@ -15,7 +15,12 @@ import { Resources } from './resources/service.ts';
 import { GitResourceSchema, LocalResourceSchema } from './resources/schema.ts';
 import { StreamService } from './stream/service.ts';
 import type { BtcaStreamMetaEvent } from './stream/types.ts';
-import { LIMITS, normalizeGitHubUrl } from './validation/index.ts';
+import {
+	LIMITS,
+	normalizeGitHubUrl,
+	validateGitUrl,
+	validateResourceReference
+} from './validation/index.ts';
 import { clearAllVirtualCollectionMetadata } from './collections/virtual-metadata.ts';
 import { VirtualFs } from './vfs/virtual-fs.ts';
 
@@ -66,6 +71,22 @@ const ResourceNameField = z
 	.refine((name) => !name.includes('//'), 'Resource name must not contain "//"')
 	.refine((name) => !name.endsWith('/'), 'Resource name must not end with "/"');
 
+const ResourceReferenceField = z.string().superRefine((value, ctx) => {
+	const result = validateResourceReference(value);
+	if (!result.valid) {
+		ctx.addIssue({
+			code: 'custom',
+			message: result.error
+		});
+	}
+});
+
+const normalizeQuestionResourceReference = (reference: string): string => {
+	const gitUrlResult = validateGitUrl(reference);
+	if (gitUrlResult.valid) return gitUrlResult.value;
+	return reference;
+};
+
 const QuestionRequestSchema = z.object({
 	question: z
 		.string()
@@ -75,7 +96,7 @@ const QuestionRequestSchema = z.object({
 			`Question too long (max ${LIMITS.QUESTION_MAX.toLocaleString()} chars). This includes conversation history - try starting a new thread or clearing the chat.`
 		),
 	resources: z
-		.array(ResourceNameField)
+		.array(ResourceReferenceField)
 		.max(
 			LIMITS.MAX_RESOURCES_PER_REQUEST,
 			`Too many resources (max ${LIMITS.MAX_RESOURCES_PER_REQUEST})`
@@ -298,7 +319,7 @@ const createApp = (deps: {
 			const decoded = await decodeJson(c.req.raw, QuestionRequestSchema);
 			const resourceNames =
 				decoded.resources && decoded.resources.length > 0
-					? decoded.resources
+					? Array.from(new Set(decoded.resources.map(normalizeQuestionResourceReference)))
 					: config.resources.map((r) => r.name);
 
 			const collectionKey = getCollectionKey(resourceNames);
@@ -334,7 +355,7 @@ const createApp = (deps: {
 			const decoded = await decodeJson(c.req.raw, QuestionRequestSchema);
 			const resourceNames =
 				decoded.resources && decoded.resources.length > 0
-					? decoded.resources
+					? Array.from(new Set(decoded.resources.map(normalizeQuestionResourceReference)))
 					: config.resources.map((r) => r.name);
 
 			const collectionKey = getCollectionKey(resourceNames);

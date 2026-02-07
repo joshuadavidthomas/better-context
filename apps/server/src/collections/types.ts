@@ -5,6 +5,7 @@ export type CollectionResult = {
 	path: string;
 	agentInstructions: string;
 	vfsId?: string;
+	cleanup?: () => Promise<void>;
 };
 
 export class CollectionError extends Error {

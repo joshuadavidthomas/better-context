@@ -56,14 +56,6 @@ function cleanQueryOfValidResources(query: string, validResources: string[]): st
 		.trim();
 }
 
-/**
- * Merge CLI -r flags with @mentions, deduplicating
- */
-function mergeResources(cliResources: string[], mentionedResources: string[]): string[] {
-	const all = [...cliResources, ...mentionedResources];
-	return [...new Set(all)];
-}
-
 type AvailableResource = { name: string };
 
 function resolveResourceName(input: string, available: AvailableResource[]): string | null {
@@ -96,6 +88,15 @@ function normalizeResourceNames(
 	}
 
 	return { names: [...new Set(resolved)], invalid };
+}
+
+function isGitUrl(input: string): boolean {
+	try {
+		const parsed = new URL(input);
+		return parsed.protocol === 'https:';
+	} catch {
+		return false;
+	}
 }
 
 export const askCommand = new Command('ask')
@@ -145,25 +146,64 @@ export const askCommand = new Command('ask')
 					properties: { command: commandName, mode: 'ask' }
 				});
 
+				const questionText = options.question as string;
+				const cliResources = (options.resource as string[] | undefined) ?? [];
+				const mentionedResources = extractMentions(questionText);
+				const hasExplicitResources = cliResources.length > 0;
 				const { resources } = resourcesResult;
-				if (resources.length === 0) {
+				const mentionResolution = normalizeResourceNames(mentionedResources, resources);
+				const explicitResolution = normalizeResourceNames(cliResources, resources);
+				const gitUrlResources: string[] = [];
+				const unresolvedExplicit: string[] = [];
+
+				for (const rawResource of cliResources) {
+					if (explicitResolution.invalid.includes(rawResource)) {
+						if (isGitUrl(rawResource)) {
+							gitUrlResources.push(rawResource);
+						} else {
+							unresolvedExplicit.push(rawResource);
+						}
+					}
+				}
+
+				if (unresolvedExplicit.length > 0) {
+					console.error('Error: Unknown resources:');
+					for (const resourceName of unresolvedExplicit) {
+						console.error(`  - ${resourceName}`);
+					}
+					const available = resources.map((resource) => resource.name);
+					if (available.length > 0) {
+						console.error(`Available resources: ${available.join(', ')}`);
+					} else {
+						console.error('No resources are configured yet.');
+					}
+					console.error('Use a configured resource name or a valid HTTPS Git URL.');
+					process.exit(1);
+				}
+
+				const normalized = {
+					names: [
+						...new Set([
+							...explicitResolution.names,
+							...gitUrlResources,
+							...mentionResolution.names
+						])
+					]
+				};
+
+				const resourceNames: string[] = hasExplicitResources
+					? normalized.names
+					: mentionResolution.names.length > 0
+						? mentionResolution.names
+						: resources.map((r) => r.name);
+
+				if (resourceNames.length === 0) {
 					console.error('Error: No resources configured.');
 					console.error('Add resources with "btca add" or check "btca resources".');
 					process.exit(1);
 				}
 
-				const questionText = options.question as string;
-				const cliResources = (options.resource as string[] | undefined) ?? [];
-				const mentionedResources = extractMentions(questionText);
-
-				const allRequestedResources = mergeResources(cliResources, mentionedResources);
-
-				const normalized = normalizeResourceNames(allRequestedResources, resources);
-
-				const resourceNames: string[] =
-					normalized.names.length > 0 ? normalized.names : resources.map((r) => r.name);
-
-				const cleanedQuery = cleanQueryOfValidResources(questionText, normalized.names);
+				const cleanedQuery = cleanQueryOfValidResources(questionText, mentionResolution.names);
 
 				console.log('loading resources...');
 

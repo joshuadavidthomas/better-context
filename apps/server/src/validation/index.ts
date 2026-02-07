@@ -419,6 +419,18 @@ export const validateQuestion = (question: string): ValidationResult => {
 /**
  * Validate resources array size.
  */
+export const validateResourceReference = (reference: string): ValidationResultWithValue<string> => {
+	const nameResult = validateResourceName(reference);
+	if (nameResult.valid) return okWithValue(reference);
+
+	const gitUrlResult = validateGitUrl(reference);
+	if (gitUrlResult.valid) return gitUrlResult;
+
+	return failWithValue(
+		`Invalid resource reference: "${reference}". Use an existing resource name or a valid HTTPS git URL.`
+	);
+};
+
 export const validateResourcesArray = (resources: string[] | undefined): ValidationResult => {
 	if (!resources) {
 		return ok();
@@ -432,7 +444,7 @@ export const validateResourcesArray = (resources: string[] | undefined): Validat
 
 	// Validate each resource name
 	for (const name of resources) {
-		const result = validateResourceName(name);
+		const result = validateResourceReference(name);
 		if (!result.valid) {
 			return result;
 		}

@@ -102,13 +102,14 @@ Clear all locally cloned resources.
 POST /question
 ```
 
-Ask a question (non-streaming response).
+Ask a question (non-streaming response). The `resources` field accepts configured resource names or HTTPS Git URLs.
 
 ```
 POST /question/stream
 ```
 
-Ask a question with streaming SSE response. The final `done` SSE event may include optional usage/metrics (tokens, timing, throughput, and best-effort pricing).
+Ask a question with streaming SSE response. The `resources` field accepts configured resource names or HTTPS Git URLs.
+The final `done` SSE event may include optional usage/metrics (tokens, timing, throughput, and best-effort pricing).
 
 ### Model Configuration
 

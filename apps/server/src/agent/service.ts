@@ -119,10 +119,16 @@ export namespace Agent {
 				questionLength: question.length
 			});
 
-			const cleanup = () => {
-				if (!collection.vfsId) return;
-				VirtualFs.dispose(collection.vfsId);
-				clearVirtualCollectionMetadata(collection.vfsId);
+			const cleanup = async () => {
+				if (collection.vfsId) {
+					VirtualFs.dispose(collection.vfsId);
+					clearVirtualCollectionMetadata(collection.vfsId);
+				}
+				try {
+					await collection.cleanup?.();
+				} catch {
+					// cleanup should never fail user-visible operations
+				}
 			};
 
 			// Validate provider is authenticated
@@ -130,7 +136,7 @@ export namespace Agent {
 			const requiresAuth = config.provider !== 'opencode' && config.provider !== 'openai-compat';
 			if (!isAuthed && requiresAuth) {
 				const authenticated = await Auth.getAuthenticatedProviders();
-				cleanup();
+				await cleanup();
 				throw new ProviderNotConnectedError({
 					providerId: config.provider,
 					connectedProviders: authenticated
@@ -153,7 +159,7 @@ export namespace Agent {
 						yield event;
 					}
 				} finally {
-					cleanup();
+					await cleanup();
 				}
 			})();
 
@@ -173,10 +179,16 @@ export namespace Agent {
 				questionLength: question.length
 			});
 
-			const cleanup = () => {
-				if (!collection.vfsId) return;
-				VirtualFs.dispose(collection.vfsId);
-				clearVirtualCollectionMetadata(collection.vfsId);
+			const cleanup = async () => {
+				if (collection.vfsId) {
+					VirtualFs.dispose(collection.vfsId);
+					clearVirtualCollectionMetadata(collection.vfsId);
+				}
+				try {
+					await collection.cleanup?.();
+				} catch {
+					// cleanup should never fail user-visible operations
+				}
 			};
 
 			// Validate provider is authenticated
@@ -184,7 +196,7 @@ export namespace Agent {
 			const requiresAuth = config.provider !== 'opencode' && config.provider !== 'openai-compat';
 			if (!isAuthed && requiresAuth) {
 				const authenticated = await Auth.getAuthenticatedProviders();
-				cleanup();
+				await cleanup();
 				throw new ProviderNotConnectedError({
 					providerId: config.provider,
 					connectedProviders: authenticated
@@ -203,7 +215,7 @@ export namespace Agent {
 				})
 			);
 
-			cleanup();
+			await cleanup();
 
 			return runResult.match({
 				ok: (result) => {

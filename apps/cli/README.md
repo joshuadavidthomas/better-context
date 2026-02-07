@@ -44,7 +44,7 @@ btca ask --resource svelte --question "How do I create a reactive store?"
 
 Options:
 
-- `-r, --resource <name...>` - Resources to search (can specify multiple)
+- `-r, --resource <name...>` - Resource names or HTTPS Git URLs (can specify multiple)
 - `-q, --question <text>` - Question to ask (required)
 - `--no-thinking` - Hide reasoning output
 - `--no-tools` - Hide tool-call traces
@@ -56,12 +56,20 @@ Examples:
 # Single resource
 btca ask --resource svelte --question "How do signals work?"
 
+# One-shot GitHub repository (anonymous)
+btca ask --resource https://github.com/sveltejs/svelte.dev -q "How do I setup a new sveltekit project?"
+
 # Multiple resources
 btca ask --resource react --resource typescript --question "How do I type useState?"
 
 # Using @mentions in question
 btca ask --question "@svelte @tailwind How do I style components?"
 ```
+
+Notes:
+
+- `-r` accepts configured resource names and HTTPS Git URLs.
+- URL resources are not added to config and are cached on disk for reuse on later asks.
 
 ### Start Server
 

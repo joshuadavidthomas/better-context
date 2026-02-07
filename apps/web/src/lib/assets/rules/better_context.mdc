@@ -52,12 +52,19 @@ btca queries local clones of library/framework repositories to answer questions 
 # Single resource
 btca ask -r svelte -q "How does the $state rune work?"
 
+# One-shot GitHub repository
+btca ask -r https://github.com/sveltejs/svelte.dev -q "How do I setup a new sveltekit project?"
+
 # Multiple resources
 btca ask -r react -r typescript -q "How do I type useState?"
 
 # Using @mentions instead of -r flags
 btca ask -q "@svelte @effect How do I integrate Effect with Svelte?"
 ```
+
+### Anonymous URL resources
+
+`-r` also accepts HTTPS Git URLs directly (for one-shot use). These URLs are cached under your normal resources directory and are not written to config.
 
 ---
 
