@@ -9,6 +9,7 @@ export type BtcaFsResource = {
 	readonly repoSubPaths: readonly string[];
 	readonly specialAgentInstructions: string;
 	readonly getAbsoluteDirectoryPath: () => Promise<string>;
+	readonly cleanup?: () => Promise<void>;
 };
 
 export type BtcaGitResourceArgs = {
@@ -20,6 +21,8 @@ export type BtcaGitResourceArgs = {
 	readonly resourcesDirectoryPath: string;
 	readonly specialAgentInstructions: string;
 	readonly quiet: boolean;
+	readonly ephemeral?: boolean;
+	readonly localDirectoryKey?: string;
 };
 
 export type BtcaLocalResourceArgs = {

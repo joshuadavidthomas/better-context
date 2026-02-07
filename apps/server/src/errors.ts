@@ -61,7 +61,7 @@ export const CommonHints = {
 	CHECK_NETWORK: 'Check your internet connection and try again.',
 	CHECK_URL: 'Verify the URL is correct and the repository exists.',
 	CHECK_BRANCH:
-		'Verify the branch name exists in the repository. Common branches are "main", "master", or "dev".',
+		'Verify the branch name exists in the repository. Common branches are "main", "master", "trunk", or "dev".',
 	CHECK_CONFIG: 'Check your btca config file for errors.',
 	CHECK_PERMISSIONS:
 		'Ensure you have access to the repository. Private repos require authentication.',

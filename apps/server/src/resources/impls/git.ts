@@ -9,6 +9,26 @@ import { ResourceError, resourceNameToKey } from '../helpers.ts';
 import { GitResourceSchema } from '../schema.ts';
 import type { BtcaFsResource, BtcaGitResourceArgs } from '../types.ts';
 
+const ANONYMOUS_BRANCH_FALLBACKS = ['main', 'master', 'trunk', 'dev'];
+const ANONYMOUS_CLONE_DIR = '.tmp';
+
+const isBranchNotFoundError = (cause: unknown) => {
+	const message =
+		typeof cause === 'object' && cause instanceof Error ? cause.message : String(cause);
+	return (
+		/couldn't find remote ref/i.test(message) ||
+		/Remote branch .* not found/i.test(message) ||
+		/fatal: invalid refspec/i.test(message) ||
+		/error: pathspec .* did not match any/i.test(message) ||
+		/Branch ".*" not found in the repository/i.test(message) ||
+		/The specified branch was not found/i.test(message)
+	);
+};
+
+const cleanupDirectory = async (pathToRemove: string) => {
+	await Result.tryPromise(() => fs.rm(pathToRemove, { recursive: true, force: true }));
+};
+
 const validateGitUrl = (url: string): { success: true } | { success: false; error: string } => {
 	const result = GitResourceSchema.shape.url.safeParse(url);
 	if (result.success) return { success: true };
@@ -433,15 +453,33 @@ const ensureSearchPathsExist = async (
 };
 
 const ensureGitResource = async (config: BtcaGitResourceArgs): Promise<string> => {
-	const resourceKey = resourceNameToKey(config.name);
-	const localPath = path.join(config.resourcesDirectoryPath, resourceKey);
+	const resourceKey = config.localDirectoryKey ?? resourceNameToKey(config.name);
+	const basePath = config.ephemeral
+		? path.join(config.resourcesDirectoryPath, ANONYMOUS_CLONE_DIR)
+		: config.resourcesDirectoryPath;
+	const localPath = path.join(basePath, resourceKey);
+
+	const mkdirResult = await Result.tryPromise({
+		try: () => fs.mkdir(basePath, { recursive: true }),
+		catch: (cause) =>
+			new ResourceError({
+				message: 'Failed to create resources directory',
+				hint: 'Check that you have write permissions to the btca data directory.',
+				cause
+			})
+	});
+	if (!Result.isOk(mkdirResult)) throw mkdirResult.error;
+
+	if (config.ephemeral) {
+		await cleanupDirectory(localPath);
+	}
 
 	return Metrics.span(
 		'resource.git.ensure',
 		async () => {
 			const exists = await directoryExists(localPath);
 
-			if (exists) {
+			if (exists && !config.ephemeral) {
 				Metrics.info('resource.git.update', {
 					name: config.name,
 					branch: config.branch,
@@ -461,20 +499,40 @@ const ensureGitResource = async (config: BtcaGitResourceArgs): Promise<string> =
 
 			Metrics.info('resource.git.clone', {
 				name: config.name,
-				branch: config.branch,
+				branch: config.ephemeral ? 'fallback' : config.branch,
 				repoSubPaths: config.repoSubPaths
 			});
 
-			const mkdirResult = await Result.tryPromise({
-				try: () => fs.mkdir(config.resourcesDirectoryPath, { recursive: true }),
-				catch: (cause) =>
-					new ResourceError({
-						message: 'Failed to create resources directory',
-						hint: 'Check that you have write permissions to the btca data directory.',
-						cause
-					})
-			});
-			if (!Result.isOk(mkdirResult)) throw mkdirResult.error;
+			if (config.ephemeral) {
+				let lastBranchError: unknown;
+				for (const branch of ANONYMOUS_BRANCH_FALLBACKS) {
+					try {
+						await gitClone({
+							repoUrl: config.url,
+							repoBranch: branch,
+							repoSubPaths: config.repoSubPaths,
+							localAbsolutePath: localPath,
+							quiet: config.quiet
+						});
+						if (config.repoSubPaths.length > 0) {
+							await ensureSearchPathsExist(localPath, config.repoSubPaths, config.name);
+						}
+						return localPath;
+					} catch (error) {
+						lastBranchError = error;
+						await cleanupDirectory(localPath);
+						if (!isBranchNotFoundError(error)) throw error;
+					}
+				}
+
+				throw new ResourceError({
+					message: `Could not find this repository on a common branch. Tried ${ANONYMOUS_BRANCH_FALLBACKS.join(
+						', '
+					)}.`,
+					hint: 'If the repo uses a different branch, add it as a named resource and use that name. See https://docs.btca.dev/guides/configuration.',
+					cause: lastBranchError
+				});
+			}
 
 			await gitClone({
 				repoUrl: config.url,
@@ -495,6 +553,12 @@ const ensureGitResource = async (config: BtcaGitResourceArgs): Promise<string> =
 
 export const loadGitResource = async (config: BtcaGitResourceArgs): Promise<BtcaFsResource> => {
 	const localPath = await ensureGitResource(config);
+	const cleanup = config.ephemeral
+		? async () => {
+				await cleanupDirectory(localPath);
+			}
+		: undefined;
+
 	return {
 		_tag: 'fs-based',
 		name: config.name,
@@ -502,6 +566,7 @@ export const loadGitResource = async (config: BtcaGitResourceArgs): Promise<Btca
 		type: 'git',
 		repoSubPaths: config.repoSubPaths,
 		specialAgentInstructions: config.specialAgentInstructions,
-		getAbsoluteDirectoryPath: async () => localPath
+		getAbsoluteDirectoryPath: async () => localPath,
+		...(cleanup ? { cleanup } : {})
 	};
 };

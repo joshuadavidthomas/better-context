@@ -184,11 +184,18 @@ export namespace Collections {
 						VirtualFs.dispose(vfsId);
 						clearVirtualCollectionMetadata(vfsId);
 					};
+					const cleanupResources = (resources: BtcaFsResource[]) =>
+						Promise.all(
+							resources.map(async (resource) => {
+								if (!resource.cleanup) return;
+								await ignoreErrors(() => resource.cleanup!());
+							})
+						);
 
+					const loadedResources: BtcaFsResource[] = [];
 					const result = await Result.gen(async function* () {
 						yield* Result.await(initVirtualRoot(collectionPath, vfsId));
 
-						const loadedResources: BtcaFsResource[] = [];
 						for (const name of sortedNames) {
 							const resource = yield* Result.await(loadResource(args.resources, name, quiet));
 							loadedResources.push(resource);
@@ -235,12 +242,16 @@ export namespace Collections {
 						return Result.ok({
 							path: collectionPath,
 							agentInstructions: instructionBlocks.join('\n\n'),
-							vfsId
+							vfsId,
+							cleanup: async () => {
+								await cleanupResources(loadedResources);
+							}
 						});
 					});
 
 					if (!Result.isOk(result)) {
 						cleanupVirtual();
+						await cleanupResources(loadedResources);
 						throw result.error;
 					}
 					return result.value;

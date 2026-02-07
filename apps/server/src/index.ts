@@ -15,7 +15,12 @@ import { Resources } from './resources/service.ts';
 import { GitResourceSchema, LocalResourceSchema } from './resources/schema.ts';
 import { StreamService } from './stream/service.ts';
 import type { BtcaStreamMetaEvent } from './stream/types.ts';
-import { LIMITS, normalizeGitHubUrl, validateResourceReference } from './validation/index.ts';
+import {
+	LIMITS,
+	normalizeGitHubUrl,
+	validateGitUrl,
+	validateResourceReference
+} from './validation/index.ts';
 import { clearAllVirtualCollectionMetadata } from './collections/virtual-metadata.ts';
 import { VirtualFs } from './vfs/virtual-fs.ts';
 
@@ -75,6 +80,12 @@ const ResourceReferenceField = z.string().superRefine((value, ctx) => {
 		});
 	}
 });
+
+const normalizeQuestionResourceReference = (reference: string): string => {
+	const gitUrlResult = validateGitUrl(reference);
+	if (gitUrlResult.valid) return gitUrlResult.value;
+	return reference;
+};
 
 const QuestionRequestSchema = z.object({
 	question: z
@@ -308,7 +319,7 @@ const createApp = (deps: {
 			const decoded = await decodeJson(c.req.raw, QuestionRequestSchema);
 			const resourceNames =
 				decoded.resources && decoded.resources.length > 0
-					? decoded.resources
+					? Array.from(new Set(decoded.resources.map(normalizeQuestionResourceReference)))
 					: config.resources.map((r) => r.name);
 
 			const collectionKey = getCollectionKey(resourceNames);
@@ -344,7 +355,7 @@ const createApp = (deps: {
 			const decoded = await decodeJson(c.req.raw, QuestionRequestSchema);
 			const resourceNames =
 				decoded.resources && decoded.resources.length > 0
-					? decoded.resources
+					? Array.from(new Set(decoded.resources.map(normalizeQuestionResourceReference)))
 					: config.resources.map((r) => r.name);
 
 			const collectionKey = getCollectionKey(resourceNames);

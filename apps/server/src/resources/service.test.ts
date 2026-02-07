@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 
-import { Resources } from './service.ts';
+import { Resources, createAnonymousDirectoryKey } from './service.ts';
 import { resourceNameToKey } from './helpers.ts';
 import { type ResourceDefinition } from './schema.ts';
 
@@ -43,6 +43,22 @@ describe('Resources.resolveResourceDefinition', () => {
 		expect(second).not.toBeNull();
 		if (first && second) {
 			expect(resourceNameToKey(first.name)).toBe(resourceNameToKey(second.name));
+		}
+	});
+
+	it('uses short deterministic keys for anonymous repository paths', () => {
+		const main = Resources.createAnonymousResource('https://github.com/sveltejs/svelte.dev');
+		const withPath = Resources.createAnonymousResource(
+			'https://github.com/sveltejs/svelte.dev/tree/main/packages'
+		);
+		expect(main).not.toBeNull();
+		expect(withPath).not.toBeNull();
+		if (main && withPath) {
+			expect(createAnonymousDirectoryKey(main.url)).toBe(createAnonymousDirectoryKey(withPath.url));
+		}
+		if (main) {
+			expect(main.name.startsWith('anonymous:')).toBe(true);
+			expect(main.name.length).toBeGreaterThan(19);
 		}
 	});
 });

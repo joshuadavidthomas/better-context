@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { Config } from '../config/index.ts';
 import { validateGitUrl } from '../validation/index.ts';
 import { CommonHints } from '../errors.ts';
@@ -13,7 +15,15 @@ import {
 import type { BtcaFsResource, BtcaGitResourceArgs, BtcaLocalResourceArgs } from './types.ts';
 
 const ANON_PREFIX = 'anonymous:';
+const ANON_DIRECTORY_PREFIX = 'anonymous-';
 const DEFAULT_ANON_BRANCH = 'main';
+
+export const createAnonymousDirectoryKey = (url: string): string => {
+	const hash = createHash('sha256').update(url).digest('hex').slice(0, 12);
+	return `${ANON_DIRECTORY_PREFIX}${hash}`;
+};
+
+const isAnonymousResource = (name: string): boolean => name.startsWith(ANON_PREFIX);
 
 export namespace Resources {
 	export type Service = {
@@ -45,7 +55,11 @@ export namespace Resources {
 		repoSubPaths: normalizeSearchPaths(definition),
 		resourcesDirectoryPath: resourcesDirectory,
 		specialAgentInstructions: definition.specialNotes ?? '',
-		quiet
+		quiet,
+		ephemeral: isAnonymousResource(definition.name),
+		localDirectoryKey: isAnonymousResource(definition.name)
+			? createAnonymousDirectoryKey(definition.url)
+			: undefined
 	});
 
 	const definitionToLocalArgs = (definition: LocalResource): BtcaLocalResourceArgs => ({

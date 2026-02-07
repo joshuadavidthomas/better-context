@@ -108,6 +108,12 @@ Example:
 
 ## Known gaps
 
+- One-off HTTPS git URLs (used directly in `btca ask`) are treated as temporary resources.
+  - Anonymous URLs are auto-normalized.
+  - Clones use a short hash-based key and are cleaned up automatically after the request.
+  - btca tries `main`, `master`, `trunk`, then `dev` by default.
+  - If your repo uses a different default branch, add it as a named resource instead of using a one-off URL.
+
 - `--global` flags exist on several commands, but the effective target is determined
   by whether a project config exists; there is no strict global override.
 - `btca remote add` defaults differ between paths:
