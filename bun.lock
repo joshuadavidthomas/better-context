@@ -21,7 +21,7 @@
     },
     "apps/cli": {
       "name": "btca",
-      "version": "1.0.89",
+      "version": "1.0.90",
       "bin": {
         "btca": "bin.js",
       },
@@ -68,7 +68,7 @@
     },
     "apps/server": {
       "name": "btca-server",
-      "version": "1.0.89",
+      "version": "1.0.90",
       "dependencies": {
         "@ai-sdk/anthropic": "^3.0.23",
         "@ai-sdk/google": "^3.0.13",
