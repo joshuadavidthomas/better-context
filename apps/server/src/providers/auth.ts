@@ -27,7 +27,8 @@ export namespace Auth {
 		openai: ['oauth'],
 		'openai-compat': ['api'],
 		anthropic: ['api'],
-		google: ['api', 'oauth']
+		google: ['api', 'oauth'],
+		minimax: ['api']
 	};
 
 	const readEnv = (key: string) => {
@@ -38,6 +39,7 @@ export namespace Auth {
 	const getEnvApiKey = (providerId: string) => {
 		if (providerId === 'openrouter') return readEnv('OPENROUTER_API_KEY');
 		if (providerId === 'opencode') return readEnv('OPENCODE_API_KEY');
+		if (providerId === 'minimax') return readEnv('MINIMAX_API_KEY');
 		return undefined;
 	};
 
@@ -175,6 +177,8 @@ export namespace Auth {
 				return 'Set OPENROUTER_API_KEY or run "opencode auth --provider openrouter".';
 			case 'opencode':
 				return 'Set OPENCODE_API_KEY or run "opencode auth --provider opencode".';
+			case 'minimax':
+				return 'Set MINIMAX_API_KEY or run "opencode auth --provider minimax". Get your API key at https://platform.minimax.io/user-center/basic-information.';
 			default:
 				return 'Run "opencode auth --provider <provider>" to configure credentials.';
 		}

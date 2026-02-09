@@ -61,6 +61,7 @@
 		"hono": "^4.7.11",
 		"just-bash": "^2.7.0",
 		"opencode-ai": "^1.1.36",
+		"vercel-minimax-ai-provider": "^0.0.2",
 		"zod": "^3.25.76"
 	}
 }

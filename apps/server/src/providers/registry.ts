@@ -10,6 +10,7 @@ import { createOpenCodeZen } from './opencode.ts';
 import { createOpenAICodex } from './openai.ts';
 import { createOpenAICompat } from './openai-compat.ts';
 import { createOpenRouter } from './openrouter.ts';
+import { createMinimaxProvider } from './minimax.ts';
 
 // Type for provider factory options
 export type ProviderOptions = {
@@ -46,7 +47,10 @@ export const PROVIDER_REGISTRY: Record<string, ProviderFactory> = {
 	google: createGoogleGenerativeAI as ProviderFactory,
 
 	// OpenRouter (OpenAI-compatible gateway)
-	openrouter: createOpenRouter as ProviderFactory
+	openrouter: createOpenRouter as ProviderFactory,
+
+	// MiniMax (Anthropic-compatible gateway)
+	minimax: createMinimaxProvider as ProviderFactory
 };
 
 /**

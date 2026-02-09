@@ -23,7 +23,8 @@ export const CURATED_MODELS: Record<string, { id: string; label: string }[]> = {
 		{ id: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5 (2025-10-01)' },
 		{ id: 'claude-sonnet-4-5-20250929', label: 'Claude Sonnet 4.5 (2025-09-29)' }
 	],
-	google: [{ id: 'gemini-3-flash-preview', label: 'Gemini 3 Flash Preview' }]
+	google: [{ id: 'gemini-3-flash-preview', label: 'Gemini 3 Flash Preview' }],
+	minimax: [{ id: 'MiniMax-M2.1', label: 'MiniMax M2.1' }]
 };
 
 export const PROVIDER_INFO: Record<string, { label: string; requiresAuth: boolean }> = {
@@ -32,6 +33,7 @@ export const PROVIDER_INFO: Record<string, { label: string; requiresAuth: boolea
 	anthropic: { label: 'Anthropic (Claude)', requiresAuth: true },
 	openai: { label: 'OpenAI (GPT)', requiresAuth: true },
 	'openai-compat': { label: 'OpenAI Compatible', requiresAuth: false },
+	minimax: { label: 'MiniMax', requiresAuth: true },
 	google: { label: 'Google (Gemini)', requiresAuth: true },
 	openrouter: { label: 'OpenRouter', requiresAuth: true }
 };
@@ -39,6 +41,7 @@ export const PROVIDER_INFO: Record<string, { label: string; requiresAuth: boolea
 export const PROVIDER_AUTH_GUIDANCE: Record<string, string> = {
 	'github-copilot': 'GitHub Copilot uses device flow OAuth: follow the browser prompt.',
 	openai: 'OpenAI requires OAuth: btca will open a browser to sign in.',
+	minimax: 'MiniMax uses API keys: paste your MiniMax API key to continue.',
 	'openai-compat': 'Enter base URL, name, and model ID. API key is optional.',
 	anthropic: 'Anthropic uses API keys: paste your API key to continue.',
 	google: 'Google uses API keys: paste your API key to continue.',
@@ -62,11 +65,16 @@ export const PROVIDER_MODEL_DOCS: Record<string, { label: string; url: string }>
 	'github-copilot': {
 		label: 'Model docs',
 		url: 'https://docs.github.com/en/rest/models?apiVersion=2022-11-28'
-	}
+	},
+	minimax: { label: 'Model docs', url: 'https://platform.minimax.io/docs/guides/text-generation' }
 };
 
 export const PROVIDER_SETUP_LINKS: Record<string, { label: string; url: string }> = {
 	opencode: { label: 'Get OpenCode Zen API key', url: 'https://opencode.ai/zen' },
+	minimax: {
+		label: 'Get MiniMax API key',
+		url: 'https://platform.minimax.io/user-center/basic-information'
+	},
 	openrouter: { label: 'Get OpenRouter API key', url: 'https://openrouter.ai/models' },
 	google: { label: 'Get Google API key', url: 'https://aistudio.google.com/api-keys' },
 	anthropic: { label: 'Get Anthropic API key', url: 'https://platform.claude.com/dashboard' }

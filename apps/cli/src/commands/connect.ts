@@ -170,6 +170,7 @@ async function runBtcaAuth(providerId: string): Promise<boolean> {
 		providerId === 'opencode' ||
 		providerId === 'openrouter' ||
 		providerId === 'anthropic' ||
+		providerId === 'minimax' ||
 		providerId === 'google'
 	) {
 		const setup = PROVIDER_SETUP_LINKS[providerId];
@@ -210,7 +211,7 @@ export const connectCommand = new Command('connect')
 	.option('-g, --global', 'Save to global config instead of project config')
 	.option(
 		'-p, --provider <id>',
-		'Provider ID (opencode, openrouter, openai, openai-compat, google, anthropic, github-copilot)'
+		'Provider ID (opencode, openrouter, openai, openai-compat, google, anthropic, github-copilot, minimax)'
 	)
 	.option('-m, --model <id>', 'Model ID (e.g., "claude-haiku-4-5")')
 	.action(async (options: { global?: boolean; provider?: string; model?: string }, command) => {

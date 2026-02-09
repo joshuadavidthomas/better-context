@@ -288,6 +288,7 @@ export const ConnectWizard: Component<ConnectWizardProps> = (props) => {
 			providerId === 'opencode' ||
 			providerId === 'openrouter' ||
 			providerId === 'anthropic' ||
+			providerId === 'minimax' ||
 			providerId === 'google'
 		) {
 			setStepSafe('api-key');
