@@ -1,8 +1,7 @@
-import type { Component } from 'solid-js';
 import { colors } from '../theme.ts';
 import { useConfigContext } from '../context/config-context.tsx';
 
-export const Header: Component = () => {
+export const Header = () => {
 	const config = useConfigContext();
 
 	return (
@@ -23,30 +22,27 @@ export const Header: Component = () => {
 			<text>
 				<span
 					style={{
-						textColor: colors.accent
+						fg: colors.accent
 					}}
 				>
 					{'◆'}
 				</span>
 				<span
 					style={{
-						textColor: colors.text
+						fg: colors.text
 					}}
 				>
 					{' btca'}
 				</span>
 				<span
 					style={{
-						textColor: colors.textMuted
+						fg: colors.textMuted
 					}}
 				>
 					{' - The Better Context App'}
 				</span>
 			</text>
-			<text
-				fg={colors.textSubtle}
-				content={`${config.selectedProvider()}/${config.selectedModel()}`}
-			/>
+			<text fg={colors.textSubtle} content={`${config.selectedProvider}/${config.selectedModel}`} />
 		</box>
 	);
 };

@@ -1,6 +1,6 @@
 import { $ } from 'bun';
-import solidPlugin from '@opentui/solid/bun-plugin';
 import packageJson from '../package.json';
+import reactCompilerPlugin from './react-compiler-bun-plugin.ts';
 
 const VERSION = packageJson.version;
 
@@ -38,11 +38,9 @@ const outputNames: Record<(typeof targets)[number], string> = {
 async function main() {
 	// Install opentui for all platforms
 	const opentuiCoreVersion = packageJson.devDependencies['@opentui/core'];
-	const opentuiSolidVersion = packageJson.devDependencies['@opentui/solid'];
 
 	console.log('Installing opentui for all platforms...');
 	await $`bun install --os="*" --cpu="*" @opentui/core@${opentuiCoreVersion}`;
-	await $`bun install --os="*" --cpu="*" @opentui/solid@${opentuiSolidVersion}`;
 	console.log('Done installing opentui for all platforms');
 
 	await Bun.file('dist')
@@ -56,14 +54,14 @@ async function main() {
 		const result = await Bun.build({
 			entrypoints: ['src/index.ts'],
 			target: 'bun',
-			plugins: [solidPlugin],
+			plugins: [reactCompilerPlugin],
 			define: {
 				__VERSION__: JSON.stringify(VERSION)
 			},
 			compile: {
 				target,
 				outfile,
-				// Disable bunfig.toml autoloading - the solidPlugin already transforms JSX at build time
+				// Disable bunfig.toml autoloading - the React compiler plugin transforms JSX at build time
 				// and we don't want the binary to pick up bunfig.toml from the cwd
 				autoloadBunfig: false
 			}

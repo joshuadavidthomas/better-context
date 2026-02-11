@@ -1,17 +1,9 @@
-import {
-	createEffect,
-	createMemo,
-	createSignal,
-	For,
-	Show,
-	onMount,
-	type Component,
-	type Setter
-} from 'solid-js';
-import { useKeyboard, usePaste } from '@opentui/solid';
+import { useEffect, useMemo, useState } from 'react';
+import { useKeyboard } from '@opentui/react';
 import { Result } from 'better-result';
 import { spawn } from 'bun';
 
+import { usePaste } from '../opentui-hooks.ts';
 import { colors } from '../theme.ts';
 import { useMessagesContext } from '../context/messages-context.tsx';
 import { useConfigContext } from '../context/config-context.tsx';
@@ -54,33 +46,36 @@ type ModelOption = {
 
 interface ConnectWizardProps {
 	onClose: () => void;
-	onStepChange: Setter<WizardStep>;
+	onStepChange: (step: WizardStep) => void;
 }
 
-export const ConnectWizard: Component<ConnectWizardProps> = (props) => {
+export const ConnectWizard = (props: ConnectWizardProps) => {
 	const messages = useMessagesContext();
 	const config = useConfigContext();
 
-	const [step, setStep] = createSignal<ConnectStep>('loading');
-	const [providerOptions, setProviderOptions] = createSignal<ProviderOption[]>([]);
-	const [connectedProviders, setConnectedProviders] = createSignal<string[]>([]);
-	const [modelOptions, setModelOptions] = createSignal<ModelOption[]>([]);
-	const [selectedProviderIndex, setSelectedProviderIndex] = createSignal(0);
-	const [selectedModelIndex, setSelectedModelIndex] = createSignal(0);
-	const [selectedProviderId, setSelectedProviderId] = createSignal('');
-	const [wizardInput, setWizardInput] = createSignal('');
-	const [compatBaseUrl, setCompatBaseUrl] = createSignal('');
-	const [compatName, setCompatName] = createSignal('');
-	const [compatModelId, setCompatModelId] = createSignal('');
-	const [error, setError] = createSignal<string | null>(null);
-	const [statusMessage, setStatusMessage] = createSignal('');
-	const [busy, setBusy] = createSignal(false);
+	const [step, setStep] = useState<ConnectStep>('loading');
+	const [providerOptions, setProviderOptions] = useState<ProviderOption[]>([]);
+	const [connectedProviders, setConnectedProviders] = useState<string[]>([]);
+	const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
+	const [selectedProviderIndex, setSelectedProviderIndex] = useState(0);
+	const [selectedModelIndex, setSelectedModelIndex] = useState(0);
+	const [selectedProviderId, setSelectedProviderId] = useState('');
+	const [wizardInput, setWizardInput] = useState('');
+	const [compatBaseUrl, setCompatBaseUrl] = useState('');
+	const [compatName, setCompatName] = useState('');
+	const [compatModelId, setCompatModelId] = useState('');
+	const [error, setError] = useState<string | null>(null);
+	const [statusMessage, setStatusMessage] = useState('');
+	const [busy, setBusy] = useState(false);
 
-	const customModelOption: ModelOption = {
-		id: '__custom__',
-		label: 'Custom model ID...',
-		kind: 'custom'
-	};
+	const customModelOption: ModelOption = useMemo(
+		() => ({
+			id: '__custom__',
+			label: 'Custom model ID...',
+			kind: 'custom'
+		}),
+		[]
+	);
 
 	const sanitizePaste = (text: string) => text.replace(/[\r\n]+/g, '').trim();
 
@@ -90,13 +85,12 @@ export const ConnectWizard: Component<ConnectWizardProps> = (props) => {
 		setStep(nextStep);
 	};
 
-	createEffect(() => {
-		const currentStep = step();
-		props.onStepChange(currentStep === 'loading' ? null : (currentStep as WizardStep));
-	});
+	useEffect(() => {
+		props.onStepChange(step === 'loading' ? null : (step as WizardStep));
+	}, [step, props.onStepChange]);
 
-	const title = createMemo(() => {
-		switch (step()) {
+	const title = useMemo(() => {
+		switch (step) {
 			case 'loading':
 				return 'Connect - Loading';
 			case 'provider':
@@ -118,57 +112,39 @@ export const ConnectWizard: Component<ConnectWizardProps> = (props) => {
 			case 'compat-api-key':
 				return 'Connect - API Key (Optional)';
 		}
-	});
+	}, [step]);
 
-	const hint = createMemo(() => {
-		const providerId = selectedProviderId();
-		if (step() === 'loading') {
-			return 'Loading providers...';
-		}
-		if (step() === 'auth') {
-			return 'Complete authentication in the browser or terminal.';
-		}
-		if (step() === 'api-key') {
+	const hint = useMemo(() => {
+		const providerId = selectedProviderId;
+		if (step === 'loading') return 'Loading providers...';
+		if (step === 'auth') return 'Complete authentication in the browser or terminal.';
+		if (step === 'api-key') {
 			return PROVIDER_AUTH_GUIDANCE[providerId] ?? 'Enter API key to continue.';
 		}
-		if (step() === 'model-input') {
-			return 'Enter a model ID for this provider.';
-		}
-		if (step() === 'compat-base-url') {
+		if (step === 'model-input') return 'Enter a model ID for this provider.';
+		if (step === 'compat-base-url')
 			return 'Enter the base URL for your OpenAI-compatible provider.';
-		}
-		if (step() === 'compat-name') {
-			return 'Enter the provider name (used by the AI SDK).';
-		}
-		if (step() === 'compat-model') {
-			return 'Enter the model ID to use.';
-		}
-		if (step() === 'compat-api-key') {
-			return 'Enter an API key if required (optional).';
-		}
+		if (step === 'compat-name') return 'Enter the provider name (used by the AI SDK).';
+		if (step === 'compat-model') return 'Enter the model ID to use.';
+		if (step === 'compat-api-key') return 'Enter an API key if required (optional).';
 		return 'Use arrow keys to navigate, Enter to select, Esc to cancel';
-	});
+	}, [step, selectedProviderId]);
 
-	const authLink = createMemo(() => {
-		const providerId = selectedProviderId();
-		return PROVIDER_SETUP_LINKS[providerId];
-	});
+	const authLink = useMemo(() => PROVIDER_SETUP_LINKS[selectedProviderId], [selectedProviderId]);
+	const modelDocsLink = useMemo(
+		() => PROVIDER_MODEL_DOCS[selectedProviderId],
+		[selectedProviderId]
+	);
 
-	const modelDocsLink = createMemo(() => {
-		const providerId = selectedProviderId();
-		return PROVIDER_MODEL_DOCS[providerId];
-	});
-
-	const showModelDocsLink = createMemo(() => {
-		const currentStep = step();
+	const showModelDocsLink = useMemo(() => {
 		return (
-			(currentStep === 'model' ||
-				currentStep === 'model-input' ||
-				currentStep === 'compat-base-url' ||
-				currentStep === 'compat-model') &&
-			Boolean(modelDocsLink())
+			(step === 'model' ||
+				step === 'model-input' ||
+				step === 'compat-base-url' ||
+				step === 'compat-model') &&
+			Boolean(modelDocsLink)
 		);
-	});
+	}, [step, modelDocsLink]);
 
 	const loadProviders = async () => {
 		setStepSafe('loading');
@@ -183,13 +159,13 @@ export const ConnectWizard: Component<ConnectWizardProps> = (props) => {
 		const { connected, all } = result.value;
 		const connectedSet = new Set(connected);
 
-		const connectedOptions = connected.map((id) => {
+		const connectedOptions: ProviderOption[] = connected.map((id) => {
 			const info = PROVIDER_INFO[id];
 			const label = info ? `${info.label} (connected)` : `${id} (connected)`;
 			return { id, label, connected: true };
 		});
 
-		const unconnectedOptions = all
+		const unconnectedOptions: ProviderOption[] = all
 			.map((provider) => provider.id)
 			.filter((id) => !connectedSet.has(id))
 			.map((id) => {
@@ -202,16 +178,17 @@ export const ConnectWizard: Component<ConnectWizardProps> = (props) => {
 		setProviderOptions(options);
 		setConnectedProviders(connected);
 
-		const currentProvider = config.selectedProvider();
+		const currentProvider = config.selectedProvider;
 		const currentIndex = options.findIndex((opt) => opt.id === currentProvider);
 		setSelectedProviderIndex(currentIndex >= 0 ? currentIndex : 0);
 
 		setStepSafe('provider');
 	};
 
-	onMount(() => {
+	useEffect(() => {
 		void loadProviders();
-	});
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, []);
 
 	const runOpencodeAuth = async (providerId: string) => {
 		setStepSafe('auth');
@@ -277,26 +254,24 @@ export const ConnectWizard: Component<ConnectWizardProps> = (props) => {
 
 	const requireAuth = async (providerId: string) => {
 		if (providerId === 'github-copilot') {
-			return runCopilotOAuth();
+			return { ok: await runCopilotOAuth(), kind: 'oauth' as const };
 		}
-
 		if (providerId === 'openai') {
-			return runOpenAIOAuth();
+			return { ok: await runOpenAIOAuth(), kind: 'oauth' as const };
 		}
 
 		if (
 			providerId === 'opencode' ||
 			providerId === 'openrouter' ||
 			providerId === 'anthropic' ||
-			providerId === 'minimax' ||
 			providerId === 'google'
 		) {
 			setStepSafe('api-key');
 			setWizardInput('');
-			return true;
+			return { ok: true, kind: 'api-key' as const };
 		}
 
-		return runOpencodeAuth(providerId);
+		return { ok: await runOpencodeAuth(providerId), kind: 'oauth' as const };
 	};
 
 	const proceedToModelSelection = async (providerId: string) => {
@@ -306,7 +281,7 @@ export const ConnectWizard: Component<ConnectWizardProps> = (props) => {
 				...curated.map((model) => ({ ...model, kind: 'curated' as const })),
 				customModelOption
 			];
-			const currentModel = config.selectedModel();
+			const currentModel = config.selectedModel;
 			const currentIndex = options.findIndex(
 				(option) => option.kind === 'curated' && option.id === currentModel
 			);
@@ -325,7 +300,7 @@ export const ConnectWizard: Component<ConnectWizardProps> = (props) => {
 		modelId: string,
 		providerOptions?: { baseURL?: string; name?: string }
 	) => {
-		if (!providerId || !modelId || busy()) return;
+		if (!providerId || !modelId || busy) return;
 		setBusy(true);
 		const result = await Result.tryPromise(() =>
 			services.updateModel(providerId, modelId, providerOptions)
@@ -352,9 +327,9 @@ export const ConnectWizard: Component<ConnectWizardProps> = (props) => {
 	};
 
 	const handleCompatSubmit = async () => {
-		if (busy()) return;
-		const value = wizardInput().trim();
-		const currentStep = step();
+		if (busy) return;
+		const value = wizardInput.trim();
+		const currentStep = step;
 
 		if (currentStep === 'compat-base-url') {
 			if (!value) {
@@ -390,7 +365,7 @@ export const ConnectWizard: Component<ConnectWizardProps> = (props) => {
 		}
 
 		if (currentStep === 'compat-api-key') {
-			const providerId = selectedProviderId();
+			const providerId = selectedProviderId;
 			if (value) {
 				setBusy(true);
 				const result = await Result.tryPromise(() => saveProviderApiKey(providerId, value));
@@ -404,16 +379,16 @@ export const ConnectWizard: Component<ConnectWizardProps> = (props) => {
 				messages.addSystemMessage(`${providerId} API key saved.`);
 			}
 
-			await updateModel(providerId, compatModelId(), {
-				baseURL: compatBaseUrl(),
-				name: compatName()
+			await updateModel(providerId, compatModelId, {
+				baseURL: compatBaseUrl,
+				name: compatName
 			});
 		}
 	};
 
 	const handleProviderSelect = async () => {
-		if (busy()) return;
-		const provider = providerOptions()[selectedProviderIndex()];
+		if (busy) return;
+		const provider = providerOptions[selectedProviderIndex];
 		if (!provider) return;
 		setSelectedProviderId(provider.id);
 
@@ -422,22 +397,22 @@ export const ConnectWizard: Component<ConnectWizardProps> = (props) => {
 			return;
 		}
 
-		const isConnected = connectedProviders().includes(provider.id);
+		const isConnected = connectedProviders.includes(provider.id);
 		const info = PROVIDER_INFO[provider.id];
 
 		if (!isConnected && info?.requiresAuth) {
-			const authReady = await requireAuth(provider.id);
-			if (!authReady) return;
-			if (step() === 'api-key') return;
+			const authResult = await requireAuth(provider.id);
+			if (!authResult.ok) return;
+			if (authResult.kind === 'api-key') return;
 		}
 
 		await proceedToModelSelection(provider.id);
 	};
 
 	const handleApiKeySubmit = async () => {
-		if (busy()) return;
-		const providerId = selectedProviderId();
-		const key = wizardInput().trim();
+		if (busy) return;
+		const providerId = selectedProviderId;
+		const key = wizardInput.trim();
 		if (!key) {
 			setError('API key is required.');
 			return;
@@ -456,8 +431,8 @@ export const ConnectWizard: Component<ConnectWizardProps> = (props) => {
 	};
 
 	const handleModelSubmit = async () => {
-		const providerId = selectedProviderId();
-		const modelId = wizardInput().trim();
+		const providerId = selectedProviderId;
+		const modelId = wizardInput.trim();
 		if (!modelId) {
 			setError('Model ID is required.');
 			return;
@@ -466,7 +441,7 @@ export const ConnectWizard: Component<ConnectWizardProps> = (props) => {
 	};
 
 	useKeyboard((key) => {
-		const currentStep = step();
+		const currentStep = step;
 		if (key.name === 'escape') {
 			props.onClose();
 			return;
@@ -476,11 +451,11 @@ export const ConnectWizard: Component<ConnectWizardProps> = (props) => {
 			switch (key.name) {
 				case 'up':
 					setSelectedProviderIndex((idx) =>
-						idx > 0 ? idx - 1 : Math.max(providerOptions().length - 1, 0)
+						idx > 0 ? idx - 1 : Math.max(providerOptions.length - 1, 0)
 					);
 					break;
 				case 'down':
-					setSelectedProviderIndex((idx) => (idx < providerOptions().length - 1 ? idx + 1 : 0));
+					setSelectedProviderIndex((idx) => (idx < providerOptions.length - 1 ? idx + 1 : 0));
 					break;
 				case 'return':
 					void handleProviderSelect();
@@ -493,96 +468,54 @@ export const ConnectWizard: Component<ConnectWizardProps> = (props) => {
 			switch (key.name) {
 				case 'up':
 					setSelectedModelIndex((idx) =>
-						idx > 0 ? idx - 1 : Math.max(modelOptions().length - 1, 0)
+						idx > 0 ? idx - 1 : Math.max(modelOptions.length - 1, 0)
 					);
 					break;
 				case 'down':
-					setSelectedModelIndex((idx) => (idx < modelOptions().length - 1 ? idx + 1 : 0));
+					setSelectedModelIndex((idx) => (idx < modelOptions.length - 1 ? idx + 1 : 0));
 					break;
 				case 'return': {
-					const selected = modelOptions()[selectedModelIndex()];
-					if (selected) {
-						if (selected.kind === 'custom') {
-							setWizardInput('');
-							setStepSafe('model-input');
-							return;
-						}
-						void updateModel(selectedProviderId(), selected.id);
+					const selected = modelOptions[selectedModelIndex];
+					if (!selected) break;
+					if (selected.kind === 'custom') {
+						setWizardInput('');
+						setStepSafe('model-input');
+						return;
 					}
+					void updateModel(selectedProviderId, selected.id);
 					break;
 				}
 			}
 		}
 	});
 
-	usePaste((text) => {
-		const currentStep = step();
+	usePaste((event) => {
 		if (
-			currentStep !== 'api-key' &&
-			currentStep !== 'model-input' &&
-			currentStep !== 'compat-base-url' &&
-			currentStep !== 'compat-name' &&
-			currentStep !== 'compat-model' &&
-			currentStep !== 'compat-api-key'
-		)
+			step !== 'api-key' &&
+			step !== 'model-input' &&
+			step !== 'compat-base-url' &&
+			step !== 'compat-name' &&
+			step !== 'compat-model' &&
+			step !== 'compat-api-key'
+		) {
 			return;
-		const sanitized = sanitizePaste(text.text);
+		}
+		const sanitized = sanitizePaste(event.text);
 		if (!sanitized) return;
 		setWizardInput((prev) => `${prev}${sanitized}`);
 		setError(null);
 	});
 
-	const renderProviderList = () => (
-		<For each={providerOptions()}>
-			{(provider, i) => {
-				const isSelected = () => i() === selectedProviderIndex();
-				return (
-					<box style={{ flexDirection: 'row' }}>
-						<text
-							fg={isSelected() ? colors.accent : colors.text}
-							content={isSelected() ? '> ' : '  '}
-						/>
-						<text fg={isSelected() ? colors.accent : colors.text} content={provider.label} />
-					</box>
-				);
-			}}
-		</For>
-	);
-
-	const renderModelList = () => (
-		<For each={modelOptions()}>
-			{(model, i) => {
-				const isSelected = () => i() === selectedModelIndex();
-				return (
-					<box style={{ flexDirection: 'row' }}>
-						<text
-							fg={isSelected() ? colors.accent : colors.text}
-							content={isSelected() ? '> ' : '  '}
-						/>
-						<text
-							fg={isSelected() ? colors.accent : colors.text}
-							content={model.label}
-							style={{ width: 32 }}
-						/>
-						<Show when={model.kind === 'curated'}>
-							<text fg={colors.textSubtle} content={` ${model.id}`} />
-						</Show>
-					</box>
-				);
-			}}
-		</For>
-	);
-
-	const isInputStep = () =>
-		step() === 'api-key' ||
-		step() === 'model-input' ||
-		step() === 'compat-base-url' ||
-		step() === 'compat-name' ||
-		step() === 'compat-model' ||
-		step() === 'compat-api-key';
+	const isInputStep =
+		step === 'api-key' ||
+		step === 'model-input' ||
+		step === 'compat-base-url' ||
+		step === 'compat-name' ||
+		step === 'compat-model' ||
+		step === 'compat-api-key';
 
 	const inputPlaceholder = () => {
-		switch (step()) {
+		switch (step) {
 			case 'api-key':
 				return 'API key';
 			case 'model-input':
@@ -615,44 +548,73 @@ export const ConnectWizard: Component<ConnectWizardProps> = (props) => {
 				padding: 1
 			}}
 		>
-			<text fg={colors.accent} content={` ${title()}`} />
-			<text fg={colors.textSubtle} content={` ${hint()}`} />
-			<Show when={authLink()}>
-				<text fg={colors.textSubtle} content={` ${authLink()!.label}: ${authLink()!.url}`} />
-			</Show>
-			<Show when={showModelDocsLink()}>
-				<text
-					fg={colors.textSubtle}
-					content={` ${modelDocsLink()!.label}: ${modelDocsLink()!.url}`}
-				/>
-			</Show>
-			<Show when={statusMessage().length > 0}>
-				<text fg={colors.textMuted} content={` ${statusMessage()}`} />
-			</Show>
-			<Show when={error()}>
-				<text fg={colors.error} content={` ${error()}`} />
-			</Show>
+			<text fg={colors.accent} content={` ${title}`} />
+			<text fg={colors.textSubtle} content={` ${hint}`} />
+			{authLink ? (
+				<text fg={colors.textSubtle} content={` ${authLink.label}: ${authLink.url}`} />
+			) : null}
+			{showModelDocsLink && modelDocsLink ? (
+				<text fg={colors.textSubtle} content={` ${modelDocsLink.label}: ${modelDocsLink.url}`} />
+			) : null}
+			{statusMessage.length > 0 ? (
+				<text fg={colors.textMuted} content={` ${statusMessage}`} />
+			) : null}
+			{error ? <text fg={colors.error} content={` ${error}`} /> : null}
 			<text content="" style={{ height: 1 }} />
 
-			<Show when={step() === 'provider'}>{renderProviderList()}</Show>
-			<Show when={step() === 'model'}>{renderModelList()}</Show>
+			{step === 'provider'
+				? providerOptions.map((provider, i) => {
+						const isSelected = i === selectedProviderIndex;
+						return (
+							<box key={provider.id} style={{ flexDirection: 'row' }}>
+								<text
+									fg={isSelected ? colors.accent : colors.text}
+									content={isSelected ? '> ' : '  '}
+								/>
+								<text fg={isSelected ? colors.accent : colors.text} content={provider.label} />
+							</box>
+						);
+					})
+				: null}
 
-			<Show when={isInputStep()}>
+			{step === 'model'
+				? modelOptions.map((model, i) => {
+						const isSelected = i === selectedModelIndex;
+						return (
+							<box key={model.id} style={{ flexDirection: 'row' }}>
+								<text
+									fg={isSelected ? colors.accent : colors.text}
+									content={isSelected ? '> ' : '  '}
+								/>
+								<text
+									fg={isSelected ? colors.accent : colors.text}
+									content={model.label}
+									style={{ width: 32 }}
+								/>
+								{model.kind === 'curated' ? (
+									<text fg={colors.textSubtle} content={` ${model.id}`} />
+								) : null}
+							</box>
+						);
+					})
+				: null}
+
+			{isInputStep ? (
 				<input
 					placeholder={inputPlaceholder()}
 					placeholderColor={colors.textSubtle}
 					textColor={colors.text}
-					value={wizardInput()}
+					value={wizardInput}
 					onInput={(value) => {
 						setWizardInput(value);
 						setError(null);
 					}}
 					onSubmit={() => {
-						if (step() === 'api-key') {
+						if (step === 'api-key') {
 							void handleApiKeySubmit();
 							return;
 						}
-						if (step() === 'model-input') {
+						if (step === 'model-input') {
 							void handleModelSubmit();
 							return;
 						}
@@ -661,11 +623,11 @@ export const ConnectWizard: Component<ConnectWizardProps> = (props) => {
 					focused
 					style={{ width: '100%' }}
 				/>
-			</Show>
+			) : null}
 
-			<Show when={step() === 'loading' || step() === 'auth'}>
+			{step === 'loading' || step === 'auth' ? (
 				<text fg={colors.textMuted} content=" Working..." />
-			</Show>
+			) : null}
 		</box>
 	);
 };

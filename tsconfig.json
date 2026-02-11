@@ -7,7 +7,6 @@
       "DOM.Iterable",
     ],
     "jsx": "preserve",
-    "jsxImportSource": "@opentui/solid",
     "target": "ESNext",
     "module": "Preserve",
     "moduleDetection": "force",

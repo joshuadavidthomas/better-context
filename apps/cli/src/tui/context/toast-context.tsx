@@ -1,18 +1,19 @@
 import {
 	createContext,
-	createSignal,
+	useCallback,
 	useContext,
-	type Accessor,
-	type Component,
-	type ParentProps
-} from 'solid-js';
+	useMemo,
+	useRef,
+	useState,
+	type ReactNode
+} from 'react';
 
 type ToastState = {
-	message: Accessor<string | null>;
+	message: string | null;
 	show: (message: string, durationMs?: number) => void;
 };
 
-const ToastContext = createContext<ToastState>();
+const ToastContext = createContext<ToastState | null>(null);
 
 export const useToast = () => {
 	const context = useContext(ToastContext);
@@ -20,20 +21,21 @@ export const useToast = () => {
 	return context;
 };
 
-export const ToastProvider: Component<ParentProps> = (props) => {
-	const [message, setMessage] = createSignal<string | null>(null);
-	let timeoutId: ReturnType<typeof setTimeout> | null = null;
+export const ToastProvider = (props: { children: ReactNode }) => {
+	const [message, setMessage] = useState<string | null>(null);
+	const timeoutIdRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-	const show = (msg: string, durationMs = 1500) => {
-		if (timeoutId) {
-			clearTimeout(timeoutId);
+	const show = useCallback((msg: string, durationMs = 1500) => {
+		if (timeoutIdRef.current) {
+			clearTimeout(timeoutIdRef.current);
 		}
 		setMessage(msg);
-		timeoutId = setTimeout(() => {
+		timeoutIdRef.current = setTimeout(() => {
 			setMessage(null);
-			timeoutId = null;
+			timeoutIdRef.current = null;
 		}, durationMs);
-	};
+	}, []);
 
-	return <ToastContext.Provider value={{ message, show }}>{props.children}</ToastContext.Provider>;
+	const value = useMemo(() => ({ message, show }), [message, show]);
+	return <ToastContext.Provider value={value}>{props.children}</ToastContext.Provider>;
 };

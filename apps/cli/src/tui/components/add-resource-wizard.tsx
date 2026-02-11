@@ -1,26 +1,19 @@
-import {
-	createSignal,
-	createEffect,
-	createMemo,
-	Show,
-	type Component,
-	type Setter
-} from 'solid-js';
-import { useKeyboard, usePaste } from '@opentui/solid';
+import { useEffect, useMemo, useState } from 'react';
+import { useKeyboard } from '@opentui/react';
 import { Result } from 'better-result';
 
-import { colors } from '../theme.ts';
-import { useMessagesContext } from '../context/messages-context.tsx';
+import { usePaste } from '../opentui-hooks.ts';
 import { useConfigContext } from '../context/config-context.tsx';
-import { services } from '../services.ts';
+import { useMessagesContext } from '../context/messages-context.tsx';
 import { formatError } from '../lib/format-error.ts';
-import type { WizardStep, Repo } from '../types.ts';
+import { services } from '../services.ts';
+import { colors } from '../theme.ts';
+import type { Repo, WizardStep } from '../types.ts';
 
 type ResourceType = 'git' | 'local';
 
-// All possible wizard steps
 type AddResourceWizardStep =
-	| 'type' // First step: choose resource type
+	| 'type'
 	| 'name'
 	| 'url'
 	| 'branch'
@@ -36,7 +29,6 @@ interface StepInfo {
 	required: boolean;
 }
 
-// Git resource steps (after type selection)
 const GIT_STEPS: AddResourceWizardStep[] = [
 	'name',
 	'url',
@@ -45,18 +37,16 @@ const GIT_STEPS: AddResourceWizardStep[] = [
 	'notes',
 	'confirm'
 ];
-
-// Local resource steps (after type selection)
 const LOCAL_STEPS: AddResourceWizardStep[] = ['name', 'path', 'notes', 'confirm'];
 
 const getStepInfo = (step: AddResourceWizardStep, resourceType: ResourceType): StepInfo => {
-	const gitStepCount = GIT_STEPS.length - 1; // exclude confirm
-	const localStepCount = LOCAL_STEPS.length - 1; // exclude confirm
+	const gitStepCount = GIT_STEPS.length - 1;
+	const localStepCount = LOCAL_STEPS.length - 1;
 
-	const getStepNumber = (s: AddResourceWizardStep): number => {
+	const getStepNumber = (s: AddResourceWizardStep) => {
 		if (s === 'type') return 1;
 		const steps = resourceType === 'git' ? GIT_STEPS : LOCAL_STEPS;
-		return steps.indexOf(s) + 2; // +2 because type is step 1
+		return steps.indexOf(s) + 2;
 	};
 
 	const totalSteps = resourceType === 'git' ? gitStepCount + 1 : localStepCount + 1;
@@ -123,7 +113,7 @@ const getStepInfo = (step: AddResourceWizardStep, resourceType: ResourceType): S
 
 interface AddResourceWizardProps {
 	onClose: () => void;
-	onStepChange: Setter<WizardStep>;
+	onStepChange: (step: WizardStep) => void;
 }
 
 interface WizardValues {
@@ -136,13 +126,12 @@ interface WizardValues {
 	notes: string;
 }
 
-export const AddResourceWizard: Component<AddResourceWizardProps> = (props) => {
+export const AddResourceWizard = (props: AddResourceWizardProps) => {
 	const messages = useMessagesContext();
 	const config = useConfigContext();
 
-	// All wizard state is LOCAL
-	const [step, setStep] = createSignal<AddResourceWizardStep>('type');
-	const [values, setValues] = createSignal<WizardValues>({
+	const [step, setStep] = useState<AddResourceWizardStep>('type');
+	const [values, setValues] = useState<WizardValues>({
 		type: '',
 		name: '',
 		url: '',
@@ -151,20 +140,19 @@ export const AddResourceWizard: Component<AddResourceWizardProps> = (props) => {
 		path: '',
 		notes: ''
 	});
-	const [wizardInput, setWizardInput] = createSignal('');
-	const [error, setError] = createSignal<string | null>(null);
+	const [wizardInput, setWizardInput] = useState('');
+	const [error, setError] = useState<string | null>(null);
 
-	const resourceType = createMemo(() => (values().type || 'git') as ResourceType);
-	const info = createMemo(() => getStepInfo(step(), resourceType()));
+	const resourceType = useMemo(() => (values.type || 'git') as ResourceType, [values.type]);
+	const info = useMemo(() => getStepInfo(step, resourceType), [step, resourceType]);
 
-	// Notify parent of step changes for status bar
-	createEffect(() => {
-		props.onStepChange(step() as WizardStep);
-	});
+	useEffect(() => {
+		props.onStepChange(step as WizardStep);
+	}, [step, props.onStepChange]);
 
 	useKeyboard((key) => {
 		if (key.name === 'c' && key.ctrl) {
-			if (wizardInput().length === 0) {
+			if (wizardInput.length === 0) {
 				props.onClose();
 			} else {
 				setWizardInput('');
@@ -172,29 +160,25 @@ export const AddResourceWizard: Component<AddResourceWizardProps> = (props) => {
 		}
 	});
 
-	usePaste(({ text }) => {
-		setWizardInput(text);
+	usePaste((event) => {
+		setWizardInput(event.text);
 	});
 
 	const getNextStep = (currentStep: AddResourceWizardStep): AddResourceWizardStep | null => {
-		if (currentStep === 'type') {
-			return 'name';
-		}
-
-		const steps = values().type === 'git' ? GIT_STEPS : LOCAL_STEPS;
+		if (currentStep === 'type') return 'name';
+		const steps = values.type === 'git' ? GIT_STEPS : LOCAL_STEPS;
 		const currentIndex = steps.indexOf(currentStep);
 		if (currentIndex === -1 || currentIndex >= steps.length - 1) return null;
 		return steps[currentIndex + 1]!;
 	};
 
 	const handleSubmit = () => {
-		const currentStep = step();
-		const value = wizardInput().trim();
-		const stepInfo = info();
+		const currentStep = step;
+		const value = wizardInput.trim();
+		const stepInfo = info;
 
-		// Validate required fields
 		if (stepInfo.required && !value) {
-			setError(`This field is required`);
+			setError('This field is required');
 			return;
 		}
 		setError(null);
@@ -205,59 +189,70 @@ export const AddResourceWizard: Component<AddResourceWizardProps> = (props) => {
 				setError('Please enter "git" or "local"');
 				return;
 			}
-			setValues({ ...values(), type: lowerValue as ResourceType });
+			setValues((prev) => ({ ...prev, type: lowerValue as ResourceType }));
 			setStep('name');
 			setWizardInput('');
-		} else if (currentStep === 'name') {
-			setValues({ ...values(), name: value });
-			const next = getNextStep(currentStep);
-			if (next) {
-				setStep(next);
-				// Pre-fill branch with 'main' for git resources
-				if (next === 'branch') {
-					setWizardInput('main');
-				} else {
-					setWizardInput('');
-				}
-			}
-		} else if (currentStep === 'url') {
-			setValues({ ...values(), url: value });
+			return;
+		}
+
+		if (currentStep === 'name') {
+			setValues((prev) => ({ ...prev, name: value }));
 			const next = getNextStep(currentStep);
 			if (next) {
 				setStep(next);
 				setWizardInput(next === 'branch' ? 'main' : '');
 			}
-		} else if (currentStep === 'branch') {
-			setValues({ ...values(), branch: value || 'main' });
+			return;
+		}
+
+		if (currentStep === 'url') {
+			setValues((prev) => ({ ...prev, url: value }));
+			const next = getNextStep(currentStep);
+			if (next) {
+				setStep(next);
+				setWizardInput(next === 'branch' ? 'main' : '');
+			}
+			return;
+		}
+
+		if (currentStep === 'branch') {
+			setValues((prev) => ({ ...prev, branch: value || 'main' }));
 			const next = getNextStep(currentStep);
 			if (next) {
 				setStep(next);
 				setWizardInput('');
 			}
-		} else if (currentStep === 'searchPath') {
-			setValues({ ...values(), searchPath: value });
+			return;
+		}
+
+		if (currentStep === 'searchPath') {
+			setValues((prev) => ({ ...prev, searchPath: value }));
 			const next = getNextStep(currentStep);
 			if (next) {
 				setStep(next);
 				setWizardInput('');
 			}
-		} else if (currentStep === 'path') {
-			setValues({ ...values(), path: value });
+			return;
+		}
+
+		if (currentStep === 'path') {
+			setValues((prev) => ({ ...prev, path: value }));
 			const next = getNextStep(currentStep);
 			if (next) {
 				setStep(next);
 				setWizardInput('');
 			}
-		} else if (currentStep === 'notes') {
-			setValues({ ...values(), notes: value });
+			return;
+		}
+
+		if (currentStep === 'notes') {
+			setValues((prev) => ({ ...prev, notes: value }));
 			setStep('confirm');
-		} else if (currentStep === 'confirm') {
-			// This will be handled by the confirm keyboard handler
 		}
 	};
 
 	const handleConfirm = async () => {
-		const vals = values();
+		const vals = values;
 
 		const result = await Result.tryPromise(async () => {
 			if (vals.type === 'git') {
@@ -287,26 +282,27 @@ export const AddResourceWizard: Component<AddResourceWizardProps> = (props) => {
 					...(vals.notes && { specialNotes: vals.notes })
 				};
 				await services.addResource(resource);
-				// Local resources aren't shown as repos in the current UI but the server has them
 				messages.addSystemMessage(`Added local resource: ${resource.name}`);
 			}
 		});
+
 		if (result.isErr()) {
 			messages.addSystemMessage(`Error: ${formatError(result.error)}`);
 		}
+
 		props.onClose();
 	};
 
 	useKeyboard((key) => {
 		if (key.name === 'escape') {
 			props.onClose();
-		} else if (key.name === 'return' && step() === 'confirm') {
-			handleConfirm();
+		} else if (key.name === 'return' && step === 'confirm') {
+			void handleConfirm();
 		}
 	});
 
 	const renderConfirmation = () => {
-		const vals = values();
+		const vals = values;
 		const isGit = vals.type === 'git';
 
 		return (
@@ -319,34 +315,35 @@ export const AddResourceWizard: Component<AddResourceWizardProps> = (props) => {
 					<text fg={colors.textMuted} content="Name:   " style={{ width: 12 }} />
 					<text fg={colors.text} content={vals.name} />
 				</box>
-				<Show when={isGit}>
-					<box style={{ flexDirection: 'row' }}>
-						<text fg={colors.textMuted} content="URL:    " style={{ width: 12 }} />
-						<text fg={colors.text} content={vals.url} />
-					</box>
-					<box style={{ flexDirection: 'row' }}>
-						<text fg={colors.textMuted} content="Branch: " style={{ width: 12 }} />
-						<text fg={colors.text} content={vals.branch || 'main'} />
-					</box>
-					<Show when={vals.searchPath}>
+				{isGit ? (
+					<>
 						<box style={{ flexDirection: 'row' }}>
-							<text fg={colors.textMuted} content="SearchPath:" style={{ width: 12 }} />
-							<text fg={colors.text} content={vals.searchPath} />
+							<text fg={colors.textMuted} content="URL:    " style={{ width: 12 }} />
+							<text fg={colors.text} content={vals.url} />
 						</box>
-					</Show>
-				</Show>
-				<Show when={!isGit}>
+						<box style={{ flexDirection: 'row' }}>
+							<text fg={colors.textMuted} content="Branch: " style={{ width: 12 }} />
+							<text fg={colors.text} content={vals.branch || 'main'} />
+						</box>
+						{vals.searchPath ? (
+							<box style={{ flexDirection: 'row' }}>
+								<text fg={colors.textMuted} content="SearchPath:" style={{ width: 12 }} />
+								<text fg={colors.text} content={vals.searchPath} />
+							</box>
+						) : null}
+					</>
+				) : (
 					<box style={{ flexDirection: 'row' }}>
 						<text fg={colors.textMuted} content="Path:   " style={{ width: 12 }} />
 						<text fg={colors.text} content={vals.path} />
 					</box>
-				</Show>
-				<Show when={vals.notes}>
+				)}
+				{vals.notes ? (
 					<box style={{ flexDirection: 'row' }}>
 						<text fg={colors.textMuted} content="Notes:  " style={{ width: 12 }} />
 						<text fg={colors.text} content={vals.notes} />
 					</box>
-				</Show>
+				) : null}
 				<text content="" style={{ height: 1 }} />
 				<text fg={colors.success} content=" Press Enter to get config snippet, Esc to cancel" />
 			</box>
@@ -368,35 +365,28 @@ export const AddResourceWizard: Component<AddResourceWizardProps> = (props) => {
 				padding: 1
 			}}
 		>
-			<text fg={colors.info} content={` Add Resource - ${info().title}`} />
-			<text fg={colors.textSubtle} content={` ${info().hint}`} />
-			<Show when={error()}>
-				<text fg={colors.error} content={` ${error()}`} />
-			</Show>
+			<text fg={colors.info} content={` Add Resource - ${info.title}`} />
+			<text fg={colors.textSubtle} content={` ${info.hint}`} />
+			{error ? <text fg={colors.error} content={` ${error}`} /> : null}
 			<text content="" style={{ height: 1 }} />
 
-			<Show
-				when={step() === 'confirm'}
-				fallback={
-					<box style={{}}>
-						<input
-							placeholder={info().placeholder}
-							placeholderColor={colors.textSubtle}
-							textColor={colors.text}
-							value={wizardInput()}
-							onInput={(v) => {
-								setWizardInput(v);
-								setError(null);
-							}}
-							onSubmit={handleSubmit}
-							focused
-							style={{ width: '100%' }}
-						/>
-					</box>
-				}
-			>
-				{renderConfirmation()}
-			</Show>
+			{step === 'confirm' ? (
+				renderConfirmation()
+			) : (
+				<input
+					placeholder={info.placeholder}
+					placeholderColor={colors.textSubtle}
+					textColor={colors.text}
+					value={wizardInput}
+					onInput={(v) => {
+						setWizardInput(v);
+						setError(null);
+					}}
+					onSubmit={handleSubmit}
+					focused
+					style={{ width: '100%' }}
+				/>
+			)}
 		</box>
 	);
 };

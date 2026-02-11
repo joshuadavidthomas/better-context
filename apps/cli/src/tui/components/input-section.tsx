@@ -1,53 +1,49 @@
-import { createSignal, createMemo, Show, onMount, type Component } from 'solid-js';
+import { useEffect, useMemo, useState } from 'react';
 import type { TextareaRenderable } from '@opentui/core';
-import { useKeyboard } from '@opentui/solid';
-import type { InputState, ActiveWizard, WizardStep } from '../types.ts';
-import { useMessagesContext } from '../context/messages-context.tsx';
-import { useConfigContext } from '../context/config-context.tsx';
-import { MainInput } from './main-input.tsx';
-import { StatusBar } from './status-bar.tsx';
-import { CommandPalette } from './command-palette.tsx';
-import { RepoMentionPalette } from './repo-mention-palette.tsx';
-import { ConnectWizard } from './connect-wizard.tsx';
-import { AddResourceWizard } from './add-resource-wizard.tsx';
-import { ResumeThreadModal } from './resume-thread-modal.tsx';
-import { inputHistory } from '../history.ts';
+import { useKeyboard, useTerminalDimensions } from '@opentui/react';
 
-export const InputSection: Component = () => {
+import type { ActiveWizard, InputState, WizardStep } from '../types.ts';
+import { inputHistory } from '../history.ts';
+import { useConfigContext } from '../context/config-context.tsx';
+import { useMessagesContext } from '../context/messages-context.tsx';
+import { AddResourceWizard } from './add-resource-wizard.tsx';
+import { CommandPalette } from './command-palette.tsx';
+import { ConnectWizard } from './connect-wizard.tsx';
+import { MainInput } from './main-input.tsx';
+import { RepoMentionPalette } from './repo-mention-palette.tsx';
+import { ResumeThreadModal } from './resume-thread-modal.tsx';
+import { StatusBar } from './status-bar.tsx';
+
+export const InputSection = () => {
 	const messages = useMessagesContext();
 	const config = useConfigContext();
+	const terminalDimensions = useTerminalDimensions();
 
-	// Input state - all local
-	const [inputState, setInputState] = createSignal<InputState>([]);
-	const [cursorPosition, setCursorPosition] = createSignal(0);
-	const [inputRef, setInputRef] = createSignal<TextareaRenderable | null>(null);
+	const [inputState, setInputState] = useState<InputState>([]);
+	const [cursorPosition, setCursorPosition] = useState(0);
+	const [inputRef, setInputRef] = useState<TextareaRenderable | null>(null);
 
-	// Wizard visibility
-	const [activeWizard, setActiveWizard] = createSignal<ActiveWizard>('none');
-	const [currentWizardStep, setCurrentWizardStep] = createSignal<WizardStep>(null);
+	const [activeWizard, setActiveWizard] = useState<ActiveWizard>('none');
+	const [currentWizardStep, setCurrentWizardStep] = useState<WizardStep>(null);
 
-	const isAnyWizardOpen = () => activeWizard() !== 'none';
+	const isAnyWizardOpen = activeWizard !== 'none';
 
-	// Initialize input history on mount
-	onMount(() => {
+	useEffect(() => {
 		inputHistory.init();
-	});
+	}, []);
 
-	// Computed: what type of content is cursor in
-	const cursorIsCurrentlyIn = createMemo(() => {
-		const items = inputState();
+	const cursorIsCurrentlyIn = useMemo(() => {
 		let minIdx = 0;
-		for (const item of items) {
+		for (const item of inputState) {
 			const displayLen =
 				item.type === 'pasted' ? `[~${item.lines} lines]`.length : item.content.length;
 			const maxIdx = minIdx + displayLen;
-			if (cursorPosition() >= minIdx && cursorPosition() <= maxIdx) return item.type;
+			if (cursorPosition >= minIdx && cursorPosition <= maxIdx) return item.type;
 			minIdx = maxIdx;
 		}
 		return 'text';
-	});
+	}, [inputState, cursorPosition]);
 
-	// Parse @mentions from input
 	const parseAllMentions = (input: string) => {
 		const mentionRegex = /@([A-Za-z0-9@._/-]+)/g;
 		const repos: string[] = [];
@@ -60,7 +56,7 @@ export const InputSection: Component = () => {
 	};
 
 	const resolveRepoName = (input: string): string | null => {
-		const available = config.repos();
+		const available = config.repos;
 		const target = input.toLowerCase();
 		const direct = available.find((r) => r.name.toLowerCase() === target);
 		if (direct) return direct.name;
@@ -76,19 +72,56 @@ export const InputSection: Component = () => {
 		return match?.name ?? null;
 	};
 
+	const currentInputIndex = useMemo(() => {
+		let minIdx = 0;
+		for (let i = 0; i < inputState.length; i++) {
+			const item = inputState[i]!;
+			const maxIdx =
+				minIdx + (item.type === 'pasted' ? `[~${item.lines} lines]`.length : item.content.length);
+			if (cursorPosition >= minIdx && cursorPosition <= maxIdx) {
+				return i;
+			}
+			minIdx = maxIdx;
+		}
+		return inputState.length;
+	}, [inputState, cursorPosition]);
+
+	const currentMentionToken = useMemo(() => {
+		if (cursorIsCurrentlyIn !== 'mention' || currentInputIndex >= inputState.length) return '';
+		const currentInput = inputState[currentInputIndex];
+		if (!currentInput || currentInput.type !== 'mention') return '';
+		return currentInput.content;
+	}, [cursorIsCurrentlyIn, currentInputIndex, inputState]);
+
+	const isCurrentMentionResolved = useMemo(
+		() => resolveRepoName(currentMentionToken) !== null && cursorIsCurrentlyIn === 'mention',
+		[currentMentionToken, cursorIsCurrentlyIn, resolveRepoName]
+	);
+
+	const maxResumeThreadItems = useMemo(() => {
+		const inputHeight = 3; // default from MainInput when empty
+		const headerHeight = 3;
+		const statusBarHeight = 1;
+		const messagesHeight = Math.max(
+			1,
+			terminalDimensions.height - headerHeight - statusBarHeight - inputHeight
+		);
+		const modalHeight = Math.max(8, Math.floor(messagesHeight / 2));
+		return Math.max(1, modalHeight - 3);
+	}, [terminalDimensions.height]);
+
 	const handleSubmit = async () => {
-		const inputText = inputState()
+		const inputText = inputState
 			.map((s) => s.content)
 			.join('')
 			.trim();
 		if (!inputText) return;
-		if (cursorIsCurrentlyIn() === 'command' || cursorIsCurrentlyIn() === 'mention') return;
-		if (messages.isStreaming()) return;
+		if (cursorIsCurrentlyIn === 'command' || cursorIsCurrentlyIn === 'mention') return;
+		if (messages.isStreaming) return;
 
 		const parsed = parseAllMentions(inputText);
-		const existingResources = messages.threadResources();
+		const existingResources = messages.threadResources;
 
-		// Validate resources - require at least one @mention OR existing thread resources
 		if (parsed.repos.length === 0 && existingResources.length === 0) {
 			messages.addSystemMessage('Use @reponame to add context. Example: @svelte How do I...?');
 			return;
@@ -98,7 +131,6 @@ export const InputSection: Component = () => {
 			return;
 		}
 
-		// Validate any new repos exist
 		const validNewRepos: string[] = [];
 		const invalidRepos: string[] = [];
 		for (const repoName of parsed.repos) {
@@ -113,11 +145,9 @@ export const InputSection: Component = () => {
 			return;
 		}
 
-		// Save to history before clearing (preserves full InputState including pasted blocks)
-		const currentInput = inputState();
+		const currentInput = inputState;
 		await inputHistory.add(currentInput);
 
-		// Clear input and send (pass only new repos - context will merge with existing)
 		setInputState([]);
 		await messages.send(currentInput, validNewRepos);
 	};
@@ -143,7 +173,7 @@ export const InputSection: Component = () => {
 				messages.addSystemMessage('Chat cleared.');
 				break;
 			case 'resume':
-				if (messages.isStreaming()) {
+				if (messages.isStreaming) {
 					messages.addSystemMessage('Cannot resume while streaming.');
 					return;
 				}
@@ -152,71 +182,66 @@ export const InputSection: Component = () => {
 		}
 	};
 
-	// Helper to set input from history entry (now receives full InputState)
 	const setInputFromHistory = (entry: InputState | null) => {
 		if (entry === null) return;
-		// Set the full InputState directly, preserving pasted blocks
 		setInputState(entry);
-		// Move cursor to end
 		queueMicrotask(() => {
-			const ref = inputRef();
-			if (ref) {
-				ref.gotoBufferEnd();
-				const cursor = ref.logicalCursor;
-				setCursorPosition(cursor.col);
-			}
+			if (!inputRef) return;
+			inputRef.gotoBufferEnd();
+			const cursor = inputRef.logicalCursor;
+			setCursorPosition(cursor.col);
 		});
 	};
 
-	// Keyboard handling for ESC cancel flow and submit
 	useKeyboard((key) => {
 		if (key.name === 'escape') {
-			if (messages.isStreaming()) {
-				if (messages.cancelState() === 'none') {
+			if (messages.isStreaming) {
+				if (messages.cancelState === 'none') {
 					messages.requestCancel();
 				} else {
-					messages.confirmCancel();
+					void messages.confirmCancel();
 				}
 				return;
 			}
-			if (isAnyWizardOpen()) {
+			if (isAnyWizardOpen) {
 				closeWizard();
 				return;
 			}
-			if (cursorIsCurrentlyIn() === 'command' || cursorIsCurrentlyIn() === 'mention') {
+			if (cursorIsCurrentlyIn === 'command' || cursorIsCurrentlyIn === 'mention') {
 				setInputState([]);
 			}
 		}
-		if (key.name === 'return' && !isAnyWizardOpen() && !messages.isStreaming()) {
-			if (cursorIsCurrentlyIn() === 'text' || cursorIsCurrentlyIn() === 'pasted') {
-				handleSubmit();
+
+		if (key.name === 'return' && !isAnyWizardOpen && !messages.isStreaming) {
+			if (cursorIsCurrentlyIn === 'text' || cursorIsCurrentlyIn === 'pasted') {
+				void handleSubmit();
 			}
 		}
-		// Ctrl+C handling
+
 		if (key.name === 'c' && key.ctrl) {
-			if (inputState().length > 0) {
+			if (inputState.length > 0) {
 				setInputState([]);
 				inputHistory.reset();
 			}
 		}
-		// Up arrow - navigate to previous history entry
+
 		if (
 			key.name === 'up' &&
-			!isAnyWizardOpen() &&
-			!messages.isStreaming() &&
-			cursorIsCurrentlyIn() !== 'command' &&
-			cursorIsCurrentlyIn() !== 'mention'
+			!isAnyWizardOpen &&
+			!messages.isStreaming &&
+			cursorIsCurrentlyIn !== 'command' &&
+			(cursorIsCurrentlyIn !== 'mention' || isCurrentMentionResolved)
 		) {
-			const entry = inputHistory.navigateUp(inputState());
+			const entry = inputHistory.navigateUp(inputState);
 			setInputFromHistory(entry);
 		}
-		// Down arrow - navigate to next history entry
+
 		if (
 			key.name === 'down' &&
-			!isAnyWizardOpen() &&
-			!messages.isStreaming() &&
-			cursorIsCurrentlyIn() !== 'command' &&
-			cursorIsCurrentlyIn() !== 'mention'
+			!isAnyWizardOpen &&
+			!messages.isStreaming &&
+			cursorIsCurrentlyIn !== 'command' &&
+			(cursorIsCurrentlyIn !== 'mention' || isCurrentMentionResolved)
 		) {
 			const entry = inputHistory.navigateDown();
 			setInputFromHistory(entry);
@@ -226,63 +251,64 @@ export const InputSection: Component = () => {
 	return (
 		<>
 			<MainInput
-				inputState={inputState()}
+				inputState={inputState}
 				setInputState={setInputState}
-				cursorPosition={cursorPosition()}
+				cursorPosition={cursorPosition}
 				setCursorPosition={setCursorPosition}
-				inputRef={inputRef()}
+				inputRef={inputRef}
 				setInputRef={setInputRef}
-				focused={!isAnyWizardOpen() && !messages.isStreaming()}
-				isStreaming={messages.isStreaming()}
-				cancelState={messages.cancelState()}
+				focused={!isAnyWizardOpen && !messages.isStreaming}
+				isStreaming={messages.isStreaming}
+				cancelState={messages.cancelState}
 			/>
 
-			{/* Palettes */}
-			<Show
-				when={cursorIsCurrentlyIn() === 'mention' && !isAnyWizardOpen() && !messages.isStreaming()}
-			>
+			{cursorIsCurrentlyIn === 'mention' &&
+			!isCurrentMentionResolved &&
+			!isAnyWizardOpen &&
+			!messages.isStreaming ? (
 				<RepoMentionPalette
-					inputState={inputState()}
+					inputState={inputState}
 					setInputState={setInputState}
-					inputRef={inputRef()}
-					cursorPosition={cursorPosition()}
+					inputRef={inputRef}
+					cursorPosition={cursorPosition}
 				/>
-			</Show>
-			<Show
-				when={cursorIsCurrentlyIn() === 'command' && !isAnyWizardOpen() && !messages.isStreaming()}
-			>
+			) : null}
+
+			{cursorIsCurrentlyIn === 'command' && !isAnyWizardOpen && !messages.isStreaming ? (
 				<CommandPalette
-					inputState={inputState()}
+					inputState={inputState}
 					setInputState={setInputState}
-					inputRef={inputRef()}
+					inputRef={inputRef}
 					onExecute={handleCommandExecute}
 				/>
-			</Show>
+			) : null}
 
-			{/* Wizards */}
-			<Show when={activeWizard() === 'connect'}>
+			{activeWizard === 'connect' ? (
 				<ConnectWizard onClose={closeWizard} onStepChange={setCurrentWizardStep} />
-			</Show>
-			<Show when={activeWizard() === 'add-repo'}>
+			) : null}
+
+			{activeWizard === 'add-repo' ? (
 				<AddResourceWizard onClose={closeWizard} onStepChange={setCurrentWizardStep} />
-			</Show>
-			<Show when={activeWizard() === 'resume'}>
+			) : null}
+
+			{activeWizard === 'resume' ? (
 				<ResumeThreadModal
+					maxVisibleItems={maxResumeThreadItems}
 					onClose={closeWizard}
 					onSelect={async (threadId) => {
 						await messages.resumeThread(threadId);
 						closeWizard();
 					}}
 				/>
-			</Show>
+			) : null}
 
 			<StatusBar
-				cursorIn={cursorIsCurrentlyIn()}
-				isStreaming={messages.isStreaming()}
-				cancelState={messages.cancelState()}
-				threadResources={messages.threadResources()}
-				activeWizard={activeWizard()}
-				wizardStep={currentWizardStep()}
+				cursorIn={cursorIsCurrentlyIn}
+				isStreaming={messages.isStreaming}
+				cancelState={messages.cancelState}
+				threadResources={messages.threadResources}
+				activeWizard={activeWizard}
+				wizardStep={currentWizardStep}
 			/>
 		</>
 	);

@@ -1,41 +1,37 @@
 import { colors } from './theme.ts';
-import { Messages } from './components/messages.tsx';
-import { Show, type Accessor, type Component } from 'solid-js';
 import { Header } from './components/header.tsx';
 import { InputSection } from './components/input-section.tsx';
+import { Messages } from './components/messages.tsx';
 import { useToast } from './context/toast-context.tsx';
 
-const Toast: Component = () => {
+const Toast = () => {
 	const toast = useToast();
+	if (!toast.message) return null;
 
 	return (
-		<Show when={toast.message()}>
-			<box
-				style={{
-					position: 'absolute',
-					top: 3,
-					right: 2,
-					backgroundColor: colors.bg,
-					border: true,
-					borderColor: colors.accent,
-					padding: 1,
-					paddingLeft: 2,
-					paddingRight: 2
-				}}
-			>
-				<text fg={colors.text}>{toast.message()}</text>
-			</box>
-		</Show>
+		<box
+			style={{
+				position: 'absolute',
+				top: 3,
+				right: 2,
+				backgroundColor: colors.bg,
+				border: true,
+				borderColor: colors.accent,
+				padding: 1,
+				paddingLeft: 2,
+				paddingRight: 2
+			}}
+		>
+			<text fg={colors.text}>{toast.message}</text>
+		</box>
 	);
 };
 
-export const MainUi: Component<{
-	heightPercent: Accessor<`${number}%`>;
-}> = (props) => {
+export const MainUi = (props: { heightPercent: `${number}%` }) => {
 	return (
 		<box
 			width="100%"
-			height={props.heightPercent()}
+			height={props.heightPercent}
 			style={{
 				flexDirection: 'column',
 				backgroundColor: colors.bg

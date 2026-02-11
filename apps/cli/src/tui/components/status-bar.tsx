@@ -1,4 +1,3 @@
-import type { Component } from 'solid-js';
 import packageJson from '../../../package.json';
 import { colors } from '../theme.ts';
 import type { CancelState, ActiveWizard, WizardStep } from '../types.ts';
@@ -18,7 +17,7 @@ export interface StatusBarProps {
 	wizardStep?: WizardStep;
 }
 
-export const StatusBar: Component<StatusBarProps> = (props) => {
+export const StatusBar = (props: StatusBarProps) => {
 	const getHelpText = () => {
 		if (props.isStreaming) {
 			if (props.cancelState === 'pending') {
@@ -43,6 +42,10 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
 				return ' Waiting for authentication... [Esc] Cancel';
 			}
 			return ' [Up/Down] Navigate  [Enter] Select  [Esc] Cancel';
+		}
+
+		if (props.activeWizard === 'resume') {
+			return ' [Up/Down] Navigate  [Enter] Resume  [Esc] Cancel';
 		}
 
 		if (props.cursorIn === 'command') {

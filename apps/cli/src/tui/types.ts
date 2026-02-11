@@ -74,5 +74,6 @@ export type WizardStep =
 export interface Command {
 	name: string;
 	description: string;
+	alias?: string;
 	mode: CommandMode;
 }

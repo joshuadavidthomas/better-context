@@ -1,28 +1,28 @@
 import {
 	createContext,
-	createSignal,
-	createResource,
-	createEffect,
+	useCallback,
 	useContext,
-	type Accessor,
-	type Component,
-	type ParentProps
-} from 'solid-js';
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+	type ReactNode
+} from 'react';
 import type { Repo } from '../types.ts';
 import { services } from '../services.ts';
 
 type ConfigState = {
-	selectedModel: Accessor<string>;
-	selectedProvider: Accessor<string>;
+	selectedModel: string;
+	selectedProvider: string;
 	setModel: (model: string) => void;
 	setProvider: (provider: string) => void;
-	repos: Accessor<Repo[]>;
+	repos: Repo[];
 	addRepo: (repo: Repo) => void;
 	removeRepo: (name: string) => void;
-	loading: Accessor<boolean>;
+	loading: boolean;
 };
 
-const ConfigContext = createContext<ConfigState>();
+const ConfigContext = createContext<ConfigState | null>(null);
 
 export const useConfigContext = () => {
 	const context = useContext(ConfigContext);
@@ -35,32 +35,53 @@ const fetchInitialConfig = async () => {
 	return { repos: reposList, provider: modelConfig.provider, model: modelConfig.model };
 };
 
-export const ConfigProvider: Component<ParentProps> = (props) => {
-	const [initialConfig] = createResource(fetchInitialConfig);
+export const ConfigProvider = (props: { children: ReactNode }) => {
+	const [selectedModel, setSelectedModel] = useState('');
+	const [selectedProvider, setSelectedProvider] = useState('');
+	const [repos, setRepos] = useState<Repo[]>([]);
+	const [loading, setLoading] = useState(true);
 
-	const [selectedModel, setSelectedModel] = createSignal('');
-	const [selectedProvider, setSelectedProvider] = createSignal('');
-	const [repos, setRepos] = createSignal<Repo[]>([]);
+	const mountedRef = useRef(true);
+	useEffect(() => {
+		mountedRef.current = true;
+		return () => {
+			mountedRef.current = false;
+		};
+	}, []);
 
-	createEffect(() => {
-		const config = initialConfig();
-		if (config) {
-			setSelectedModel(config.model);
-			setSelectedProvider(config.provider);
-			setRepos(config.repos);
-		}
-	});
+	useEffect(() => {
+		void (async () => {
+			setLoading(true);
+			const config = await fetchInitialConfig().catch(() => null);
+			if (!mountedRef.current) return;
+			if (config) {
+				setSelectedModel(config.model);
+				setSelectedProvider(config.provider);
+				setRepos(config.repos);
+			}
+			setLoading(false);
+		})();
+	}, []);
 
-	const state: ConfigState = {
-		selectedModel,
-		selectedProvider,
-		setModel: setSelectedModel,
-		setProvider: setSelectedProvider,
-		repos,
-		addRepo: (repo) => setRepos((prev) => [...prev, repo]),
-		removeRepo: (name) => setRepos((prev) => prev.filter((r) => r.name !== name)),
-		loading: () => initialConfig.loading
-	};
+	const addRepo = useCallback((repo: Repo) => setRepos((prev) => [...prev, repo]), []);
+	const removeRepo = useCallback(
+		(name: string) => setRepos((prev) => prev.filter((r) => r.name !== name)),
+		[]
+	);
+
+	const state = useMemo<ConfigState>(
+		() => ({
+			selectedModel,
+			selectedProvider,
+			setModel: setSelectedModel,
+			setProvider: setSelectedProvider,
+			repos,
+			addRepo,
+			removeRepo,
+			loading
+		}),
+		[selectedModel, selectedProvider, repos, addRepo, removeRepo, loading]
+	);
 
 	return <ConfigContext.Provider value={state}>{props.children}</ConfigContext.Provider>;
 };
