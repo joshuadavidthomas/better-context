@@ -50,6 +50,33 @@
 				/>
 			</div>
 		</div>
+
+		<ul class="mt-4 flex flex-col gap-2 text-sm bc-prose">
+			<li class="flex items-start gap-2">
+				<span class="bc-kickerDot mt-1.5 shrink-0"></span>
+				<span>Chat with AI grounded in real source code — not hallucinated docs</span>
+			</li>
+			<li class="flex items-start gap-2">
+				<span class="bc-kickerDot mt-1.5 shrink-0"></span>
+				<span>Save and resume threads to pick up where you left off</span>
+			</li>
+			<li class="flex items-start gap-2">
+				<span class="bc-kickerDot mt-1.5 shrink-0"></span>
+				<span>Add any git repo as a searchable resource</span>
+			</li>
+			<li class="flex items-start gap-2">
+				<span class="bc-kickerDot mt-1.5 shrink-0"></span>
+				<span>Cloud sandbox indexes repos so answers stay up to date</span>
+			</li>
+			<li class="flex items-start gap-2">
+				<span class="bc-kickerDot mt-1.5 shrink-0"></span>
+				<span>Built-in MCP server for connecting to your AI tools</span>
+			</li>
+			<li class="flex items-start gap-2">
+				<span class="bc-kickerDot mt-1.5 shrink-0"></span>
+				<span>Organize work into projects with separate resources and threads</span>
+			</li>
+		</ul>
 	</section>
 
 	<section class="bc-card bc-ring p-6">
