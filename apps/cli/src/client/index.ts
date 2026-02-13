@@ -26,11 +26,22 @@ async function parseErrorResponse(
 	res: { json: () => Promise<unknown> },
 	fallbackMessage: string
 ): Promise<BtcaError> {
+	const normalizeMessage = (message: string) => {
+		if (message.startsWith('Unhandled exception:')) {
+			const stripped = message.slice('Unhandled exception:'.length).trim();
+			if (stripped.length > 0) return stripped;
+		}
+		if (message === 'match err handler threw' || message === 'match ok handler threw') {
+			return 'Internal error while processing a result. Check the server logs for details.';
+		}
+		return message;
+	};
+
 	const result = await Result.tryPromise(() => res.json());
 	return result.match({
 		ok: (body) => {
 			const parsed = body as { error?: string; hint?: string; tag?: string };
-			return new BtcaError(parsed.error ?? fallbackMessage, {
+			return new BtcaError(normalizeMessage(parsed.error ?? fallbackMessage), {
 				hint: parsed.hint,
 				tag: parsed.tag
 			});
@@ -191,7 +202,15 @@ export interface LocalResourceInput {
 	specialNotes?: string;
 }
 
-export type ResourceInput = GitResourceInput | LocalResourceInput;
+export interface NpmResourceInput {
+	type: 'npm';
+	name: string;
+	package: string;
+	version?: string;
+	specialNotes?: string;
+}
+
+export type ResourceInput = GitResourceInput | LocalResourceInput | NpmResourceInput;
 
 /**
  * Add a new resource

@@ -55,7 +55,7 @@ export const MainInput = (props: MainInputProps) => {
 		if (props.isStreaming) {
 			return 'press esc to cancel';
 		}
-		return '@repo question... or / for commands';
+		return '@resource question... or / for commands';
 	};
 
 	const getPartValueLength = (p: InputState[number]) =>
@@ -155,7 +155,7 @@ export const MainInput = (props: MainInputProps) => {
 			return parts;
 		}
 
-		const regex = /(^|(?<=\s))@[A-Za-z0-9@._/-]*/g;
+		const regex = /(^|(?<=\s))@[^\s]*/g;
 		let lastIndex = 0;
 		let match;
 		while ((match = regex.exec(value)) !== null) {

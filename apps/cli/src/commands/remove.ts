@@ -25,9 +25,15 @@ interface LocalResource {
 	specialNotes?: string;
 }
 
-type ResourceDefinition = GitResource | LocalResource;
+interface NpmResource {
+	type: 'npm';
+	name: string;
+	package: string;
+	version?: string | null;
+	specialNotes?: string;
+}
 
-const isGitResource = (r: ResourceDefinition): r is GitResource => r.type === 'git';
+type ResourceDefinition = GitResource | LocalResource | NpmResource;
 
 /**
  * Interactive single-select prompt for resources.
@@ -42,7 +48,12 @@ async function selectSingleResource(resources: ResourceDefinition[]): Promise<st
 
 		console.log('\nSelect a resource to remove:\n');
 		resources.forEach((r, idx) => {
-			const location = isGitResource(r) ? r.url : r.path;
+			const location =
+				r.type === 'git'
+					? r.url
+					: r.type === 'local'
+						? r.path
+						: `${r.package}${r.version ? `@${r.version}` : ''}`;
 			console.log(`  ${idx + 1}. ${r.name} ${dim(`(${location})`)}`);
 		});
 		console.log('');

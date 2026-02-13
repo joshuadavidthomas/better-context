@@ -7,8 +7,9 @@ import { Transaction } from '../context/transaction.ts';
 import { CommonHints, getErrorHint, getErrorMessage } from '../errors.ts';
 import { Metrics } from '../metrics/index.ts';
 import { Resources } from '../resources/service.ts';
-import { isGitResource } from '../resources/schema.ts';
+import { isGitResource, isNpmResource } from '../resources/schema.ts';
 import { FS_RESOURCE_SYSTEM_NOTE, type BtcaFsResource } from '../resources/types.ts';
+import { parseNpmReference } from '../validation/index.ts';
 import { CollectionError, getCollectionKey, type CollectionResult } from './types.ts';
 import { VirtualFs } from '../vfs/virtual-fs.ts';
 import {
@@ -28,6 +29,10 @@ export namespace Collections {
 	const encodePathSegments = (value: string) => value.split('/').map(encodeURIComponent).join('/');
 
 	const trimGitSuffix = (url: string) => url.replace(/\.git$/u, '').replace(/\/+$/u, '');
+	const getNpmCitationAlias = (metadata?: VirtualResourceMetadata) => {
+		if (!metadata?.package) return undefined;
+		return `npm:${metadata.package}@${metadata.version ?? 'latest'}`;
+	};
 
 	const createCollectionInstructionBlock = (
 		resource: BtcaFsResource,
@@ -41,6 +46,7 @@ export namespace Collections {
 			resource.type === 'git' && metadata?.url && gitRef
 				? `${trimGitSuffix(metadata.url)}/blob/${encodeURIComponent(gitRef)}`
 				: undefined;
+		const npmCitationAlias = resource.type === 'npm' ? getNpmCitationAlias(metadata) : undefined;
 		const lines = [
 			`## Resource: ${resource.name}`,
 			FS_RESOURCE_SYSTEM_NOTE,
@@ -48,6 +54,10 @@ export namespace Collections {
 			resource.type === 'git' && metadata?.url ? `Repo URL: ${trimGitSuffix(metadata.url)}` : '',
 			resource.type === 'git' && metadata?.branch ? `Repo Branch: ${metadata.branch}` : '',
 			resource.type === 'git' && metadata?.commit ? `Repo Commit: ${metadata.commit}` : '',
+			resource.type === 'npm' && metadata?.package ? `NPM Package: ${metadata.package}` : '',
+			resource.type === 'npm' && metadata?.version ? `NPM Version: ${metadata.version}` : '',
+			resource.type === 'npm' && metadata?.url ? `NPM URL: ${metadata.url}` : '',
+			npmCitationAlias ? `NPM Citation Alias: ${npmCitationAlias}` : '',
 			githubPrefix ? `GitHub Blob Prefix: ${githubPrefix}` : '',
 			githubPrefix
 				? `GitHub Citation Rule: Convert virtual paths under ./${resource.fsName}/ to repo-relative paths, then encode each path segment for GitHub URLs (example segment: "+page.server.js" -> "${encodeURIComponent('+page.server.js')}").`
@@ -55,8 +65,11 @@ export namespace Collections {
 			githubPrefix
 				? `GitHub Citation Example: ${githubPrefix}/${encodePathSegments('src/routes/blog/+page.server.js')}`
 				: '',
-			resource.type === 'local'
+			resource.type !== 'git'
 				? 'Citation Rule: Cite local file paths only for this resource (no GitHub URL).'
+				: '',
+			npmCitationAlias
+				? `NPM Citation Rule: In "Sources", cite npm files using "${npmCitationAlias}/<file>" (for example, "${npmCitationAlias}/README.md"). Do not cite encoded virtual folder names.`
 				: '',
 			...focusLines,
 			resource.specialAgentInstructions ? `Notes: ${resource.specialAgentInstructions}` : ''
@@ -184,6 +197,32 @@ export namespace Collections {
 	const ANON_PREFIX = 'anonymous:';
 	const getAnonymousUrlFromName = (name: string) =>
 		name.startsWith(ANON_PREFIX) ? name.slice(ANON_PREFIX.length) : undefined;
+	const NPM_ANON_PREFIX = `${ANON_PREFIX}npm:`;
+	const NPM_META_FILE = '.btca-npm-meta.json';
+	const getAnonymousNpmReferenceFromName = (name: string) =>
+		name.startsWith(NPM_ANON_PREFIX) ? name.slice(ANON_PREFIX.length) : undefined;
+
+	const readNpmMeta = async (resourcePath: string) => {
+		const result = await Result.gen(async function* () {
+			const content = yield* Result.await(
+				Result.tryPromise(() => Bun.file(path.join(resourcePath, NPM_META_FILE)).text())
+			);
+			const parsed = yield* Result.try(
+				() =>
+					JSON.parse(content) as {
+						packageName?: string;
+						resolvedVersion?: string;
+						packageUrl?: string;
+					}
+			);
+			return Result.ok(parsed);
+		});
+
+		return result.match({
+			ok: (value) => value,
+			err: () => null
+		});
+	};
 
 	const buildVirtualMetadata = async (args: {
 		resource: BtcaFsResource;
@@ -199,6 +238,27 @@ export namespace Collections {
 			repoSubPaths: args.resource.repoSubPaths,
 			loadedAt: args.loadedAt
 		};
+
+		if (args.resource.type === 'npm') {
+			const configuredDefinition =
+				args.definition && isNpmResource(args.definition) ? args.definition : null;
+			const anonymousReference = getAnonymousNpmReferenceFromName(args.resource.name);
+			const anonymousNpm = anonymousReference ? parseNpmReference(anonymousReference) : null;
+			const cached = await readNpmMeta(args.resourcePath);
+			const packageName =
+				configuredDefinition?.package ?? cached?.packageName ?? anonymousNpm?.packageName;
+			const version =
+				configuredDefinition?.version ?? cached?.resolvedVersion ?? anonymousNpm?.version;
+			const url = cached?.packageUrl ?? anonymousNpm?.packageUrl;
+
+			return {
+				...base,
+				...(packageName ? { package: packageName } : {}),
+				...(version ? { version } : {}),
+				...(url ? { url } : {})
+			};
+		}
+
 		if (args.resource.type !== 'git') return base;
 
 		const configuredDefinition =

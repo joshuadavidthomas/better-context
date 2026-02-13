@@ -19,10 +19,12 @@ import type { BtcaChunk, AssistantContent } from '@btca/shared';
 // Resource types
 export interface Resource {
 	name: string;
-	type: 'git' | 'local';
+	type: 'git' | 'local' | 'npm';
 	url?: string;
 	branch?: string;
 	path?: string;
+	package?: string;
+	version?: string;
 	searchPath?: string;
 	specialNotes?: string;
 }

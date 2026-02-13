@@ -24,6 +24,8 @@ const RESOURCE_NAME_REGEX = /^@?[a-zA-Z0-9][a-zA-Z0-9._-]*(\/[a-zA-Z0-9][a-zA-Z0
  * Must not start with hyphen to prevent git option injection.
  */
 const BRANCH_NAME_REGEX = /^[a-zA-Z0-9/_.-]+$/;
+const NPM_PACKAGE_SEGMENT_REGEX = /^[a-z0-9][a-z0-9._-]*$/;
+const NPM_VERSION_OR_TAG_REGEX = /^[^\s/]+$/;
 
 /**
  * Provider/Model names: letters, numbers, dots, underscores, plus, hyphens, forward slashes, colons.
@@ -256,6 +258,113 @@ export const validateGitUrl = (url: string): ValidationResultWithValue<string> =
 	return okWithValue(normalizedUrl);
 };
 
+export type ParsedNpmReference = {
+	packageName: string;
+	version?: string;
+	normalizedReference: string;
+	packageUrl: string;
+};
+
+const isValidNpmPackageName = (name: string): boolean => {
+	if (name.startsWith('@')) {
+		const [scope, pkg, ...rest] = name.split('/');
+		return (
+			rest.length === 0 &&
+			!!scope &&
+			scope.length > 1 &&
+			!!pkg &&
+			NPM_PACKAGE_SEGMENT_REGEX.test(scope.slice(1)) &&
+			NPM_PACKAGE_SEGMENT_REGEX.test(pkg)
+		);
+	}
+
+	if (name.includes('/')) return false;
+	return NPM_PACKAGE_SEGMENT_REGEX.test(name);
+};
+
+const isValidNpmVersionOrTag = (value: string): boolean =>
+	value.length > 0 &&
+	value.length <= LIMITS.BRANCH_NAME_MAX &&
+	NPM_VERSION_OR_TAG_REGEX.test(value);
+
+const splitNpmSpec = (spec: string): { packageName: string; version?: string } | null => {
+	if (!spec) return null;
+	if (spec.startsWith('@')) {
+		const secondAt = spec.indexOf('@', 1);
+		if (secondAt === -1) return { packageName: spec };
+		const packageName = spec.slice(0, secondAt);
+		const version = spec.slice(secondAt + 1);
+		return version ? { packageName, version } : null;
+	}
+
+	const at = spec.lastIndexOf('@');
+	if (at <= 0) return { packageName: spec };
+	const packageName = spec.slice(0, at);
+	const version = spec.slice(at + 1);
+	return version ? { packageName, version } : null;
+};
+
+const encodeNpmPackagePath = (packageName: string): string =>
+	packageName.split('/').map(encodeURIComponent).join('/');
+
+const toNpmReference = (parsed: { packageName: string; version?: string }): ParsedNpmReference => {
+	const normalizedReference = `npm:${parsed.packageName}${parsed.version ? `@${parsed.version}` : ''}`;
+	const packageUrl = `https://www.npmjs.com/package/${encodeNpmPackagePath(parsed.packageName)}${
+		parsed.version ? `/v/${encodeURIComponent(parsed.version)}` : ''
+	}`;
+	return {
+		packageName: parsed.packageName,
+		...(parsed.version ? { version: parsed.version } : {}),
+		normalizedReference,
+		packageUrl
+	};
+};
+
+const parseNpmSpecReference = (reference: string): ParsedNpmReference | null => {
+	if (!reference.startsWith('npm:')) return null;
+	const spec = reference.slice(4).trim();
+	if (!spec) return null;
+
+	const parsed = splitNpmSpec(spec);
+	if (!parsed || !isValidNpmPackageName(parsed.packageName)) return null;
+	if (parsed.version && !isValidNpmVersionOrTag(parsed.version)) return null;
+
+	return toNpmReference(parsed);
+};
+
+const parseNpmUrlReference = (reference: string): ParsedNpmReference | null => {
+	const parsedUrl = parseUrl(reference).match({
+		ok: (value) => value,
+		err: () => null
+	});
+	if (!parsedUrl) return null;
+	if (parsedUrl.protocol !== 'https:') return null;
+
+	const hostname = parsedUrl.hostname.toLowerCase();
+	if (hostname !== 'npmjs.com' && hostname !== 'www.npmjs.com') return null;
+
+	const segments = parsedUrl.pathname.split('/').filter((segment) => segment.length > 0);
+	if (segments[0] !== 'package') return null;
+
+	const packageParts = segments[1]?.startsWith('@') ? segments.slice(1, 3) : segments.slice(1, 2);
+	if (packageParts.length === 0 || packageParts.some((part) => !part)) return null;
+	const packageName = packageParts.map(decodeURIComponent).join('/');
+	if (!isValidNpmPackageName(packageName)) return null;
+
+	const remainder = segments.slice(1 + packageParts.length);
+	if (remainder.length === 0) return toNpmReference({ packageName });
+	if (remainder.length === 2 && remainder[0] === 'v') {
+		const version = decodeURIComponent(remainder[1]!);
+		if (!isValidNpmVersionOrTag(version)) return null;
+		return toNpmReference({ packageName, version });
+	}
+
+	return null;
+};
+
+export const parseNpmReference = (reference: string): ParsedNpmReference | null =>
+	parseNpmSpecReference(reference) ?? parseNpmUrlReference(reference);
+
 /**
  * Validate a git sparse-checkout search path to prevent injection attacks.
  *
@@ -423,11 +532,14 @@ export const validateResourceReference = (reference: string): ValidationResultWi
 	const nameResult = validateResourceName(reference);
 	if (nameResult.valid) return okWithValue(reference);
 
+	const npmReference = parseNpmReference(reference);
+	if (npmReference) return okWithValue(npmReference.normalizedReference);
+
 	const gitUrlResult = validateGitUrl(reference);
 	if (gitUrlResult.valid) return gitUrlResult;
 
 	return failWithValue(
-		`Invalid resource reference: "${reference}". Use an existing resource name or a valid HTTPS git URL.`
+		`Invalid resource reference: "${reference}". Use an existing resource name, a valid HTTPS git URL, or an npm reference (npm:<package> or npmjs.com package URL).`
 	);
 };
 

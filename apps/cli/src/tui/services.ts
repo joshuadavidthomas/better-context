@@ -38,21 +38,21 @@ export interface ModelUpdateResult {
 
 export const services = {
 	/**
-	 * Get all resources as Repos (only git resources for now)
+	 * Get all configured resources for @mention autocomplete
 	 */
 	getRepos: async (): Promise<Repo[]> => {
 		const client = createClient(getServerUrl());
 		const { resources } = await getResources(client);
-		return resources
-			.filter((r) => r.type === 'git')
-			.map((r) => ({
-				name: r.name,
-				url: r.url ?? '',
-				branch: r.branch ?? 'main',
-				specialNotes: r.specialNotes ?? undefined,
-				searchPath: r.searchPath ?? undefined,
-				searchPaths: r.searchPaths ?? undefined
-			}));
+		return resources.map((r) => ({
+			name: r.name,
+			type: r.type,
+			url:
+				r.type === 'git' ? (r.url ?? '') : r.type === 'local' ? (r.path ?? '') : (r.package ?? ''),
+			branch: r.type === 'git' ? (r.branch ?? 'main') : 'main',
+			specialNotes: r.specialNotes ?? undefined,
+			searchPath: r.type === 'git' ? (r.searchPath ?? undefined) : undefined,
+			searchPaths: r.type === 'git' ? (r.searchPaths ?? undefined) : undefined
+		}));
 	},
 
 	/**

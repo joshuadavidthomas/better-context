@@ -267,6 +267,7 @@ export const AddResourceWizard = (props: AddResourceWizardProps) => {
 				await services.addResource(resource);
 				const repo: Repo = {
 					name: resource.name,
+					type: 'git',
 					url: resource.url,
 					branch: resource.branch,
 					specialNotes: resource.specialNotes,

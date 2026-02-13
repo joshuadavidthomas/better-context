@@ -11,22 +11,115 @@ export type TaggedErrorLike = {
 	readonly hint?: string;
 };
 
+const MAX_CAUSE_DEPTH = 12;
+const WRAPPER_TAGS = new Set(['Panic', 'UnhandledException']);
+const isObjectRecord = (value: unknown): value is Record<string, unknown> =>
+	typeof value === 'object' && value !== null;
+
+const readStringField = (value: unknown, field: '_tag' | 'message' | 'hint') => {
+	if (!isObjectRecord(value) || !(field in value)) return undefined;
+	const candidate = value[field];
+	return typeof candidate === 'string' && candidate.length > 0 ? candidate : undefined;
+};
+
+const readCauseField = (value: unknown) => {
+	if (!isObjectRecord(value) || !('cause' in value)) return undefined;
+	return value.cause;
+};
+
+const isWrapperMessage = (message?: string) =>
+	Boolean(
+		message &&
+		(message.startsWith('Unhandled exception:') ||
+			/handler threw$/u.test(message) ||
+			/callback threw$/u.test(message))
+	);
+
+const normalizeMessage = (message: string) => {
+	if (!message.startsWith('Unhandled exception:')) return message;
+	const stripped = message.slice('Unhandled exception:'.length).trim();
+	return stripped.length > 0 ? stripped : message;
+};
+
+const isWrapperEntry = (entry: unknown) => {
+	const tag = readStringField(entry, '_tag');
+	const message = readStringField(entry, 'message');
+	const hasCause = readCauseField(entry) !== undefined;
+	const isAgentWrapper =
+		tag === 'AgentError' && message === 'Failed to get response from AI' && hasCause;
+	return (
+		isAgentWrapper || (tag !== undefined && WRAPPER_TAGS.has(tag)) || isWrapperMessage(message)
+	);
+};
+
+const getErrorChain = (error: unknown) => {
+	const chain: unknown[] = [];
+	const visited = new Set<unknown>();
+	let current: unknown = error;
+	let depth = 0;
+
+	while (current !== undefined && depth < MAX_CAUSE_DEPTH && !visited.has(current)) {
+		chain.push(current);
+		visited.add(current);
+		const cause = readCauseField(current);
+		if (cause === undefined) break;
+		current = cause;
+		depth += 1;
+	}
+
+	return chain;
+};
+
 export const getErrorTag = (error: unknown): string => {
-	if (error && typeof error === 'object' && '_tag' in error) return String((error as any)._tag);
+	const chain = getErrorChain(error);
+
+	for (const entry of chain) {
+		const tag = readStringField(entry, '_tag');
+		if (tag && !isWrapperEntry(entry)) return tag;
+	}
+
+	for (const entry of chain) {
+		const tag = readStringField(entry, '_tag');
+		if (tag) return tag;
+	}
+
 	return 'UnknownError';
 };
 
 export const getErrorMessage = (error: unknown): string => {
-	if (error && typeof error === 'object' && 'message' in error)
-		return String((error as any).message);
+	const chain = getErrorChain(error);
+
+	for (const entry of chain) {
+		const message = readStringField(entry, 'message');
+		if (message && !isWrapperEntry(entry)) return message;
+	}
+
+	for (const entry of chain) {
+		const message = readStringField(entry, 'message');
+		if (message && !isWrapperMessage(message)) return message;
+	}
+
+	for (const entry of chain) {
+		const message = readStringField(entry, 'message');
+		if (message) return normalizeMessage(message);
+	}
+
 	return String(error);
 };
 
 export const getErrorHint = (error: unknown): string | undefined => {
-	if (error && typeof error === 'object' && 'hint' in error) {
-		const hint = (error as any).hint;
-		return typeof hint === 'string' ? hint : undefined;
+	const chain = getErrorChain(error);
+
+	for (const entry of chain) {
+		const hint = readStringField(entry, 'hint');
+		if (hint && !isWrapperEntry(entry)) return hint;
 	}
+
+	for (const entry of chain) {
+		const hint = readStringField(entry, 'hint');
+		if (hint) return hint;
+	}
+
 	return undefined;
 };
 

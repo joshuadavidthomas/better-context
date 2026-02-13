@@ -125,7 +125,7 @@ The server reads configuration from `~/.btca/config.toml` or your local project'
 
 - **AI Provider**: OpenCode AI provider (e.g., "opencode", "anthropic")
 - **Model**: AI model to use (e.g., "claude-3-7-sonnet-20250219")
-- **Resources**: Local directories or git repositories to query
+- **Resources**: Local directories, git repositories, or npm packages to query
 
 Example config.toml:
 
@@ -144,6 +144,12 @@ type = "git"
 name = "some-repo"
 url = "https://github.com/user/repo"
 branch = "main"
+
+[[resources]]
+type = "npm"
+name = "react-npm"
+package = "react"
+version = "latest"
 ```
 
 ## Supported Providers

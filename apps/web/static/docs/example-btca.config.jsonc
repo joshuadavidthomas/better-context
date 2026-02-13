@@ -33,6 +33,13 @@
       "type": "local",
       "path": "/absolute/path/to/project",
       "specialNotes": "This project's source code for self-reference."
+    },
+    {
+      "name": "reactNpm",
+      "type": "npm",
+      "package": "react",
+      "version": "latest",
+      "specialNotes": "Use package metadata and README for API-level answers."
     }
   ],
   

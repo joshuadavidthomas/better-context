@@ -1,24 +1,30 @@
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
 import { Result } from 'better-result';
 import { Command } from 'commander';
 import * as readline from 'readline';
-import path from 'node:path';
-import { ensureServer } from '../server/manager.ts';
+
 import { addResource, BtcaError } from '../client/index.ts';
 import { dim } from '../lib/utils/colors.ts';
+import { ensureServer } from '../server/manager.ts';
 
 interface GitHubUrlParts {
 	owner: string;
 	repo: string;
 }
 
+interface NpmReferenceParts {
+	packageName: string;
+	version?: string;
+}
+
+const NPM_PACKAGE_SEGMENT_REGEX = /^[a-z0-9][a-z0-9._-]*$/;
+const NPM_VERSION_OR_TAG_REGEX = /^[^\s/]+$/;
+
 /**
  * Parse a GitHub URL and extract owner/repo.
  */
 function parseGitHubUrl(url: string): GitHubUrlParts | null {
-	// Handle various GitHub URL formats:
-	// - https://github.com/owner/repo
-	// - https://github.com/owner/repo.git
-	// - github.com/owner/repo
 	const patterns = [
 		/^https?:\/\/github\.com\/([^/]+)\/([^/]+?)(\.git)?$/,
 		/^github\.com\/([^/]+)\/([^/]+?)(\.git)?$/
@@ -46,15 +52,109 @@ function normalizeGitHubUrl(url: string): string {
 	return `https://github.com/${parts.owner}/${parts.repo}`;
 }
 
+const isValidNpmPackageName = (name: string) => {
+	if (name.startsWith('@')) {
+		const [scope, pkg, ...rest] = name.split('/');
+		return (
+			rest.length === 0 &&
+			!!scope &&
+			scope.length > 1 &&
+			!!pkg &&
+			NPM_PACKAGE_SEGMENT_REGEX.test(scope.slice(1)) &&
+			NPM_PACKAGE_SEGMENT_REGEX.test(pkg)
+		);
+	}
+
+	return !name.includes('/') && NPM_PACKAGE_SEGMENT_REGEX.test(name);
+};
+
+const splitNpmSpec = (spec: string): NpmReferenceParts | null => {
+	if (!spec) return null;
+	if (spec.startsWith('@')) {
+		const secondAt = spec.indexOf('@', 1);
+		if (secondAt === -1) return { packageName: spec };
+		const packageName = spec.slice(0, secondAt);
+		const version = spec.slice(secondAt + 1);
+		return version ? { packageName, version } : null;
+	}
+
+	const at = spec.lastIndexOf('@');
+	if (at <= 0) return { packageName: spec };
+	const packageName = spec.slice(0, at);
+	const version = spec.slice(at + 1);
+	return version ? { packageName, version } : null;
+};
+
+const parseNpmFromUrl = (reference: string): NpmReferenceParts | null => {
+	const parsed = Result.try(() => new URL(reference)).match({
+		ok: (value) => value,
+		err: () => null
+	});
+	if (!parsed) return null;
+
+	const hostname = parsed.hostname.toLowerCase();
+	if (parsed.protocol !== 'https:' || (hostname !== 'npmjs.com' && hostname !== 'www.npmjs.com')) {
+		return null;
+	}
+
+	const segments = parsed.pathname.split('/').filter((segment) => segment.length > 0);
+	if (segments[0] !== 'package') return null;
+
+	const packageParts = segments[1]?.startsWith('@') ? segments.slice(1, 3) : segments.slice(1, 2);
+	if (packageParts.length === 0 || packageParts.some((part) => !part)) return null;
+
+	const packageName = packageParts.map(decodeURIComponent).join('/');
+	if (!isValidNpmPackageName(packageName)) return null;
+
+	const remainder = segments.slice(1 + packageParts.length);
+	if (remainder.length === 0) return { packageName };
+	if (remainder.length === 2 && remainder[0] === 'v') {
+		const version = decodeURIComponent(remainder[1]!);
+		if (!NPM_VERSION_OR_TAG_REGEX.test(version)) return null;
+		return { packageName, version };
+	}
+
+	return null;
+};
+
+const parseNpmReference = (reference: string): NpmReferenceParts | null => {
+	const trimmed = reference.trim();
+	if (!trimmed) return null;
+
+	const fromUrl = parseNpmFromUrl(trimmed);
+	if (fromUrl) return fromUrl;
+
+	const spec = trimmed.startsWith('npm:') ? trimmed.slice(4) : trimmed;
+	const parsed = splitNpmSpec(spec);
+	if (!parsed) return null;
+	if (!isValidNpmPackageName(parsed.packageName)) return null;
+	if (parsed.version && !NPM_VERSION_OR_TAG_REGEX.test(parsed.version)) return null;
+	return parsed;
+};
+
+const isLikelyPath = (value: string) =>
+	value.startsWith('/') ||
+	value.startsWith('./') ||
+	value.startsWith('../') ||
+	value.startsWith('~/') ||
+	/^[a-zA-Z]:\\/.test(value);
+
+const isDirectory = async (value: string) => {
+	const resolved = path.isAbsolute(value) ? value : path.resolve(process.cwd(), value);
+	const result = await Result.tryPromise(() => fs.stat(resolved));
+	return result.match({
+		ok: (stat) => stat.isDirectory(),
+		err: () => false
+	});
+};
+
 /**
  * Format an error for display, including hint if available.
  */
 function formatError(error: unknown): string {
 	if (error instanceof BtcaError) {
 		let output = `Error: ${error.message}`;
-		if (error.hint) {
-			output += `\n\nHint: ${error.hint}`;
-		}
+		if (error.hint) output += `\n\nHint: ${error.hint}`;
 		return output;
 	}
 	return `Error: ${error instanceof Error ? error.message : String(error)}`;
@@ -169,44 +269,28 @@ async function addGitResourceWizard(
 	const rl = createRl();
 
 	const result = await Result.tryPromise(async () => {
-		// Step 1: URL (prefilled, confirm)
 		const finalUrl = await promptInput(rl, 'URL', normalizedUrl);
-
-		// Step 2: Name (default = repo name)
-		const defaultName = urlParts.repo;
-		const name = await promptInput(rl, 'Name', defaultName);
-
-		// Step 3: Branch (default = main)
+		const name = await promptInput(rl, 'Name', urlParts.repo);
 		const branch = await promptInput(rl, 'Branch', 'main');
-
-		// Step 4: Search paths (optional, repeated)
 		const wantSearchPaths = await promptConfirm(
 			rl,
 			'Do you want to add search paths (subdirectories to focus on)?'
 		);
 		const searchPaths = wantSearchPaths ? await promptRepeated(rl, 'Search path') : [];
-
-		// Step 5: Notes (optional)
 		const notes = await promptInput(rl, 'Notes (optional)');
 
 		rl.close();
 
-		// Summary
 		console.log('\n--- Summary ---\n');
-		console.log(`  Type:    git`);
+		console.log('  Type:    git');
 		console.log(`  Name:    ${name}`);
 		console.log(`  URL:     ${finalUrl}`);
 		console.log(`  Branch:  ${branch}`);
-		if (searchPaths.length > 0) {
-			console.log(`  Search:  ${searchPaths.join(', ')}`);
-		}
-		if (notes) {
-			console.log(`  Notes:   ${notes}`);
-		}
+		if (searchPaths.length > 0) console.log(`  Search:  ${searchPaths.join(', ')}`);
+		if (notes) console.log(`  Notes:   ${notes}`);
 		console.log(`  Config:  ${options.global ? 'global' : 'project'}`);
 		console.log('');
 
-		// Confirm
 		const confirmRl = createRl();
 		const confirmed = await promptConfirm(confirmRl, 'Add this resource?');
 		confirmRl.close();
@@ -216,7 +300,6 @@ async function addGitResourceWizard(
 			process.exit(0);
 		}
 
-		// Add the resource via server
 		const server = await ensureServer({
 			serverUrl: globalOpts?.server,
 			port: globalOpts?.port,
@@ -245,9 +328,7 @@ async function addGitResourceWizard(
 
 	rl.close();
 
-	if (Result.isError(result)) {
-		throw result.error;
-	}
+	if (Result.isError(result)) throw result.error;
 }
 
 /**
@@ -258,7 +339,6 @@ async function addLocalResourceWizard(
 	options: { global?: boolean },
 	globalOpts: { server?: string; port?: number } | undefined
 ): Promise<void> {
-	// Resolve the path
 	const resolvedPath = path.isAbsolute(localPath)
 		? localPath
 		: path.resolve(process.cwd(), localPath);
@@ -269,30 +349,20 @@ async function addLocalResourceWizard(
 	const rl = createRl();
 
 	const result = await Result.tryPromise(async () => {
-		// Step 1: Path (prefilled, confirm)
 		const finalPath = await promptInput(rl, 'Path', resolvedPath);
-
-		// Step 2: Name (default = directory name)
-		const defaultName = path.basename(finalPath);
-		const name = await promptInput(rl, 'Name', defaultName);
-
-		// Step 3: Notes (optional)
+		const name = await promptInput(rl, 'Name', path.basename(finalPath));
 		const notes = await promptInput(rl, 'Notes (optional)');
 
 		rl.close();
 
-		// Summary
 		console.log('\n--- Summary ---\n');
-		console.log(`  Type:    local`);
+		console.log('  Type:    local');
 		console.log(`  Name:    ${name}`);
 		console.log(`  Path:    ${finalPath}`);
-		if (notes) {
-			console.log(`  Notes:   ${notes}`);
-		}
+		if (notes) console.log(`  Notes:   ${notes}`);
 		console.log(`  Config:  ${options.global ? 'global' : 'project'}`);
 		console.log('');
 
-		// Confirm
 		const confirmRl = createRl();
 		const confirmed = await promptConfirm(confirmRl, 'Add this resource?');
 		confirmRl.close();
@@ -302,7 +372,6 @@ async function addLocalResourceWizard(
 			process.exit(0);
 		}
 
-		// Add the resource via server
 		const server = await ensureServer({
 			serverUrl: globalOpts?.server,
 			port: globalOpts?.port,
@@ -325,23 +394,101 @@ async function addLocalResourceWizard(
 
 	rl.close();
 
-	if (Result.isError(result)) {
-		throw result.error;
-	}
+	if (Result.isError(result)) throw result.error;
 }
 
+/**
+ * Interactive wizard for adding an npm resource.
+ */
+async function addNpmResourceWizard(
+	npmReference: string,
+	options: { global?: boolean },
+	globalOpts: { server?: string; port?: number } | undefined
+): Promise<void> {
+	const parsed = parseNpmReference(npmReference);
+	if (!parsed) {
+		console.error('Error: Invalid npm reference.');
+		console.error('Use an npm package (e.g. react, @types/node, npm:react, or npmjs package URL).');
+		process.exit(1);
+	}
+
+	console.log('\n--- Add npm Resource ---\n');
+	console.log(`Package: ${parsed.packageName}${parsed.version ? `@${parsed.version}` : ''}`);
+
+	const rl = createRl();
+
+	const result = await Result.tryPromise(async () => {
+		const packageName = await promptInput(rl, 'Package', parsed.packageName);
+		const versionInput = await promptInput(rl, 'Version/tag (optional)', parsed.version ?? '');
+		const name = await promptInput(rl, 'Name', packageName);
+		const notes = await promptInput(rl, 'Notes (optional)');
+
+		rl.close();
+
+		console.log('\n--- Summary ---\n');
+		console.log('  Type:    npm');
+		console.log(`  Name:    ${name}`);
+		console.log(`  Package: ${packageName}`);
+		console.log(`  Version: ${versionInput || 'latest'}`);
+		if (notes) console.log(`  Notes:   ${notes}`);
+		console.log(`  Config:  ${options.global ? 'global' : 'project'}`);
+		console.log('');
+
+		const confirmRl = createRl();
+		const confirmed = await promptConfirm(confirmRl, 'Add this resource?');
+		confirmRl.close();
+
+		if (!confirmed) {
+			console.log('\nCancelled.');
+			process.exit(0);
+		}
+
+		const server = await ensureServer({
+			serverUrl: globalOpts?.server,
+			port: globalOpts?.port,
+			quiet: true
+		});
+
+		await addResource(server.url, {
+			type: 'npm',
+			name,
+			package: packageName,
+			...(versionInput ? { version: versionInput } : {}),
+			...(notes ? { specialNotes: notes } : {})
+		});
+
+		server.stop();
+
+		console.log(`\nAdded resource: ${name}`);
+		console.log('\nYou can now use this resource:');
+		console.log(`  btca ask -r ${name} -q "your question"`);
+	});
+
+	rl.close();
+
+	if (Result.isError(result)) throw result.error;
+}
+
+const inferResourceType = async (value: string): Promise<'git' | 'local' | 'npm'> => {
+	if (parseGitHubUrl(value)) return 'git';
+	if (await isDirectory(value)) return 'local';
+	if (isLikelyPath(value)) return 'local';
+	if (parseNpmReference(value)) return 'npm';
+	return 'local';
+};
+
 export const addCommand = new Command('add')
-	.description('Add a resource (git repository or local directory)')
-	.argument('[url-or-path]', 'GitHub repository URL or local directory path')
+	.description('Add a resource (git repository, local directory, or npm package)')
+	.argument('[reference]', 'Repository URL, local path, or npm package reference')
 	.option('-g, --global', 'Add to global config instead of project config')
 	.option('-n, --name <name>', 'Resource name')
 	.option('-b, --branch <branch>', 'Git branch (default: main)')
 	.option('-s, --search-path <path...>', 'Search paths within repo (can specify multiple)')
 	.option('--notes <notes>', 'Special notes for the agent')
-	.option('-t, --type <type>', 'Resource type: git or local (auto-detected if not specified)')
+	.option('-t, --type <type>', 'Resource type: git, local, or npm (auto-detected if not specified)')
 	.action(
 		async (
-			urlOrPath: string | undefined,
+			reference: string | undefined,
 			options: {
 				global?: boolean;
 				name?: string;
@@ -355,12 +502,12 @@ export const addCommand = new Command('add')
 			const globalOpts = command.parent?.opts() as { server?: string; port?: number } | undefined;
 
 			const result = await Result.tryPromise(async () => {
-				// If no argument provided, start interactive wizard
-				if (!urlOrPath) {
-					const resourceType = await promptSelect<'git' | 'local'>(
+				if (!reference) {
+					const resourceType = await promptSelect<'git' | 'local' | 'npm'>(
 						'What type of resource do you want to add?',
 						[
 							{ label: 'Git repository', value: 'git' },
+							{ label: 'npm package', value: 'npm' },
 							{ label: 'Local directory', value: 'local' }
 						]
 					);
@@ -374,41 +521,43 @@ export const addCommand = new Command('add')
 							process.exit(1);
 						}
 						await addGitResourceWizard(url, options, globalOpts);
-					} else {
-						const localPath = await promptInput(rl, 'Local path');
+						return;
+					}
+
+					if (resourceType === 'npm') {
+						const npmRef = await promptInput(rl, 'npm package (or npmjs URL)', 'react');
 						rl.close();
-						if (!localPath) {
-							console.error('Error: Path is required.');
+						if (!npmRef) {
+							console.error('Error: npm package is required.');
 							process.exit(1);
 						}
-						await addLocalResourceWizard(localPath, options, globalOpts);
+						await addNpmResourceWizard(npmRef, options, globalOpts);
+						return;
 					}
+
+					const localPath = await promptInput(rl, 'Local path');
+					rl.close();
+					if (!localPath) {
+						console.error('Error: Path is required.');
+						process.exit(1);
+					}
+					await addLocalResourceWizard(localPath, options, globalOpts);
 					return;
 				}
 
-				// Determine type from argument or explicit flag
-				let resourceType: 'git' | 'local' = 'git';
-
+				let resourceType: 'git' | 'local' | 'npm';
 				if (options.type) {
-					if (options.type !== 'git' && options.type !== 'local') {
-						console.error('Error: --type must be "git" or "local"');
+					if (options.type !== 'git' && options.type !== 'local' && options.type !== 'npm') {
+						console.error('Error: --type must be "git", "local", or "npm"');
 						process.exit(1);
 					}
-					resourceType = options.type as 'git' | 'local';
+					resourceType = options.type as 'git' | 'local' | 'npm';
 				} else {
-					// Auto-detect: if it looks like a URL, it's git; otherwise local
-					const isUrl =
-						urlOrPath.startsWith('http://') ||
-						urlOrPath.startsWith('https://') ||
-						urlOrPath.startsWith('github.com/') ||
-						urlOrPath.includes('github.com/');
-					resourceType = isUrl ? 'git' : 'local';
+					resourceType = await inferResourceType(reference);
 				}
 
-				// If all required options provided via flags, skip wizard
-				if (options.name && resourceType === 'git' && parseGitHubUrl(urlOrPath)) {
-					// Non-interactive git add
-					const normalizedUrl = normalizeGitHubUrl(urlOrPath);
+				if (options.name && resourceType === 'git' && parseGitHubUrl(reference)) {
+					const normalizedUrl = normalizeGitHubUrl(reference);
 					const server = await ensureServer({
 						serverUrl: globalOpts?.server,
 						port: globalOpts?.port,
@@ -436,10 +585,9 @@ export const addCommand = new Command('add')
 				}
 
 				if (options.name && resourceType === 'local') {
-					// Non-interactive local add
-					const resolvedPath = path.isAbsolute(urlOrPath)
-						? urlOrPath
-						: path.resolve(process.cwd(), urlOrPath);
+					const resolvedPath = path.isAbsolute(reference)
+						? reference
+						: path.resolve(process.cwd(), reference);
 					const server = await ensureServer({
 						serverUrl: globalOpts?.server,
 						port: globalOpts?.port,
@@ -458,11 +606,41 @@ export const addCommand = new Command('add')
 					return;
 				}
 
-				// Interactive wizard based on type
+				if (options.name && resourceType === 'npm') {
+					const parsed = parseNpmReference(reference);
+					if (!parsed) {
+						console.error('Error: Invalid npm reference.');
+						console.error(
+							'Use an npm package (e.g. react, @types/node, npm:react, or npmjs package URL).'
+						);
+						process.exit(1);
+					}
+
+					const server = await ensureServer({
+						serverUrl: globalOpts?.server,
+						port: globalOpts?.port,
+						quiet: true
+					});
+
+					await addResource(server.url, {
+						type: 'npm',
+						name: options.name,
+						package: parsed.packageName,
+						...(parsed.version ? { version: parsed.version } : {}),
+						...(options.notes ? { specialNotes: options.notes } : {})
+					});
+
+					server.stop();
+					console.log(`Added npm resource: ${options.name}`);
+					return;
+				}
+
 				if (resourceType === 'git') {
-					await addGitResourceWizard(urlOrPath, options, globalOpts);
+					await addGitResourceWizard(reference, options, globalOpts);
+				} else if (resourceType === 'npm') {
+					await addNpmResourceWizard(reference, options, globalOpts);
 				} else {
-					await addLocalResourceWizard(urlOrPath, options, globalOpts);
+					await addLocalResourceWizard(reference, options, globalOpts);
 				}
 			});
 

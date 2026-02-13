@@ -47,9 +47,14 @@ export const resourcesCommand = new Command('resources')
 							console.log(`    Search Path: ${r.searchPath}`);
 						}
 						if (r.specialNotes) console.log(`    Notes: ${r.specialNotes}`);
-					} else {
+					} else if (r.type === 'local') {
 						console.log(`  ${r.name} (local)`);
 						console.log(`    Path: ${r.path}`);
+						if (r.specialNotes) console.log(`    Notes: ${r.specialNotes}`);
+					} else {
+						console.log(`  ${r.name} (npm)`);
+						console.log(`    Package: ${r.package}`);
+						if (r.version) console.log(`    Version: ${r.version}`);
 						if (r.specialNotes) console.log(`    Notes: ${r.specialNotes}`);
 					}
 					console.log('');

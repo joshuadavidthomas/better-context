@@ -66,6 +66,34 @@ describe('Config', () => {
 			expect(config.getResource('svelte')).toBeDefined();
 		});
 
+		it('loads npm resources from config', async () => {
+			const projectConfig = {
+				$schema: 'https://btca.dev/btca.schema.json',
+				provider: 'test-provider',
+				model: 'test-model',
+				resources: [
+					{
+						name: 'reactNpm',
+						type: 'npm',
+						package: 'react',
+						version: 'latest'
+					}
+				]
+			};
+
+			await fs.writeFile(path.join(testDir, 'btca.config.jsonc'), JSON.stringify(projectConfig));
+			process.chdir(testDir);
+
+			const config = await Config.load();
+			const npmResource = config.getResource('reactNpm');
+			expect(npmResource).toBeDefined();
+			expect(npmResource?.type).toBe('npm');
+			if (npmResource?.type === 'npm') {
+				expect(npmResource.package).toBe('react');
+				expect(npmResource.version).toBe('latest');
+			}
+		});
+
 		it('handles JSONC with comments', async () => {
 			const projectConfigWithComments = `{
 				// This is a comment

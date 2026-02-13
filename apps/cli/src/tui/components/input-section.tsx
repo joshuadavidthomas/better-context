@@ -13,6 +13,11 @@ import { MainInput } from './main-input.tsx';
 import { RepoMentionPalette } from './repo-mention-palette.tsx';
 import { ResumeThreadModal } from './resume-thread-modal.tsx';
 import { StatusBar } from './status-bar.tsx';
+import {
+	extractMentionTokens,
+	resolveMentionResourceReference,
+	stripMentionTokens
+} from '../lib/resource-mentions.ts';
 
 export const InputSection = () => {
 	const messages = useMessagesContext();
@@ -46,32 +51,13 @@ export const InputSection = () => {
 	}, [inputState, cursorPosition]);
 
 	const parseAllMentions = (input: string) => {
-		const mentionRegex = /@([A-Za-z0-9@._/-]+)/g;
-		const repos: string[] = [];
-		let match;
-		while ((match = mentionRegex.exec(input)) !== null) {
-			repos.push(match[1]!);
-		}
-		const question = input.replace(mentionRegex, '').trim().replace(/\s+/g, ' ');
-		return { repos: [...new Set(repos)], question };
+		const resources = extractMentionTokens(input);
+		const question = stripMentionTokens(input);
+		return { resources, question };
 	};
 
-	const resolveRepoName = (input: string): string | null => {
-		const available = config.repos;
-		const target = input.toLowerCase();
-		const direct = available.find((r) => r.name.toLowerCase() === target);
-		if (direct) return direct.name;
-
-		if (target.startsWith('@')) {
-			const withoutAt = target.slice(1);
-			const match = available.find((r) => r.name.toLowerCase() === withoutAt);
-			return match?.name ?? null;
-		}
-
-		const withAt = `@${target}`;
-		const match = available.find((r) => r.name.toLowerCase() === withAt);
-		return match?.name ?? null;
-	};
+	const resolveResourceReference = (input: string): string | null =>
+		resolveMentionResourceReference(input, config.repos);
 
 	const currentInputIndex = useMemo(() => {
 		let minIdx = 0;
@@ -95,8 +81,9 @@ export const InputSection = () => {
 	}, [cursorIsCurrentlyIn, currentInputIndex, inputState]);
 
 	const isCurrentMentionResolved = useMemo(
-		() => resolveRepoName(currentMentionToken) !== null && cursorIsCurrentlyIn === 'mention',
-		[currentMentionToken, cursorIsCurrentlyIn, resolveRepoName]
+		() =>
+			resolveResourceReference(currentMentionToken) !== null && cursorIsCurrentlyIn === 'mention',
+		[currentMentionToken, cursorIsCurrentlyIn, resolveResourceReference]
 	);
 
 	const maxResumeThreadItems = useMemo(() => {
@@ -127,8 +114,10 @@ export const InputSection = () => {
 		const parsed = parseAllMentions(inputText);
 		const existingResources = messages.threadResources;
 
-		if (parsed.repos.length === 0 && existingResources.length === 0) {
-			messages.addSystemMessage('Use @reponame to add context. Example: @svelte How do I...?');
+		if (parsed.resources.length === 0 && existingResources.length === 0) {
+			messages.addSystemMessage(
+				'Use @resource to add context. Example: @svelte, @npm:prettier, or @https://github.com/owner/repo'
+			);
 			return;
 		}
 		if (!parsed.question.trim()) {
@@ -136,16 +125,16 @@ export const InputSection = () => {
 			return;
 		}
 
-		const validNewRepos: string[] = [];
-		const invalidRepos: string[] = [];
-		for (const repoName of parsed.repos) {
-			const resolved = resolveRepoName(repoName);
-			if (resolved) validNewRepos.push(resolved);
-			else invalidRepos.push(repoName);
+		const validNewResources: string[] = [];
+		const invalidResources: string[] = [];
+		for (const resourceName of parsed.resources) {
+			const resolved = resolveResourceReference(resourceName);
+			if (resolved) validNewResources.push(resolved);
+			else invalidResources.push(resourceName);
 		}
-		if (invalidRepos.length > 0) {
+		if (invalidResources.length > 0) {
 			messages.addSystemMessage(
-				`Repo(s) not found: ${invalidRepos.join(', ')}. Configure resources with "btca add".`
+				`Resource(s) not found: ${invalidResources.join(', ')}. Use configured names, npm:<package>, or an HTTPS GitHub URL.`
 			);
 			return;
 		}
@@ -154,7 +143,7 @@ export const InputSection = () => {
 		await inputHistory.add(currentInput);
 
 		setInputState([]);
-		await messages.send(currentInput, validNewRepos);
+		await messages.send(currentInput, validNewResources);
 	};
 
 	const closeWizard = () => {

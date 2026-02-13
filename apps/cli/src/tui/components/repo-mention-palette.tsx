@@ -114,6 +114,8 @@ export const RepoMentionPalette = (props: RepoMentionPaletteProps) => {
 		}
 	});
 
+	if (filteredRepos.length === 0) return null;
+
 	return (
 		<box
 			style={{
@@ -128,7 +130,7 @@ export const RepoMentionPalette = (props: RepoMentionPaletteProps) => {
 				padding: 1
 			}}
 		>
-			<text fg={colors.textMuted} content=" Select repo:" />
+			<text fg={colors.textMuted} content=" Select resource:" />
 			{visibleRange.repos.map((repo, i) => {
 				const actualIndex = visibleRange.start + i;
 				const isSelected = actualIndex === selectedIndex;

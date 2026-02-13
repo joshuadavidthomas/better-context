@@ -57,6 +57,9 @@
 					},
 					{
 						"$ref": "#/$defs/localResource"
+					},
+					{
+						"$ref": "#/$defs/npmResource"
 					}
 				]
 			},
@@ -133,6 +136,36 @@
 				}
 			},
 			"required": ["type", "name", "path"],
+			"additionalProperties": false
+		},
+		"npmResource": {
+			"type": "object",
+			"title": "npm Resource",
+			"description": "A resource hydrated from npm package metadata and package page content",
+			"properties": {
+				"type": {
+					"type": "string",
+					"const": "npm",
+					"description": "Resource type identifier"
+				},
+				"name": {
+					"type": "string",
+					"description": "Unique name for this resource"
+				},
+				"package": {
+					"type": "string",
+					"description": "npm package name (for example react or @types/node)"
+				},
+				"version": {
+					"type": "string",
+					"description": "Optional version or tag to pin (for example 19.0.0 or latest)"
+				},
+				"specialNotes": {
+					"type": "string",
+					"description": "Additional context or notes about this resource for the AI"
+				}
+			},
+			"required": ["type", "name", "package"],
 			"additionalProperties": false
 		}
 	}

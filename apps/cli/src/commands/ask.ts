@@ -15,15 +15,83 @@ import { setTelemetryContext, trackTelemetryEvent } from '../lib/telemetry.ts';
 /**
  * Format an error for display, including hint if available.
  */
-function formatError(error: unknown): string {
-	if (error instanceof BtcaError) {
-		let output = `Error: ${error.message}`;
-		if (error.hint) {
-			output += `\n\nHint: ${error.hint}`;
-		}
-		return output;
+function getErrorDisplayDetails(error: unknown): { message: string; hint?: string } {
+	const isObjectRecord = (value: unknown): value is Record<string, unknown> =>
+		typeof value === 'object' && value !== null;
+	const readStringField = (value: unknown, field: 'message' | 'hint') => {
+		if (!isObjectRecord(value) || !(field in value)) return undefined;
+		const candidate = value[field];
+		return typeof candidate === 'string' && candidate.length > 0 ? candidate : undefined;
+	};
+	const readCause = (value: unknown) => {
+		if (!isObjectRecord(value) || !('cause' in value)) return undefined;
+		return value.cause;
+	};
+	const isWrapperMessage = (message?: string) =>
+		Boolean(
+			message &&
+			(message.startsWith('Unhandled exception:') ||
+				message.endsWith('handler threw') ||
+				message.endsWith('callback threw'))
+		);
+	const normalizeMessage = (message: string) => {
+		if (!message.startsWith('Unhandled exception:')) return message;
+		const stripped = message.slice('Unhandled exception:'.length).trim();
+		return stripped.length > 0 ? stripped : message;
+	};
+
+	const chain: unknown[] = [];
+	const visited = new Set<unknown>();
+	let current: unknown = error;
+	let depth = 0;
+	while (current !== undefined && depth < 12 && !visited.has(current)) {
+		chain.push(current);
+		visited.add(current);
+		const cause = readCause(current);
+		if (cause === undefined) break;
+		current = cause;
+		depth += 1;
 	}
-	return `Error: ${error instanceof Error ? error.message : String(error)}`;
+
+	let message: string | undefined;
+	let hint: string | undefined;
+
+	for (const entry of chain) {
+		const entryMessage = readStringField(entry, 'message');
+		if (!message && entryMessage && !isWrapperMessage(entryMessage)) {
+			message = entryMessage;
+		}
+		const entryHint = readStringField(entry, 'hint');
+		if (!hint && entryHint) hint = entryHint;
+	}
+
+	if (!message) {
+		for (const entry of chain) {
+			const entryMessage = readStringField(entry, 'message');
+			if (entryMessage) {
+				message = normalizeMessage(entryMessage);
+				break;
+			}
+		}
+	}
+
+	if (!message) {
+		message = error instanceof Error ? error.message : String(error);
+	}
+
+	return { message, hint };
+}
+
+function formatError(error: unknown): string {
+	const details =
+		error instanceof BtcaError
+			? { message: error.message, hint: error.hint }
+			: getErrorDisplayDetails(error);
+	let output = `Error: ${details.message}`;
+	if (details.hint) {
+		output += `\n\nHint: ${details.hint}`;
+	}
+	return output;
 }
 
 /**
@@ -99,6 +167,33 @@ function isGitUrl(input: string): boolean {
 	}
 }
 
+function isNpmReference(input: string): boolean {
+	const trimmed = input.trim();
+	if (trimmed.startsWith('npm:')) {
+		const spec = trimmed.slice(4);
+		if (!spec || /\s/.test(spec)) return false;
+		if (spec.startsWith('@')) {
+			return /^@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*(?:@[^\s/]+)?$/.test(spec);
+		}
+		return /^[a-z0-9][a-z0-9._-]*(?:@[^\s/]+)?$/.test(spec);
+	}
+
+	try {
+		const parsed = new URL(trimmed);
+		const hostname = parsed.hostname.toLowerCase();
+		if (
+			parsed.protocol !== 'https:' ||
+			(hostname !== 'npmjs.com' && hostname !== 'www.npmjs.com')
+		) {
+			return false;
+		}
+		const segments = parsed.pathname.split('/').filter(Boolean);
+		return segments[0] === 'package' && segments.length >= 2;
+	} catch {
+		return false;
+	}
+}
+
 export const askCommand = new Command('ask')
 	.description('Ask a question about configured resources')
 	.requiredOption('-q, --question <text>', 'Question to ask')
@@ -153,13 +248,13 @@ export const askCommand = new Command('ask')
 				const { resources } = resourcesResult;
 				const mentionResolution = normalizeResourceNames(mentionedResources, resources);
 				const explicitResolution = normalizeResourceNames(cliResources, resources);
-				const gitUrlResources: string[] = [];
+				const anonymousResources: string[] = [];
 				const unresolvedExplicit: string[] = [];
 
 				for (const rawResource of cliResources) {
 					if (explicitResolution.invalid.includes(rawResource)) {
-						if (isGitUrl(rawResource)) {
-							gitUrlResources.push(rawResource);
+						if (isGitUrl(rawResource) || isNpmReference(rawResource)) {
+							anonymousResources.push(rawResource);
 						} else {
 							unresolvedExplicit.push(rawResource);
 						}
@@ -177,7 +272,9 @@ export const askCommand = new Command('ask')
 					} else {
 						console.error('No resources are configured yet.');
 					}
-					console.error('Use a configured resource name or a valid HTTPS Git URL.');
+					console.error(
+						'Use a configured resource name, a valid HTTPS Git URL, or an npm reference (npm:<package> or npmjs URL).'
+					);
 					process.exit(1);
 				}
 
@@ -185,7 +282,7 @@ export const askCommand = new Command('ask')
 					names: [
 						...new Set([
 							...explicitResolution.names,
-							...gitUrlResources,
+							...anonymousResources,
 							...mentionResolution.names
 						])
 					]

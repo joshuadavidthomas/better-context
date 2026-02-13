@@ -418,6 +418,9 @@
 					},
 					{
 						"$ref": "#/components/schemas/LocalResource"
+					},
+					{
+						"$ref": "#/components/schemas/NpmResource"
 					}
 				]
 			},
@@ -463,6 +466,27 @@
 					},
 					"path": {
 						"type": "string"
+					},
+					"specialNotes": {
+						"type": ["string", "null"]
+					}
+				}
+			},
+			"NpmResource": {
+				"type": "object",
+				"required": ["type", "name", "package"],
+				"properties": {
+					"type": {
+						"const": "npm"
+					},
+					"name": {
+						"type": "string"
+					},
+					"package": {
+						"type": "string"
+					},
+					"version": {
+						"type": ["string", "null"]
 					},
 					"specialNotes": {
 						"type": ["string", "null"]
@@ -554,6 +578,9 @@
 					},
 					{
 						"$ref": "#/components/schemas/LocalResource"
+					},
+					{
+						"$ref": "#/components/schemas/NpmResource"
 					}
 				]
 			},

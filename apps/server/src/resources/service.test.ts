@@ -34,6 +34,31 @@ describe('Resources.resolveResourceDefinition', () => {
 		}
 	});
 
+	it('creates anonymous npm resources from npm references', () => {
+		const definition = Resources.resolveResourceDefinition(
+			'npm:@types/node@22.10.1',
+			() => undefined
+		);
+		expect(definition.type).toBe('npm');
+		if (definition.type === 'npm') {
+			expect(definition.package).toBe('@types/node');
+			expect(definition.version).toBe('22.10.1');
+			expect(definition.name).toBe('anonymous:npm:@types/node@22.10.1');
+		}
+	});
+
+	it('creates anonymous npm resources from npm package URLs', () => {
+		const definition = Resources.resolveResourceDefinition(
+			'https://www.npmjs.com/package/react/v/19.0.0',
+			() => undefined
+		);
+		expect(definition.type).toBe('npm');
+		if (definition.type === 'npm') {
+			expect(definition.package).toBe('react');
+			expect(definition.version).toBe('19.0.0');
+		}
+	});
+
 	it('reuses the same cache key for repeated normalized URLs', () => {
 		const first = Resources.createAnonymousResource('https://github.com/sveltejs/svelte.dev');
 		const second = Resources.createAnonymousResource(
@@ -53,7 +78,7 @@ describe('Resources.resolveResourceDefinition', () => {
 		);
 		expect(main).not.toBeNull();
 		expect(withPath).not.toBeNull();
-		if (main && withPath) {
+		if (main && withPath && main.type === 'git' && withPath.type === 'git') {
 			expect(createAnonymousDirectoryKey(main.url)).toBe(createAnonymousDirectoryKey(withPath.url));
 		}
 		if (main) {

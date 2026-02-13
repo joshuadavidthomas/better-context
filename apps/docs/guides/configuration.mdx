@@ -42,6 +42,12 @@ Example:
 			"branch": "main",
 			"searchPath": "apps/svelte.dev",
 			"specialNotes": "Focus on docs content"
+		},
+		{
+			"type": "npm",
+			"name": "reactNpm",
+			"package": "react",
+			"version": "latest"
 		}
 	]
 }
@@ -69,6 +75,8 @@ migrated to use `.btca`.
 - Resource name: max 64 chars, regex `^@?[a-zA-Z0-9][a-zA-Z0-9._-]*(/[a-zA-Z0-9][a-zA-Z0-9._-]*)*$`, no `..`, no `//`, no trailing `/`
 - Branch: max 128 chars, regex `^[a-zA-Z0-9/_.-]+$`, must not start with `-`
 - Search path: max 256 chars, no `..`, no absolute paths, no newlines
+- npm package field: must be a valid npm package name (for example `react` or `@types/node`)
+- npm version/tag field: optional, must not contain spaces or `/`
 - Special notes: max 500 chars, no control characters
 - Question length: max 100,000 chars
 - Resources per request: max 20
@@ -82,6 +90,10 @@ migrated to use `.btca`.
   - Clones use a short hash-based key and are cleaned up automatically after the request.
   - btca tries `main`, `master`, `trunk`, then `dev` by default.
   - If your repo uses a different default branch, add it as a named resource instead of using a one-off URL.
+
+- One-off npm references (used directly in `btca ask`) are treated as temporary resources.
+  - Supported formats: `npm:<package>`, `npm:<package>@<version-or-tag>`, or npmjs package URLs.
+  - Package metadata/readme/page HTML are hydrated into a temporary folder and cleaned up automatically after the request.
 
 - `--global` flags exist on several commands, but the effective target is determined
   by whether a project config exists; there is no strict global override.

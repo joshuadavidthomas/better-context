@@ -1,25 +1,33 @@
 import { createHash } from 'node:crypto';
 
 import { Config } from '../config/index.ts';
-import { validateGitUrl } from '../validation/index.ts';
+import { parseNpmReference, validateGitUrl } from '../validation/index.ts';
 import { CommonHints } from '../errors.ts';
 
 import { ResourceError, resourceNameToKey } from './helpers.ts';
 import { loadGitResource } from './impls/git.ts';
+import { loadNpmResource } from './impls/npm.ts';
 import {
 	isGitResource,
+	isNpmResource,
 	type ResourceDefinition,
 	type GitResource,
-	type LocalResource
+	type LocalResource,
+	type NpmResource
 } from './schema.ts';
-import type { BtcaFsResource, BtcaGitResourceArgs, BtcaLocalResourceArgs } from './types.ts';
+import type {
+	BtcaFsResource,
+	BtcaGitResourceArgs,
+	BtcaLocalResourceArgs,
+	BtcaNpmResourceArgs
+} from './types.ts';
 
 const ANON_PREFIX = 'anonymous:';
 const ANON_DIRECTORY_PREFIX = 'anonymous-';
 const DEFAULT_ANON_BRANCH = 'main';
 
-export const createAnonymousDirectoryKey = (url: string): string => {
-	const hash = createHash('sha256').update(url).digest('hex').slice(0, 12);
+export const createAnonymousDirectoryKey = (reference: string): string => {
+	const hash = createHash('sha256').update(reference).digest('hex').slice(0, 12);
 	return `${ANON_DIRECTORY_PREFIX}${hash}`;
 };
 
@@ -69,6 +77,25 @@ export namespace Resources {
 		specialAgentInstructions: definition.specialNotes ?? ''
 	});
 
+	const definitionToNpmArgs = (
+		definition: NpmResource,
+		resourcesDirectory: string
+	): BtcaNpmResourceArgs => {
+		const reference = `${definition.package}${definition.version ? `@${definition.version}` : ''}`;
+		return {
+			type: 'npm',
+			name: definition.name,
+			package: definition.package,
+			...(definition.version ? { version: definition.version } : {}),
+			resourcesDirectoryPath: resourcesDirectory,
+			specialAgentInstructions: definition.specialNotes ?? '',
+			ephemeral: isAnonymousResource(definition.name),
+			localDirectoryKey: isAnonymousResource(definition.name)
+				? createAnonymousDirectoryKey(reference)
+				: undefined
+		};
+	};
+
 	const loadLocalResource = (args: BtcaLocalResourceArgs): BtcaFsResource => ({
 		_tag: 'fs-based',
 		name: args.name,
@@ -79,17 +106,28 @@ export namespace Resources {
 		getAbsoluteDirectoryPath: async () => args.path
 	});
 
-	export const createAnonymousResource = (reference: string): GitResource | null => {
-		const gitUrlResult = validateGitUrl(reference);
-		if (!gitUrlResult.valid) return null;
+	export const createAnonymousResource = (reference: string): ResourceDefinition | null => {
+		const npmReference = parseNpmReference(reference);
+		if (npmReference) {
+			return {
+				type: 'npm',
+				name: `${ANON_PREFIX}${npmReference.normalizedReference}`,
+				package: npmReference.packageName,
+				...(npmReference.version ? { version: npmReference.version } : {})
+			};
+		}
 
-		const normalizedUrl = gitUrlResult.value;
-		return {
-			type: 'git',
-			name: `${ANON_PREFIX}${normalizedUrl}`,
-			url: normalizedUrl,
-			branch: DEFAULT_ANON_BRANCH
-		};
+		const gitUrlResult = validateGitUrl(reference);
+		if (gitUrlResult.valid) {
+			const normalizedUrl = gitUrlResult.value;
+			return {
+				type: 'git',
+				name: `${ANON_PREFIX}${normalizedUrl}`,
+				url: normalizedUrl,
+				branch: DEFAULT_ANON_BRANCH
+			};
+		}
+		return null;
 	};
 
 	export const resolveResourceDefinition = (
@@ -116,9 +154,13 @@ export namespace Resources {
 
 				if (isGitResource(definition)) {
 					return loadGitResource(definitionToGitArgs(definition, config.resourcesDirectory, quiet));
-				} else {
-					return loadLocalResource(definitionToLocalArgs(definition));
 				}
+
+				if (isNpmResource(definition)) {
+					return loadNpmResource(definitionToNpmArgs(definition, config.resourcesDirectory));
+				}
+
+				return loadLocalResource(definitionToLocalArgs(definition));
 			}
 		};
 	};

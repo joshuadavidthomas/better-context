@@ -18,6 +18,8 @@ const RESOURCE_NAME_REGEX = /^@?[a-zA-Z0-9][a-zA-Z0-9._-]*(\/[a-zA-Z0-9][a-zA-Z0
  * Must not start with hyphen to prevent git option injection.
  */
 const BRANCH_NAME_REGEX = /^[a-zA-Z0-9/_.-]+$/;
+const NPM_PACKAGE_SEGMENT_REGEX = /^[a-z0-9][a-z0-9._-]*$/;
+const NPM_VERSION_OR_TAG_REGEX = /^[^\s/]+$/;
 
 const parseUrl = (value: string) =>
 	Result.try(() => new URL(value)).match({
@@ -128,6 +130,28 @@ const SearchPathsSchema = z
 	.refine((paths) => paths.length > 0, { message: 'searchPaths must include at least one path' })
 	.optional();
 
+const NpmPackageSchema = z
+	.string()
+	.min(1, 'NPM package cannot be empty')
+	.refine((name) => {
+		if (name.startsWith('@')) {
+			const parts = name.split('/');
+			return (
+				parts.length === 2 &&
+				parts[0] !== '@' &&
+				NPM_PACKAGE_SEGMENT_REGEX.test(parts[0]!.slice(1)) &&
+				NPM_PACKAGE_SEGMENT_REGEX.test(parts[1]!)
+			);
+		}
+		return !name.includes('/') && NPM_PACKAGE_SEGMENT_REGEX.test(name);
+	}, 'NPM package must be a valid npm package name (e.g. react or @types/node)');
+
+const NpmVersionSchema = z
+	.string()
+	.max(LIMITS.BRANCH_NAME_MAX, `Version/tag too long (max ${LIMITS.BRANCH_NAME_MAX} chars)`)
+	.regex(NPM_VERSION_OR_TAG_REGEX, 'Version/tag must not contain spaces or "/"')
+	.optional();
+
 /**
  * Local path field with basic validation.
  */
@@ -175,13 +199,23 @@ export const LocalResourceSchema = z.object({
 	specialNotes: SpecialNotesSchema
 });
 
+export const NpmResourceSchema = z.object({
+	type: z.literal('npm'),
+	name: ResourceNameSchema,
+	package: NpmPackageSchema,
+	version: NpmVersionSchema,
+	specialNotes: SpecialNotesSchema
+});
+
 export const ResourceDefinitionSchema = z.discriminatedUnion('type', [
 	GitResourceSchema,
-	LocalResourceSchema
+	LocalResourceSchema,
+	NpmResourceSchema
 ]);
 
 export type GitResource = z.infer<typeof GitResourceSchema>;
 export type LocalResource = z.infer<typeof LocalResourceSchema>;
+export type NpmResource = z.infer<typeof NpmResourceSchema>;
 export type ResourceDefinition = z.infer<typeof ResourceDefinitionSchema>;
 
 export const isGitResource = (value: ResourceDefinition): value is GitResource =>
@@ -189,3 +223,6 @@ export const isGitResource = (value: ResourceDefinition): value is GitResource =
 
 export const isLocalResource = (value: ResourceDefinition): value is LocalResource =>
 	value.type === 'local';
+
+export const isNpmResource = (value: ResourceDefinition): value is NpmResource =>
+	value.type === 'npm';

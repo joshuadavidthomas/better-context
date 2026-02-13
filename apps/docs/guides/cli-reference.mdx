@@ -48,7 +48,7 @@ TUI keyboard shortcuts:
 
 ## `btca add [url-or-path]`
 
-Adds a git repo or local directory resource.
+Adds a git repo, local directory, or npm package resource.
 
 Options:
 
@@ -57,14 +57,21 @@ Options:
 - `-b, --branch <branch>` sets a branch (default `main`).
 - `-s, --search-path <path...>` sets one or more search paths.
 - `--notes <notes>` sets special notes.
-- `-t, --type <git|local>` forces the resource type.
+- `-t, --type <git|local|npm>` forces the resource type.
 
-Behavior: If no argument is provided, the CLI starts an interactive wizard. When `--type` is omitted, it auto-detects URL vs path. GitHub URLs are normalized to the base repo. Local paths are resolved to absolute paths.
+Behavior: If no argument is provided, the CLI starts an interactive wizard. When `--type` is omitted, it auto-detects git URL vs local path vs npm reference. GitHub URLs are normalized to the base repo. Local paths are resolved to absolute paths. npm references accept package specs (`react`, `@types/node`, `npm:react`) and npmjs package URLs.
 
-Example (local path):
+Examples:
 
 ```bash
+# Git resource
+btca add https://github.com/sveltejs/svelte.dev -n svelte-docs -t git -b main -s apps/svelte.dev
+
+# Local resource
 btca add -n my-docs -t local /absolute/path/to/docs
+
+# npm resource
+btca add npm:@types/node@22.10.1 -n node-types -t npm
 ```
 
 ## `btca remove [name]`
@@ -98,6 +105,14 @@ You can also pass raw HTTPS git URLs directly instead of a configured resource n
 - They are cloned into a temporary folder under `.tmp` and removed after the request finishes.
 - Branch detection tries `main`, then `master`, then `trunk`, then `dev`.
 - If none of those branches exist, the request fails with an instruction to add the repo as a named resource instead.
+
+You can also pass one-off npm references directly:
+
+- `npm:<package>` (for example `npm:react`)
+- `npm:<package>@<version-or-tag>` (for example `npm:@types/node@22.10.1`)
+- npmjs URLs (for example `https://www.npmjs.com/package/react`)
+
+These references are hydrated into temporary resources and removed automatically after the request.
 
 ## `btca connect`
 
@@ -207,4 +222,4 @@ Behavior:
 Tools:
 
 - `listResources` - list local resources.
-- `ask` - ask a question against local resources.
+- `ask` - ask a question against local resources, HTTPS git URLs, or npm references.

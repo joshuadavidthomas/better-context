@@ -5,7 +5,7 @@
 import { Result } from 'better-result';
 
 import { Config } from '../config/index.ts';
-import { type TaggedErrorOptions } from '../errors.ts';
+import { getErrorHint, getErrorMessage, type TaggedErrorOptions } from '../errors.ts';
 import { Metrics } from '../metrics/index.ts';
 import { Auth, getSupportedProviders } from '../providers/index.ts';
 import type { CollectionResult } from '../collections/types.ts';
@@ -217,30 +217,30 @@ export namespace Agent {
 
 			await cleanup();
 
-			return runResult.match({
-				ok: (result) => {
-					Metrics.info('agent.ask.complete', {
-						provider: config.provider,
-						model: config.model,
-						answerLength: result.answer.length,
-						eventCount: result.events.length
-					});
+			if (!Result.isOk(runResult)) {
+				const cause = runResult.error;
+				Metrics.error('agent.ask.error', { error: Metrics.errorInfo(cause) });
+				throw new AgentError({
+					message: getErrorMessage(cause),
+					hint:
+						getErrorHint(cause) ?? 'This may be a temporary issue. Try running the command again.',
+					cause
+				});
+			}
 
-					return {
-						answer: result.answer,
-						model: result.model,
-						events: result.events
-					};
-				},
-				err: (error) => {
-					Metrics.error('agent.ask.error', { error: Metrics.errorInfo(error) });
-					throw new AgentError({
-						message: 'Failed to get response from AI',
-						hint: 'This may be a temporary issue. Try running the command again.',
-						cause: error
-					});
-				}
+			const result = runResult.value;
+			Metrics.info('agent.ask.complete', {
+				provider: config.provider,
+				model: config.model,
+				answerLength: result.answer.length,
+				eventCount: result.events.length
 			});
+
+			return {
+				answer: result.answer,
+				model: result.model,
+				events: result.events
+			};
 		};
 
 		/**

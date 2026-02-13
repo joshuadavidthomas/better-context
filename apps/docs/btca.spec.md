@@ -124,6 +124,12 @@ Example:
 			"type": "local",
 			"name": "internal-docs",
 			"path": "/abs/path/docs"
+		},
+		{
+			"type": "npm",
+			"name": "reactNpm",
+			"package": "react",
+			"version": "latest"
 		}
 	]
 }
@@ -184,9 +190,9 @@ REPL supports `@resource` mentions.
 - `Tab` — autocomplete commands/mentions
 - `Up/Down` — navigate palettes/history
 
-### 4.3 `btca add [url-or-path]`
+### 4.3 `btca add [reference]`
 
-Add a git repo or local directory resource.
+Add a git repo, local directory, or npm package resource.
 
 Options:
 
@@ -195,14 +201,28 @@ Options:
 - `-b, --branch <branch>` (default `main`)
 - `-s, --search-path <path...>`
 - `--notes <notes>`
-- `-t, --type <git|local>`
+- `-t, --type <git|local|npm>`
 
 Behavior:
 
 - If no argument, interactive wizard.
-- If `--type` omitted, auto‑detects URL vs path.
+- If `--type` omitted, auto‑detects git URL vs local path vs npm reference.
 - Git URLs are normalized to base repo when GitHub.
 - Local paths are resolved to absolute paths.
+- npm references accept package specs (`react`, `@types/node`, `npm:react`) and npmjs package URLs.
+
+Examples:
+
+```bash
+# Git resource
+btca add https://github.com/sveltejs/svelte.dev -n svelte-docs -t git -b main -s apps/svelte.dev
+
+# Local resource
+btca add -n my-docs -t local /absolute/path/to/docs
+
+# npm resource
+btca add npm:@types/node@22.10.1 -n node-types -t npm
+```
 
 ### 4.4 `btca remove [name]`
 
@@ -232,6 +252,9 @@ Behavior:
 - Valid mentions are stripped from the query text before sending.
 - If no resources specified, uses **all** configured resources.
 - Uses `/question/stream` SSE endpoint.
+- Supports one-off resources via:
+  - HTTPS git URLs
+  - npm references (`npm:<package>`, `npm:<package>@<version-or-tag>`, or npmjs package URLs)
 
 ### 4.7 `btca connect`
 
@@ -303,7 +326,7 @@ Behavior:
 Tools:
 
 - `listResources`
-- `ask`
+- `ask` (supports local resources, HTTPS git URLs, and npm references)
 
 ### 4.14 `btca mcp local`
 
@@ -627,6 +650,15 @@ Search path:
 - No `..`
 - No absolute paths
 - No newline characters
+
+npm package name:
+
+- Must be a valid package name (for example `react` or `@types/node`)
+
+npm version/tag:
+
+- Optional
+- Must not contain spaces or `/`
 
 Special notes:
 

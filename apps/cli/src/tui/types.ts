@@ -13,6 +13,7 @@ import type { AssistantContent } from '@btca/shared';
 
 export interface Repo {
 	name: string;
+	type: 'git' | 'local' | 'npm';
 	url: string;
 	branch: string;
 	specialNotes?: string | undefined;

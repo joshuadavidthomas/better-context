@@ -35,7 +35,7 @@ const askSchema = z.object({
 		.array(z.string())
 		.optional()
 		.describe(
-			'Optional resource names or HTTPS GitHub repository URLs to query (defaults to all local resources)'
+			'Optional resource names, HTTPS git URLs, or npm references (npm:<package> / npmjs URL) to query (defaults to all local resources)'
 		)
 });
 type AskInput = z.infer<typeof askSchema>;
@@ -356,7 +356,7 @@ const runLocalServer = async (command: Command) => {
 		{
 			name: 'ask',
 			description:
-				'Ask a question about local resources, or any HTTPS GitHub repository URL passed in as a resource.',
+				'Ask a question about local resources, HTTPS git URLs, or npm references passed in as resources.',
 			schema: askSchema
 		},
 		async (args: AskInput) => {

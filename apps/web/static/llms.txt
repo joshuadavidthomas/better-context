@@ -42,10 +42,11 @@ It ships:
 - `btca connect`
   - Configure provider/model interactively or via flags.
 
-- `btca add --name <name> --type <type> [--url <url>] [--branch <branch>] [--path <path>] [--notes '<specialNotes>'] [--search-path '<path>']`
-  - Add a resource. Type is `git` (default) or `local`.
-  - Git resources require `--url <url>`, optional `--branch <branch>` (default: main).
-  - Local resources require `--path <path>`.
+- `btca add [reference] --name <name> --type <type> [--branch <branch>] [--notes '<specialNotes>'] [--search-path '<path>']`
+  - Add a resource. Type is `git`, `local`, or `npm`.
+  - Git resources use a GitHub URL as `[reference]`, optional `--branch <branch>` (default: main).
+  - Local resources use a local directory path as `[reference]`.
+  - npm resources use an npm reference as `[reference]` (`react`, `npm:@types/node`, or an npmjs package URL).
 - `btca remove [name]`
   - Remove a resource from config (with confirmation).
 

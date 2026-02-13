@@ -120,13 +120,16 @@ btca resources
 
 ```bash
 # Add a git repository
-btca add --name effect --type git --url https://github.com/Effect-TS/effect --branch main
+btca add https://github.com/Effect-TS/effect --name effect --type git --branch main
 
 # Add with search path (focus on specific subdirectory)
-btca add --name svelte --type git --url https://github.com/sveltejs/svelte.dev --branch main --search-path apps/svelte.dev
+btca add https://github.com/sveltejs/svelte.dev --name svelte --type git --branch main --search-path apps/svelte.dev
 
 # Add a local directory
-btca add --name myproject --type local --path /path/to/project
+btca add /path/to/project --name myproject --type local
+
+# Add an npm package
+btca add npm:react --name reactNpm --type npm
 ```
 
 ### Remove Resource

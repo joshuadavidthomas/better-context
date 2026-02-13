@@ -12,12 +12,13 @@ import { getErrorMessage, getErrorTag, getErrorHint } from './errors.ts';
 import { Metrics } from './metrics/index.ts';
 import { ModelsDevPricing } from './pricing/models-dev.ts';
 import { Resources } from './resources/service.ts';
-import { GitResourceSchema, LocalResourceSchema } from './resources/schema.ts';
+import { GitResourceSchema, LocalResourceSchema, NpmResourceSchema } from './resources/schema.ts';
 import { StreamService } from './stream/service.ts';
 import type { BtcaStreamMetaEvent } from './stream/types.ts';
 import {
 	LIMITS,
 	normalizeGitHubUrl,
+	parseNpmReference,
 	validateGitUrl,
 	validateResourceReference
 } from './validation/index.ts';
@@ -82,6 +83,8 @@ const ResourceReferenceField = z.string().superRefine((value, ctx) => {
 });
 
 const normalizeQuestionResourceReference = (reference: string): string => {
+	const npmReference = parseNpmReference(reference);
+	if (npmReference) return npmReference.normalizedReference;
 	const gitUrlResult = validateGitUrl(reference);
 	if (gitUrlResult.valid) return gitUrlResult.value;
 	return reference;
@@ -165,9 +168,18 @@ const AddLocalResourceRequestSchema = z.object({
 	specialNotes: LocalResourceSchema.shape.specialNotes
 });
 
+const AddNpmResourceRequestSchema = z.object({
+	type: z.literal('npm'),
+	name: NpmResourceSchema.shape.name,
+	package: NpmResourceSchema.shape.package,
+	version: NpmResourceSchema.shape.version,
+	specialNotes: NpmResourceSchema.shape.specialNotes
+});
+
 const AddResourceRequestSchema = z.discriminatedUnion('type', [
 	AddGitResourceRequestSchema,
-	AddLocalResourceRequestSchema
+	AddLocalResourceRequestSchema,
+	AddNpmResourceRequestSchema
 ]);
 
 const RemoveResourceRequestSchema = z.object({
@@ -188,16 +200,16 @@ class RequestError extends Error {
 
 const decodeJson = async <T>(req: Request, schema: z.ZodType<T>): Promise<T> => {
 	const bodyResult = await Result.tryPromise(() => req.json());
-	return bodyResult.match({
-		ok: (body) => {
-			const parsed = schema.safeParse(body);
-			if (!parsed.success) throw new RequestError('Invalid request body', parsed.error);
-			return parsed.data;
-		},
-		err: (cause) => {
-			throw new RequestError('Failed to parse request JSON', cause);
-		}
-	});
+	if (!Result.isOk(bodyResult)) {
+		throw new RequestError('Failed to parse request JSON', bodyResult.error);
+	}
+
+	const parsed = schema.safeParse(bodyResult.value);
+	if (!parsed.success) {
+		throw new RequestError('Invalid request body', parsed.error);
+	}
+
+	return parsed.data;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -242,6 +254,9 @@ const createApp = (deps: {
 				tag === 'ConfigError' ||
 				tag === 'InvalidProviderError' ||
 				tag === 'InvalidModelError' ||
+				tag === 'ProviderNotAuthenticatedError' ||
+				tag === 'ProviderAuthTypeError' ||
+				tag === 'ProviderNotFoundError' ||
 				tag === 'ProviderNotConnectedError' ||
 				tag === 'ProviderOptionsError'
 					? 400
@@ -287,7 +302,8 @@ const createApp = (deps: {
 							searchPaths: r.searchPaths ?? null,
 							specialNotes: r.specialNotes ?? null
 						};
-					} else {
+					}
+					if (r.type === 'local') {
 						return {
 							name: r.name,
 							type: r.type,
@@ -295,6 +311,13 @@ const createApp = (deps: {
 							specialNotes: r.specialNotes ?? null
 						};
 					}
+					return {
+						name: r.name,
+						type: r.type,
+						package: r.package,
+						version: r.version ?? null,
+						specialNotes: r.specialNotes ?? null
+					};
 				})
 			});
 		})
@@ -435,7 +458,8 @@ const createApp = (deps: {
 				};
 				const added = await config.addResource(resource);
 				return c.json(added, 201);
-			} else {
+			}
+			if (decoded.type === 'local') {
 				const resource = {
 					type: 'local' as const,
 					name: decoded.name,
@@ -445,6 +469,15 @@ const createApp = (deps: {
 				const added = await config.addResource(resource);
 				return c.json(added, 201);
 			}
+			const resource = {
+				type: 'npm' as const,
+				name: decoded.name,
+				package: decoded.package,
+				...(decoded.version ? { version: decoded.version } : {}),
+				...(decoded.specialNotes ? { specialNotes: decoded.specialNotes } : {})
+			};
+			const added = await config.addResource(resource);
+			return c.json(added, 201);
 		})
 
 		// DELETE /config/resources - Remove a resource
