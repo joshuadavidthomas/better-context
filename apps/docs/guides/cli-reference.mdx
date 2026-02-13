@@ -20,6 +20,8 @@ These options apply to local CLI commands.
 
 Launches the TUI by default. Use `--no-tui` for the REPL.
 
+Passing an unknown top-level command now exits with `error: unknown command '<command>'` and a non-zero status code, and may include a suggestion for a known command.
+
 REPL commands:
 
 - `/help` shows help.

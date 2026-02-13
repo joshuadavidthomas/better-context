@@ -64,33 +64,134 @@ program.addCommand(serveCommand);
 
 program.addCommand(telemetryCommand);
 
+const knownCommands = new Set(
+	program.commands.flatMap((command) => [command.name(), ...command.aliases()])
+);
+
+const distance = (left: string, right: string): number => {
+	const matrix = Array.from({ length: left.length + 1 }, () =>
+		Array.from({ length: right.length + 1 }, () => 0)
+	);
+
+	for (let col = 1; col <= right.length; col += 1) {
+		matrix[0]![col] = col;
+	}
+
+	for (let row = 1; row <= left.length; row += 1) {
+		matrix[row]![0] = row;
+	}
+
+	for (let row = 1; row <= left.length; row += 1) {
+		for (let col = 1; col <= right.length; col += 1) {
+			const currentRow = matrix[row]!;
+			const previousRow = matrix[row - 1]!;
+
+			currentRow[col] =
+				left[row - 1] === right[col - 1]
+					? previousRow[col - 1]!
+					: Math.min(previousRow[col]! + 1, currentRow[col - 1]! + 1, previousRow[col - 1]! + 1);
+		}
+	}
+
+	return matrix[left.length]![right.length]!;
+};
+
+const suggestCommand = (token: string) => {
+	let suggestion: string | null = null;
+	let bestDistance = Infinity;
+
+	for (const command of knownCommands) {
+		const nextDistance = distance(token, command);
+		if (nextDistance < bestDistance) {
+			suggestion = command;
+			bestDistance = nextDistance;
+		}
+	}
+
+	return bestDistance <= 2 ? suggestion : null;
+};
+
+const firstOperand = (): string | null => {
+	const parsed = program.parseOptions(process.argv.slice(2));
+	const [operand] = parsed.operands;
+	return typeof operand === 'string' && operand.length > 0 ? operand : null;
+};
+
+const unknownTopLevelCommand = () => {
+	const token = firstOperand();
+	if (token === null) return null;
+	return knownCommands.has(token) ? null : token;
+};
+
+const commandLike = (value: unknown): value is Command => {
+	return Boolean(
+		value &&
+		typeof value === 'object' &&
+		'name' in value &&
+		typeof (value as { name?: unknown }).name === 'function'
+	);
+};
+
+const rootOptionsLike = (value: unknown) =>
+	Boolean(
+		value &&
+		typeof value === 'object' &&
+		('server' in value ||
+			'port' in value ||
+			'tui' in value ||
+			'thinking' in value ||
+			'tools' in value ||
+			'subAgent' in value)
+	);
+
+const handleUnknownTopLevelCommand = (token: string) => {
+	const suggestion = suggestCommand(token);
+	const hint = suggestion ? ` (Did you mean '${suggestion}'?)` : '';
+	console.error(`error: unknown command '${token}'${hint}`);
+	process.exit(1);
+};
+
+const token = unknownTopLevelCommand();
+
+if (token !== null) {
+	handleUnknownTopLevelCommand(token);
+}
+
 // Default action (no subcommand) → launch TUI or REPL
-program.action(
-	async (options: {
+program.action(async (...actionArgs: unknown[]) => {
+	const command = actionArgs[actionArgs.length - 1];
+	const options = actionArgs.length > 1 ? actionArgs[actionArgs.length - 2] : actionArgs[0];
+
+	if (!commandLike(command) || !rootOptionsLike(options)) {
+		console.error('error: invalid command invocation');
+		process.exit(1);
+	}
+
+	const typedOptions = options as {
 		server?: string;
 		port?: number;
 		tui?: boolean;
 		thinking?: boolean;
 		tools?: boolean;
 		subAgent?: boolean;
-	}) => {
-		const result = await Result.tryPromise(async () => {
-			// --no-tui sets tui to false
-			if (options.tui === false) {
-				await launchRepl(options);
-			} else {
-				await launchTui(options);
-			}
-		});
+	};
 
-		if (Result.isError(result)) {
-			console.error(
-				'Error:',
-				result.error instanceof Error ? result.error.message : String(result.error)
-			);
-			process.exit(1);
+	const result = await Result.tryPromise(async () => {
+		// --no-tui sets tui to false
+		if (typedOptions.tui === false) {
+			await launchRepl(typedOptions);
+		} else {
+			await launchTui(typedOptions);
 		}
+	});
+
+	if (Result.isError(result)) {
+		console.error(
+			'Error:',
+			result.error instanceof Error ? result.error.message : String(result.error)
+		);
+		process.exit(1);
 	}
-);
+});
 
 program.parse();

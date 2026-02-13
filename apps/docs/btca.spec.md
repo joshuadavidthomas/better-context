@@ -164,6 +164,8 @@ All commands support:
 
 Launches the TUI by default. With `--no-tui`, launches REPL.
 
+Unknown top-level commands (e.g. `btca remoev`) now fail fast with `error: unknown command '<command>'`, return a non-zero status, and may include a suggested command name.
+
 **REPL commands**:
 
 - `/help` — show help
