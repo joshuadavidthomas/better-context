@@ -1,19 +1,27 @@
 import {
 	createContext,
-	createSignal,
+	useCallback,
 	useContext,
-	type Accessor,
-	type Component,
-	type ParentProps
-} from 'solid-js';
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+	type ReactNode
+} from 'react';
 import { formatConversationHistory, type ThreadMessage } from '@btca/shared';
 import { Result } from 'better-result';
 
-import type { Message, InputState, CancelState, BtcaChunk } from '../types.ts';
+import type { BtcaChunk, CancelState, InputState, Message } from '../types.ts';
 import { services, type ChunkUpdate } from '../services.ts';
 import { copyToClipboard } from '../clipboard.ts';
 import { formatError } from '../lib/format-error.ts';
-import { createThread, loadThread, saveThread, type LocalThreadMessage } from '../thread-store.ts';
+import {
+	createThread,
+	loadThread,
+	saveThread,
+	type LocalThread,
+	type LocalThreadMessage
+} from '../thread-store.ts';
 
 const formatUsd = (value: number) => {
 	const abs = Math.abs(value);
@@ -92,26 +100,22 @@ const formatStreamStats = (done: {
 };
 
 type MessagesState = {
-	// Message history
-	messages: Accessor<Message[]>;
+	messages: Message[];
 	addSystemMessage: (content: string) => void;
 	clearMessages: () => void;
 
-	// Thread resources - accumulates @mentions across the conversation
-	threadResources: Accessor<string[]>;
+	threadResources: string[];
 
-	// Streaming state
-	isStreaming: Accessor<boolean>;
-	cancelState: Accessor<CancelState>;
+	isStreaming: boolean;
+	cancelState: CancelState;
 
-	// Actions
 	send: (input: InputState, newResources: string[]) => Promise<void>;
 	requestCancel: () => void;
 	confirmCancel: () => Promise<void>;
 	resumeThread: (threadId: string) => Promise<void>;
 };
 
-const MessagesContext = createContext<MessagesState>();
+const MessagesContext = createContext<MessagesState | null>(null);
 
 export const useMessagesContext = () => {
 	const context = useContext(MessagesContext);
@@ -127,44 +131,114 @@ const defaultMessageHistory: Message[] = [
 	}
 ];
 
-export const MessagesProvider: Component<ParentProps> = (props) => {
-	const [messages, setMessages] = createSignal<Message[]>(defaultMessageHistory);
-	const [threadResources, setThreadResources] = createSignal<string[]>([]);
-	const [isStreaming, setIsStreaming] = createSignal(false);
-	const [cancelState, setCancelState] = createSignal<CancelState>('none');
-	const initialThread = createThread();
-	const [threadId, setThreadId] = createSignal<string>(initialThread.id);
-	const [threadCreatedAt, setThreadCreatedAt] = createSignal(initialThread.createdAt);
+const toStoredMessages = (items: Message[]): LocalThreadMessage[] => {
+	const now = Date.now();
+	return items.map((message) => {
+		if (message.role === 'user') {
+			return {
+				role: 'user',
+				content: message.content.map((s) => s.content).join(''),
+				createdAt: now
+			};
+		}
+		if (message.role === 'assistant') {
+			return {
+				role: 'assistant',
+				content: message.content,
+				canceled: message.canceled,
+				createdAt: now
+			};
+		}
+		return {
+			role: 'system',
+			content: message.content,
+			createdAt: now
+		};
+	});
+};
 
-	// Internal helpers for message updates
-	const addMessage = (message: Message) => setMessages((prev) => [...prev, message]);
+const toUiMessages = (items: LocalThreadMessage[]): Message[] =>
+	items.map((message) => {
+		if (message.role === 'user') {
+			return {
+				role: 'user',
+				content: [{ type: 'text', content: String(message.content) }]
+			};
+		}
+		if (message.role === 'assistant') {
+			return {
+				role: 'assistant',
+				content: message.content,
+				canceled: message.canceled
+			};
+		}
+		return { role: 'system', content: message.content };
+	});
 
-	const addChunkToLastAssistant = (chunk: BtcaChunk) => {
+export const MessagesProvider = (props: { children: ReactNode }) => {
+	const initialThread = useMemo(() => createThread(), []);
+
+	const [messages, setMessages] = useState<Message[]>(defaultMessageHistory);
+	const [threadResources, setThreadResources] = useState<string[]>([]);
+	const [isStreaming, setIsStreaming] = useState(false);
+	const [cancelState, setCancelState] = useState<CancelState>('none');
+	const [threadId, setThreadId] = useState<string>(initialThread.id);
+	const [threadCreatedAt, setThreadCreatedAt] = useState(initialThread.createdAt);
+
+	const messagesRef = useRef(messages);
+	const resourcesRef = useRef(threadResources);
+	const cancelStateRef = useRef(cancelState);
+	const threadIdRef = useRef(threadId);
+	const threadCreatedAtRef = useRef(threadCreatedAt);
+	const hasAskedQuestionRef = useRef(false);
+
+	useEffect(() => {
+		messagesRef.current = messages;
+	}, [messages]);
+	useEffect(() => {
+		resourcesRef.current = threadResources;
+	}, [threadResources]);
+	useEffect(() => {
+		cancelStateRef.current = cancelState;
+	}, [cancelState]);
+	useEffect(() => {
+		threadIdRef.current = threadId;
+	}, [threadId]);
+	useEffect(() => {
+		threadCreatedAtRef.current = threadCreatedAt;
+	}, [threadCreatedAt]);
+
+	const addMessage = useCallback(
+		(message: Message) => setMessages((prev) => [...prev, message]),
+		[]
+	);
+
+	const addChunkToLastAssistant = useCallback((chunk: BtcaChunk) => {
 		setMessages((prev) => {
-			const newHistory = [...prev];
-			for (let i = newHistory.length - 1; i >= 0; i--) {
-				const msg = newHistory[i];
+			const next = [...prev];
+			for (let i = next.length - 1; i >= 0; i--) {
+				const msg = next[i];
 				if (
 					msg?.role === 'assistant' &&
 					typeof msg.content === 'object' &&
 					msg.content.type === 'chunks'
 				) {
-					newHistory[i] = {
+					next[i] = {
 						role: 'assistant',
 						content: { type: 'chunks', chunks: [...msg.content.chunks, chunk] }
 					};
 					break;
 				}
 			}
-			return newHistory;
+			return next;
 		});
-	};
+	}, []);
 
-	const updateChunkInLastAssistant = (id: string, updates: Partial<BtcaChunk>) => {
+	const updateChunkInLastAssistant = useCallback((id: string, updates: Partial<BtcaChunk>) => {
 		setMessages((prev) => {
-			const newHistory = [...prev];
-			for (let i = newHistory.length - 1; i >= 0; i--) {
-				const msg = newHistory[i];
+			const next = [...prev];
+			for (let i = next.length - 1; i >= 0; i--) {
+				const msg = next[i];
 				if (
 					msg?.role === 'assistant' &&
 					typeof msg.content === 'object' &&
@@ -183,216 +257,165 @@ export const MessagesProvider: Component<ParentProps> = (props) => {
 						}
 						return c;
 					});
-					newHistory[i] = {
+					next[i] = {
 						role: 'assistant',
 						content: { type: 'chunks', chunks: updatedChunks }
 					};
 					break;
 				}
 			}
-			return newHistory;
+			return next;
 		});
-	};
+	}, []);
 
-	const markLastAssistantMessageCanceled = () => {
+	const markLastAssistantMessageCanceled = useCallback(() => {
 		setMessages((prev) => {
-			const newHistory = [...prev];
-			for (let i = newHistory.length - 1; i >= 0; i--) {
-				const msg = newHistory[i];
+			const next = [...prev];
+			for (let i = next.length - 1; i >= 0; i--) {
+				const msg = next[i];
 				if (msg?.role === 'assistant') {
-					newHistory[i] = { ...msg, canceled: true };
+					next[i] = { ...msg, canceled: true };
 					break;
 				}
 			}
-			return newHistory;
+			return next;
 		});
-	};
+	}, []);
 
-	const toStoredMessages = (items: Message[]): LocalThreadMessage[] => {
-		const now = Date.now();
-		return items.map((message) => {
-			if (message.role === 'user') {
-				return {
-					role: 'user',
-					content: message.content.map((s) => s.content).join(''),
-					createdAt: now
-				};
-			}
-			if (message.role === 'assistant') {
-				return {
-					role: 'assistant',
-					content: message.content,
-					canceled: message.canceled,
-					createdAt: now
-				};
-			}
-			return {
-				role: 'system',
-				content: message.content,
-				createdAt: now
-			};
-		});
-	};
+	const buildThreadSnapshot = useCallback(
+		(overrides?: Partial<LocalThread>): LocalThread => ({
+			id: overrides?.id ?? threadIdRef.current,
+			title: overrides?.title,
+			createdAt: overrides?.createdAt ?? threadCreatedAtRef.current,
+			lastActivityAt: overrides?.lastActivityAt ?? Date.now(),
+			resources: overrides?.resources ?? resourcesRef.current,
+			messages: overrides?.messages ?? toStoredMessages(messagesRef.current)
+		}),
+		[]
+	);
 
-	const toUiMessages = (items: LocalThreadMessage[]): Message[] => {
-		return items.map((message) => {
-			if (message.role === 'user') {
-				return {
-					role: 'user',
-					content: [{ type: 'text', content: String(message.content) }]
-				};
-			}
-			if (message.role === 'assistant') {
-				return {
-					role: 'assistant',
-					content: message.content,
-					canceled: message.canceled
-				};
-			}
-			return { role: 'system', content: message.content };
-		});
-	};
+	const persistCurrentThread = useCallback(async () => {
+		if (!hasAskedQuestionRef.current) return;
+		await saveThread(buildThreadSnapshot());
+	}, [buildThreadSnapshot]);
 
-	const buildThreadSnapshot = () => ({
-		id: threadId(),
-		createdAt: threadCreatedAt(),
-		lastActivityAt: Date.now(),
-		resources: threadResources(),
-		messages: toStoredMessages(messages())
-	});
-
-	const persistCurrentThread = async () => {
-		const snapshot = buildThreadSnapshot();
-		await saveThread(snapshot);
-	};
-
-	const startNewThread = async () => {
+	const startNewThread = useCallback(async () => {
 		const next = createThread();
 		setThreadId(next.id);
 		setThreadCreatedAt(next.createdAt);
 		setMessages(defaultMessageHistory);
 		setThreadResources([]);
-		await persistCurrentThread();
-	};
+		hasAskedQuestionRef.current = false;
+	}, []);
 
-	const handleChunkUpdate = (update: ChunkUpdate) => {
-		if (update.type === 'add') {
-			addChunkToLastAssistant(update.chunk);
-		} else {
-			updateChunkInLastAssistant(update.id, update.chunk);
-		}
-	};
+	const handleChunkUpdate = useCallback(
+		(update: ChunkUpdate) => {
+			if (update.type === 'add') {
+				addChunkToLastAssistant(update.chunk);
+			} else {
+				updateChunkInLastAssistant(update.id, update.chunk);
+			}
+		},
+		[addChunkToLastAssistant, updateChunkInLastAssistant]
+	);
 
-	/**
-	 * Convert local TUI messages to ThreadMessage format for history building.
-	 * The TUI uses InputState for user messages, which needs to be flattened to string.
-	 */
-	const convertToThreadMessages = (): ThreadMessage[] => {
-		return messages()
+	const convertToThreadMessages = useCallback((): ThreadMessage[] => {
+		return messagesRef.current
 			.filter(
 				(m): m is Exclude<Message, { role: 'system' }> =>
 					m.role === 'user' || m.role === 'assistant'
 			)
 			.map((m): ThreadMessage => {
 				if (m.role === 'user') {
-					// Flatten InputState segments to plain string
-					return {
-						role: 'user',
-						content: m.content.map((s) => s.content).join('')
-					};
+					return { role: 'user', content: m.content.map((s) => s.content).join('') };
 				}
-				// Assistant messages - content is already compatible with ThreadMessage
-				return {
-					role: 'assistant',
-					content: m.content,
-					canceled: m.canceled
-				};
+				return { role: 'assistant', content: m.content, canceled: m.canceled };
 			});
-	};
+	}, []);
 
-	// Main send method
-	const send = async (input: InputState, newResources: string[]) => {
-		// Keep @mentions in the question - they provide context about what the user is asking about
-		const question = input
-			.map((s) => s.content)
-			.join('')
-			.trim()
-			.replace(/\s+/g, ' ');
+	const send = useCallback(
+		async (input: InputState, newResources: string[]) => {
+			// Keep @mentions in the question - they provide context about what the user is asking about
+			const question = input
+				.map((s) => s.content)
+				.join('')
+				.trim()
+				.replace(/\s+/g, ' ');
 
-		// Accumulate new resources into thread resources
-		const currentResources = threadResources();
-		const updatedResources = [...new Set([...currentResources, ...newResources])];
-		setThreadResources(updatedResources);
+			hasAskedQuestionRef.current = true;
 
-		// Convert messages to thread format for history building (before adding new message)
-		const threadMessages = convertToThreadMessages();
+			const updatedResources = [...new Set([...resourcesRef.current, ...newResources])];
+			setThreadResources(updatedResources);
 
-		// Add user message
-		addMessage({ role: 'user', content: input });
+			const threadMessages = convertToThreadMessages();
 
-		// Add placeholder assistant message
-		addMessage({ role: 'assistant', content: { type: 'chunks', chunks: [] } });
+			setMessages((prev) => [
+				...prev,
+				{ role: 'user', content: input } satisfies Message,
+				{ role: 'assistant', content: { type: 'chunks', chunks: [] } } satisfies Message
+			]);
 
-		setIsStreaming(true);
-		setCancelState('none');
+			setIsStreaming(true);
+			setCancelState('none');
 
-		// Build the full question with history using shared formatting
-		const questionWithHistory = formatConversationHistory(threadMessages, question);
+			const result = await Result.tryPromise(async () => {
+				const questionWithHistory = formatConversationHistory(threadMessages, question);
+				const result = await services.askQuestion(
+					updatedResources,
+					questionWithHistory,
+					handleChunkUpdate
+				);
+				const finalChunks = result.chunks;
 
-		const result = await Result.tryPromise(async () => {
-			const result = await services.askQuestion(
-				updatedResources,
-				questionWithHistory,
-				handleChunkUpdate
-			);
-			const finalChunks = result.chunks;
+				if (cancelStateRef.current === 'pending') return;
 
-			// Check if canceled during streaming
-			if (cancelState() === 'pending') return;
+				if (result.doneEvent) {
+					const stats = formatStreamStats(result.doneEvent);
+					if (stats) addMessage({ role: 'system', content: stats });
+				}
 
-			if (result.doneEvent) {
-				const stats = formatStreamStats(result.doneEvent);
-				if (stats) addMessage({ role: 'system', content: stats });
+				const textChunks = finalChunks.filter((c) => c.type === 'text');
+				const fullResponse = textChunks.map((c) => c.text).join('\n\n');
+
+				if (fullResponse) {
+					await copyToClipboard(fullResponse);
+					addMessage({ role: 'system', content: 'Answer copied to clipboard!' });
+				}
+			});
+
+			if (result.isErr() && cancelStateRef.current !== 'pending') {
+				addMessage({ role: 'system', content: `Error: ${formatError(result.error)}` });
 			}
 
-			const textChunks = finalChunks.filter((c) => c.type === 'text');
-			const fullResponse = textChunks.map((c) => c.text).join('\n\n');
+			setIsStreaming(false);
+			setCancelState('none');
 
-			if (fullResponse) {
-				await copyToClipboard(fullResponse);
-				addMessage({ role: 'system', content: 'Answer copied to clipboard!' });
+			const persistResult = await Result.tryPromise(persistCurrentThread);
+			if (persistResult.isErr()) {
+				addMessage({ role: 'system', content: `Error: ${formatError(persistResult.error)}` });
 			}
-		});
-		if (result.isErr() && cancelState() !== 'pending') {
-			addMessage({ role: 'system', content: `Error: ${formatError(result.error)}` });
-		}
-		setIsStreaming(false);
-		setCancelState('none');
-		const persistResult = await Result.tryPromise(persistCurrentThread);
-		if (persistResult.isErr()) {
-			addMessage({ role: 'system', content: `Error: ${formatError(persistResult.error)}` });
-		}
-	};
+		},
+		[addMessage, convertToThreadMessages, handleChunkUpdate, persistCurrentThread]
+	);
 
-	const requestCancel = () => {
-		if (cancelState() === 'none') {
-			setCancelState('pending');
-		}
-	};
+	const requestCancel = useCallback(() => {
+		setCancelState((prev) => (prev === 'none' ? 'pending' : prev));
+	}, []);
 
-	const confirmCancel = async () => {
+	const confirmCancel = useCallback(async () => {
 		await services.cancelCurrentRequest();
 		markLastAssistantMessageCanceled();
 		addMessage({ role: 'system', content: 'Request canceled.' });
 		setIsStreaming(false);
 		setCancelState('none');
+
 		const persistResult = await Result.tryPromise(persistCurrentThread);
 		if (persistResult.isErr()) {
 			addMessage({ role: 'system', content: `Error: ${formatError(persistResult.error)}` });
 		}
-	};
+	}, [addMessage, markLastAssistantMessageCanceled, persistCurrentThread]);
 
-	const clearMessages = () => {
+	const clearMessages = useCallback(() => {
 		void (async () => {
 			const persistResult = await Result.tryPromise(persistCurrentThread);
 			if (persistResult.isErr()) {
@@ -404,47 +427,69 @@ export const MessagesProvider: Component<ParentProps> = (props) => {
 				addMessage({ role: 'system', content: `Error: ${formatError(resetResult.error)}` });
 			}
 		})();
-	};
+	}, [addMessage, persistCurrentThread, startNewThread]);
 
-	const resumeThread = async (nextThreadId: string) => {
-		if (nextThreadId === threadId()) return;
-		const persistResult = await Result.tryPromise(persistCurrentThread);
-		if (persistResult.isErr()) {
-			addMessage({ role: 'system', content: `Error: ${formatError(persistResult.error)}` });
-			return;
-		}
-		const threadResult = await Result.tryPromise(() => loadThread(nextThreadId));
-		if (threadResult.isErr()) {
-			addMessage({ role: 'system', content: `Error: ${formatError(threadResult.error)}` });
-			return;
-		}
-		const thread = threadResult.value;
-		if (!thread) {
-			addMessage({ role: 'system', content: 'Thread not found.' });
-			return;
-		}
-		setThreadId(thread.id);
-		setThreadCreatedAt(thread.createdAt);
-		setMessages(toUiMessages(thread.messages));
-		setThreadResources(thread.resources);
-	};
+	const resumeThread = useCallback(
+		async (nextThreadId: string) => {
+			if (nextThreadId === threadIdRef.current) return;
 
-	const state: MessagesState = {
-		messages,
-		addSystemMessage: (content) => addMessage({ role: 'system', content }),
-		clearMessages,
-		threadResources,
-		isStreaming,
-		cancelState,
-		send,
-		requestCancel,
-		confirmCancel,
-		resumeThread
-	};
+			const persistResult = await Result.tryPromise(persistCurrentThread);
+			if (persistResult.isErr()) {
+				addMessage({ role: 'system', content: `Error: ${formatError(persistResult.error)}` });
+				return;
+			}
 
-	queueMicrotask(() => {
+			const threadResult = await Result.tryPromise(() => loadThread(nextThreadId));
+			if (threadResult.isErr()) {
+				addMessage({ role: 'system', content: `Error: ${formatError(threadResult.error)}` });
+				return;
+			}
+
+			const thread = threadResult.value;
+			if (!thread) {
+				addMessage({ role: 'system', content: 'Thread not found.' });
+				return;
+			}
+
+			hasAskedQuestionRef.current = thread.messages.some((m) => m.role === 'user');
+			setThreadId(thread.id);
+			setThreadCreatedAt(thread.createdAt);
+			setMessages(toUiMessages(thread.messages));
+			setThreadResources(thread.resources);
+		},
+		[addMessage, persistCurrentThread]
+	);
+
+	useEffect(() => {
 		void Result.tryPromise(persistCurrentThread);
-	});
+	}, [persistCurrentThread]);
+
+	const state = useMemo<MessagesState>(
+		() => ({
+			messages,
+			addSystemMessage: (content) => addMessage({ role: 'system', content }),
+			clearMessages,
+			threadResources,
+			isStreaming,
+			cancelState,
+			send,
+			requestCancel,
+			confirmCancel,
+			resumeThread
+		}),
+		[
+			messages,
+			addMessage,
+			clearMessages,
+			threadResources,
+			isStreaming,
+			cancelState,
+			send,
+			requestCancel,
+			confirmCancel,
+			resumeThread
+		]
+	);
 
 	return <MessagesContext.Provider value={state}>{props.children}</MessagesContext.Provider>;
 };

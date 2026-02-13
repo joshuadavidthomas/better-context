@@ -29,6 +29,23 @@ REPL commands:
 
 The REPL supports `@resource` mentions.
 
+TUI command palette (`/`):
+
+- `/connect` configures provider and model.
+- `/add` opens the add-resource wizard.
+- `/clear` clears chat history.
+- `/resume` opens thread resume.
+- `/new` is an alias for `/clear`.
+
+TUI keyboard shortcuts:
+
+- `Enter` sends message.
+- `Escape` cancels streaming response (press twice to confirm).
+- `Ctrl+C` clears input or quits.
+- `Ctrl+Q` quits.
+- `Tab` autocompletes commands/mentions.
+- `Up/Down` navigates palettes/history.
+
 ## `btca add [url-or-path]`
 
 Adds a git repo or local directory resource.

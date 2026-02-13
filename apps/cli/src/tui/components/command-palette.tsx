@@ -1,47 +1,51 @@
-import { createSignal, createMemo, For, Show, type Component, type Setter } from 'solid-js';
+import { useEffect, useMemo, useState } from 'react';
 import type { TextareaRenderable } from '@opentui/core';
-import { colors } from '../theme.ts';
-import { useKeyboard } from '@opentui/solid';
+import { useKeyboard } from '@opentui/react';
+
 import { COMMANDS, filterCommands } from '../commands.ts';
+import { colors } from '../theme.ts';
 import type { Command, InputState } from '../types.ts';
 
 interface CommandPaletteProps {
 	inputState: InputState;
-	setInputState: Setter<InputState>;
+	setInputState: (next: InputState | ((prev: InputState) => InputState)) => void;
 	inputRef: TextareaRenderable | null;
 	onExecute: (command: Command) => void;
 }
 
-export const CommandPalette: Component<CommandPaletteProps> = (props) => {
-	const input = () => props.inputState[0]?.content;
+export const CommandPalette = (props: CommandPaletteProps) => {
+	const input = props.inputState[0]?.content;
+	const trimmedInput = input?.toLowerCase().trim().slice(1) ?? '';
 
-	const filteredCommands = createMemo(() => {
-		const curInput = input();
-		if (!curInput) return COMMANDS;
-		const trimmedInput = curInput.toLowerCase().trim().slice(1);
+	const filteredCommands = useMemo(() => {
+		if (!input) return COMMANDS;
 		return filterCommands(trimmedInput);
-	});
+	}, [input]);
 
-	const [selectedIndex, setSelectedIndex] = createSignal(0);
+	const [selectedIndex, setSelectedIndex] = useState(0);
+	const getDisplayLabel = (cmd: Command) => {
+		const isAliasMatch = cmd.alias?.toLowerCase().startsWith(trimmedInput);
+		return isAliasMatch ? `/${cmd.name} (${cmd.alias})` : `/${cmd.name}`;
+	};
+
+	useEffect(() => {
+		setSelectedIndex((prev) => {
+			if (filteredCommands.length === 0) return 0;
+			if (prev >= filteredCommands.length) return filteredCommands.length - 1;
+			return prev < 0 ? 0 : prev;
+		});
+	}, [filteredCommands.length]);
 
 	useKeyboard((key) => {
 		switch (key.name) {
 			case 'up':
-				if (selectedIndex() > 0) {
-					setSelectedIndex(selectedIndex() - 1);
-				} else {
-					setSelectedIndex(filteredCommands().length - 1);
-				}
+				setSelectedIndex((prev) => (prev > 0 ? prev - 1 : filteredCommands.length - 1));
 				break;
 			case 'down':
-				if (selectedIndex() < filteredCommands().length - 1) {
-					setSelectedIndex(selectedIndex() + 1);
-				} else {
-					setSelectedIndex(0);
-				}
+				setSelectedIndex((prev) => (prev < filteredCommands.length - 1 ? prev + 1 : 0));
 				break;
 			case 'tab': {
-				const curSelectedCommand = filteredCommands()[selectedIndex()];
+				const curSelectedCommand = filteredCommands[selectedIndex];
 				if (curSelectedCommand) {
 					props.setInputState([{ content: '/' + curSelectedCommand.name, type: 'command' }]);
 					const inputRef = props.inputRef;
@@ -54,7 +58,7 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
 				break;
 			}
 			case 'return': {
-				const selectedCommand = filteredCommands()[selectedIndex()];
+				const selectedCommand = filteredCommands[selectedIndex];
 				if (selectedCommand) {
 					props.onExecute(selectedCommand);
 				}
@@ -68,27 +72,8 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
 		}
 	});
 
-	return (
-		<Show
-			when={filteredCommands().length > 0}
-			fallback={
-				<box
-					style={{
-						position: 'absolute',
-						bottom: 4,
-						left: 0,
-						width: '100%',
-						zIndex: 100,
-						backgroundColor: colors.bgSubtle,
-						border: true,
-						borderColor: colors.border,
-						padding: 1
-					}}
-				>
-					<text fg={colors.textSubtle} content="No matching commands" />
-				</box>
-			}
-		>
+	if (filteredCommands.length === 0) {
+		return (
 			<box
 				style={{
 					position: 'absolute',
@@ -98,29 +83,45 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
 					zIndex: 100,
 					backgroundColor: colors.bgSubtle,
 					border: true,
-					borderColor: colors.accent,
-					flexDirection: 'column',
+					borderColor: colors.border,
 					padding: 1
 				}}
 			>
-				<text fg={colors.textMuted} content=" Commands" />
-				<text content="" style={{ height: 1 }} />
-				<For each={filteredCommands()}>
-					{(cmd, i) => {
-						const isSelected = () => i() === selectedIndex();
-						return (
-							<box style={{ flexDirection: 'row' }}>
-								<text
-									fg={isSelected() ? colors.accent : colors.text}
-									content={isSelected() ? `▸ /${cmd.name}` : `  /${cmd.name}`}
-									style={{ width: 12 }}
-								/>
-								<text fg={colors.textSubtle} content={` ${cmd.description}`} />
-							</box>
-						);
-					}}
-				</For>
+				<text fg={colors.textSubtle} content="No matching commands" />
 			</box>
-		</Show>
+		);
+	}
+
+	return (
+		<box
+			style={{
+				position: 'absolute',
+				bottom: 4,
+				left: 0,
+				width: '100%',
+				zIndex: 100,
+				backgroundColor: colors.bgSubtle,
+				border: true,
+				borderColor: colors.accent,
+				flexDirection: 'column',
+				padding: 1
+			}}
+		>
+			<text fg={colors.textMuted} content=" Commands" />
+			<text content="" style={{ height: 1 }} />
+			{filteredCommands.map((cmd, i) => {
+				const isSelected = i === selectedIndex;
+				return (
+					<box key={cmd.name} style={{ flexDirection: 'row' }}>
+						<text
+							fg={isSelected ? colors.accent : colors.text}
+							content={isSelected ? `▸ ${getDisplayLabel(cmd)}` : `  ${getDisplayLabel(cmd)}`}
+							style={{ width: 24 }}
+						/>
+						<text fg={colors.textSubtle} content={` ${cmd.description}`} />
+					</box>
+				);
+			})}
+		</box>
 	);
 };

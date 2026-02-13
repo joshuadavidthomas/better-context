@@ -217,6 +217,23 @@ Launches the TUI by default. With `--no-tui`, launches REPL.
 
 REPL supports `@resource` mentions.
 
+**TUI command palette (`/`)**:
+
+- `/connect` — configure provider and model
+- `/add` — add a new resource
+- `/clear` — clear chat history
+- `/resume` — resume a previous thread
+- `/new` — alias for `/clear`
+
+**TUI keyboard shortcuts**:
+
+- `Enter` — send message
+- `Escape` — cancel streaming response (press twice to confirm)
+- `Ctrl+C` — clear input or quit
+- `Ctrl+Q` — quit
+- `Tab` — autocomplete commands/mentions
+- `Up/Down` — navigate palettes/history
+
 ### 4.3 `btca add [url-or-path]`
 
 Add a git repo or local directory resource.

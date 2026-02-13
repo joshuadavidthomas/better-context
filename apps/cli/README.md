@@ -167,9 +167,11 @@ Then replace `YOUR_API_KEY` with your MCP API key (see `btca remote mcp` or the 
 
 In the interactive TUI, use `/` to access commands:
 
-- `/clear` - Clear chat history
-- `/model` - Select from recommended models
+- `/connect` - Configure provider and model
 - `/add` - Add a new resource
+- `/clear` - Clear chat history
+- `/resume` - Resume a previous thread
+- `/new` - Alias for `/clear`
 
 ## Keyboard Shortcuts
 

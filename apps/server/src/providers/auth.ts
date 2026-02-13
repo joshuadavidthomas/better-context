@@ -181,7 +181,7 @@ export namespace Auth {
 				return 'Run "btca connect -p minimax" and enter your API key. Get your API key at https://platform.minimax.io/user-center/basic-information.';
 			default:
 				return 'Run "btca connect" and configure credentials for this provider.';
-			}
+		}
 	};
 
 	/**

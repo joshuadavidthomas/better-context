@@ -1,10 +1,11 @@
 const langAliases: Record<string, string> = {
 	js: 'javascript',
-	jsx: 'javascript',
-	javascriptreact: 'javascript',
+	jsx: 'jsx',
+	javascriptreact: 'jsx',
 	ts: 'typescript',
-	tsx: 'typescript',
-	typescriptreact: 'typescript',
+	tsx: 'tsx',
+	typescriptreact: 'tsx',
+	svelte: 'svelte',
 	sh: 'bash',
 	shell: 'bash',
 	zsh: 'bash',
@@ -14,10 +15,8 @@ const langAliases: Record<string, string> = {
 	md: 'markdown'
 };
 
-const normalizeLang = (lang: string) => langAliases[lang.toLowerCase()] ?? lang.toLowerCase();
+const normalizeLang = (lang: string) => langAliases[lang.toLowerCase()] ?? lang;
 
-// Only normalizes the language token on fenced code block openers:
-// ```ts -> ```typescript, etc.
 export const normalizeFenceLang = (markdown: string) =>
 	markdown
 		.split('\n')

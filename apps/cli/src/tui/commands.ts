@@ -13,6 +13,7 @@ export const COMMANDS: Command[] = [
 	},
 	{
 		name: 'clear',
+		alias: 'new',
 		description: 'Clear chat history',
 		mode: 'clear'
 	},
@@ -25,5 +26,9 @@ export const COMMANDS: Command[] = [
 
 export function filterCommands(query: string): Command[] {
 	const lowerQuery = query.toLowerCase();
-	return COMMANDS.filter((cmd) => cmd.name.toLowerCase().startsWith(lowerQuery));
+	return COMMANDS.filter(
+		(cmd) =>
+			cmd.name.toLowerCase().startsWith(lowerQuery) ||
+			(cmd.alias?.toLowerCase().startsWith(lowerQuery) ?? false)
+	);
 }
