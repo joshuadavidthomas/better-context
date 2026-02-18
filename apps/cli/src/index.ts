@@ -9,6 +9,7 @@ import { initCommand } from './commands/init.ts';
 import { statusCommand } from './commands/status.ts';
 import { mcpCommand } from './commands/mcp.ts';
 import { removeCommand } from './commands/remove.ts';
+import { referenceCommand } from './commands/reference.ts';
 import { resourcesCommand } from './commands/resources.ts';
 import { serveCommand } from './commands/serve.ts';
 import { skillCommand } from './commands/skill.ts';
@@ -44,6 +45,7 @@ const program = new Command()
 // Resource management commands
 program.addCommand(addCommand);
 program.addCommand(removeCommand);
+program.addCommand(referenceCommand);
 program.addCommand(resourcesCommand);
 
 // Query commands

@@ -94,6 +94,16 @@ function formatError(error: unknown): string {
 	return output;
 }
 
+export function streamErrorToBtcaError(message: string, tag?: string, hint?: string): BtcaError {
+	const derivedHint =
+		hint ??
+		(tag === 'ProviderNotAuthenticatedError' ||
+		message === 'Unhandled exception: Provider "opencode" is not authenticated.'
+			? 'run btca connect to authenticate and pick a model.'
+			: undefined);
+	return new BtcaError(message, { hint: derivedHint, tag });
+}
+
 /**
  * Extract potential @mentions from query string (without modifying the query yet)
  */
@@ -397,15 +407,7 @@ export const askCommand = new Command('ask')
 							console.log(`[${tool}]`);
 						},
 						onError: (message, tag, hint) => {
-							console.error(`\nError: ${message}`);
-							if (hint) {
-								console.error(`\nHint: ${hint}`);
-							} else if (
-								tag === 'ProviderNotAuthenticatedError' ||
-								message === 'Unhandled exception: Provider "opencode" is not authenticated.'
-							) {
-								console.error('\nHint: run btca connect to authenticate and pick a model.');
-							}
+							throw streamErrorToBtcaError(message, tag, hint);
 						}
 					});
 				}

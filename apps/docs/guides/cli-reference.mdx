@@ -76,6 +76,24 @@ btca add -n my-docs -t local /absolute/path/to/docs
 btca add npm:@types/node@22.10.1 -n node-types -t npm
 ```
 
+## `btca reference <repo>`
+
+Clones a git repository into `./references/<repo-name>` for local reference use.
+
+Behavior:
+
+- Destination is always `references/<repo-name>`, where `<repo-name>` is derived from the clone target.
+- If destination already exists, the command fails and does not overwrite.
+- In a git repository, it adds `references/` to `.git/info/exclude` (local-only, not committed) if missing.
+- Outside a git repository, clone still succeeds and prints a warning that exclude was not updated.
+- Prints optional copy-paste snippets for `AGENTS.md` and `CLAUDE.md` to let agents use `references/` as read-only supplemental context.
+
+Example:
+
+```bash
+btca reference https://github.com/sveltejs/svelte.git
+```
+
 ## `btca remove [name]`
 
 Removes a resource by name. If omitted, it opens an interactive picker.

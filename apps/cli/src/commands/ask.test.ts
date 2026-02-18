@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { registerSignalCleanup } from './ask.ts';
+import { registerSignalCleanup, streamErrorToBtcaError } from './ask.ts';
 
 type SignalEvent = 'SIGINT' | 'SIGTERM' | 'exit';
 type ForwardedSignal = 'SIGINT' | 'SIGTERM';
@@ -87,5 +87,24 @@ describe('registerSignalCleanup', () => {
 		expect(proc.killCalls).toEqual([]);
 		expect(proc.listeners.size).toBe(0);
 		expect(proc.offCalls).toEqual(['SIGINT', 'SIGTERM', 'exit', 'SIGINT', 'SIGTERM', 'exit']);
+	});
+});
+
+describe('streamErrorToBtcaError', () => {
+	test('preserves explicit hint from stream error event', () => {
+		const error = streamErrorToBtcaError('boom', 'UnknownError', 'use this hint');
+		expect(error.message).toBe('boom');
+		expect(error.hint).toBe('use this hint');
+		expect(error.tag).toBe('UnknownError');
+	});
+
+	test('adds auth hint for unauthenticated provider stream errors', () => {
+		const error = streamErrorToBtcaError(
+			'Provider "opencode" is not authenticated.',
+			'ProviderNotAuthenticatedError'
+		);
+		expect(error.message).toBe('Provider "opencode" is not authenticated.');
+		expect(error.hint).toBe('run btca connect to authenticate and pick a model.');
+		expect(error.tag).toBe('ProviderNotAuthenticatedError');
 	});
 });

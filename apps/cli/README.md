@@ -132,6 +132,14 @@ btca add /path/to/project --name myproject --type local
 btca add npm:react --name reactNpm --type npm
 ```
 
+### Add Reference Repo
+
+Clone a repository into `./references/<repo-name>` and keep it untracked locally via `.git/info/exclude`:
+
+```bash
+btca reference https://github.com/sveltejs/svelte.git
+```
+
 ### Remove Resource
 
 ```bash
