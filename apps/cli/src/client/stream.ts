@@ -11,10 +11,30 @@ export async function* parseSSEStream(response: Response): AsyncGenerator<BtcaSt
 
 	const decoder = new TextDecoder();
 	let buffer = '';
+	let eventDataLines: string[] = [];
 
 	const reader = (
 		response.body as unknown as { getReader: () => ReadableStreamDefaultReader<Uint8Array> }
 	).getReader();
+
+	const parseEvent = (eventData: string) => {
+		const parsed = Result.try(() => JSON.parse(eventData));
+		return parsed.andThen((value) => Result.try(() => BtcaStreamEventSchema.parse(value)));
+	};
+
+	const processLine = (rawLine: string) => {
+		const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine;
+		if (line.startsWith('data: ')) {
+			eventDataLines.push(line.slice(6));
+			return null;
+		}
+		if (line === '' && eventDataLines.length > 0) {
+			const eventData = eventDataLines.join('\n');
+			eventDataLines = [];
+			return parseEvent(eventData);
+		}
+		return null;
+	};
 
 	try {
 		while (true) {
@@ -26,27 +46,14 @@ export async function* parseSSEStream(response: Response): AsyncGenerator<BtcaSt
 			const lines = buffer.split('\n');
 			buffer = lines.pop() ?? ''; // Keep incomplete line in buffer
 
-			let eventType = '';
-			let eventData = '';
-
 			for (const line of lines) {
-				if (line.startsWith('event: ')) {
-					eventType = line.slice(7);
-				} else if (line.startsWith('data: ')) {
-					eventData = line.slice(6);
-				} else if (line === '' && eventData) {
-					// Empty line = end of event
-					const parsed = Result.try(() => JSON.parse(eventData));
-					const validated = parsed.andThen((value) =>
-						Result.try(() => BtcaStreamEventSchema.parse(value))
-					);
-					if (Result.isOk(validated)) {
-						yield validated.value;
+				const parsedEvent = processLine(line);
+				if (parsedEvent) {
+					if (Result.isOk(parsedEvent)) {
+						yield parsedEvent.value;
 					} else {
-						console.error('Failed to parse SSE event:', validated.error);
+						console.error('Failed to parse SSE event:', parsedEvent.error);
 					}
-					eventType = '';
-					eventData = '';
 				}
 			}
 		}
@@ -54,25 +61,27 @@ export async function* parseSSEStream(response: Response): AsyncGenerator<BtcaSt
 		reader.releaseLock();
 	}
 
-	// Process any remaining data in buffer
-	if (buffer.trim()) {
-		const lines = buffer.split('\n');
-		let eventData = '';
+	buffer += decoder.decode();
 
-		for (const line of lines) {
-			if (line.startsWith('data: ')) {
-				eventData = line.slice(6);
+	// Process any remaining lines in buffer.
+	for (const line of buffer.split('\n')) {
+		const parsedEvent = processLine(line);
+		if (parsedEvent) {
+			if (Result.isOk(parsedEvent)) {
+				yield parsedEvent.value;
+			} else {
+				console.error('Failed to parse SSE event:', parsedEvent.error);
 			}
 		}
+	}
 
-		if (eventData) {
-			const parsed = Result.try(() => JSON.parse(eventData));
-			const validated = parsed.andThen((value) =>
-				Result.try(() => BtcaStreamEventSchema.parse(value))
-			);
-			if (Result.isOk(validated)) {
-				yield validated.value;
-			}
+	// If stream ended without trailing blank line, still emit buffered event data.
+	if (eventDataLines.length > 0) {
+		const parsedEvent = parseEvent(eventDataLines.join('\n'));
+		if (Result.isOk(parsedEvent)) {
+			yield parsedEvent.value;
+		} else {
+			console.error('Failed to parse SSE event:', parsedEvent.error);
 		}
 	}
 }
