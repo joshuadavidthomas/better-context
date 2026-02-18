@@ -4,7 +4,6 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
 const REFERENCES_DIR = 'references';
-const EXCLUDE_PATTERN = 'references/';
 
 const separators = ['/', '\\', ':'];
 
@@ -39,21 +38,43 @@ export const isPatternIgnored = (content: string, pattern: string) => {
 	});
 };
 
-const ensureReferencesExclude = async (cwd: string) => {
-	const gitDir = path.join(cwd, '.git');
-	if (!(await Bun.file(gitDir).exists())) return 'not-git-repo' as const;
+const resolveGitRoot = async (cwd: string) => {
+	const proc = Bun.spawn(['git', 'rev-parse', '--show-toplevel'], {
+		cwd,
+		stdout: 'pipe',
+		stderr: 'ignore'
+	});
+	const exitCode = await proc.exited;
+	if (exitCode !== 0) return null;
+	const output = await new Response(proc.stdout).text();
+	const gitRoot = output.trim();
+	return gitRoot.length > 0 ? gitRoot : null;
+};
 
-	const excludePath = path.join(gitDir, 'info', 'exclude');
+const toExcludePattern = (gitRoot: string, referencesDir: string) => {
+	const relative = path.relative(gitRoot, referencesDir).replace(/\\/g, '/');
+	const normalized = relative.replace(/^\.\/?/, '').replace(/\/+$/, '');
+	return normalized.length > 0 ? `${normalized}/` : `${REFERENCES_DIR}/`;
+};
+
+const ensureReferencesExclude = async (cwd: string, referencesDir: string) => {
+	const gitRoot = await resolveGitRoot(cwd);
+	if (!gitRoot) return { kind: 'not-git-repo' as const };
+
+	const excludePath = path.join(gitRoot, '.git', 'info', 'exclude');
 	await fs.mkdir(path.dirname(excludePath), { recursive: true });
+	const excludePattern = toExcludePattern(gitRoot, referencesDir);
 
 	const file = Bun.file(excludePath);
 	const existing = (await file.exists()) ? await file.text() : '';
 
-	if (isPatternIgnored(existing, EXCLUDE_PATTERN)) return 'already-excluded' as const;
+	if (isPatternIgnored(existing, excludePattern)) {
+		return { kind: 'already-excluded' as const, pattern: excludePattern };
+	}
 
 	const prefix = existing.length > 0 && !existing.endsWith('\n') ? '\n' : '';
-	await Bun.write(excludePath, `${existing}${prefix}${EXCLUDE_PATTERN}\n`);
-	return 'added-exclude' as const;
+	await Bun.write(excludePath, `${existing}${prefix}${excludePattern}\n`);
+	return { kind: 'added-exclude' as const, pattern: excludePattern };
 };
 
 const cloneReference = async (repo: string, destination: string) => {
@@ -95,16 +116,22 @@ export const referenceCommand = new Command('reference')
 			}
 
 			await fs.mkdir(referencesDir, { recursive: true });
+			const excludeStatus = await ensureReferencesExclude(cwd, referencesDir);
 			console.log(`Cloning ${repo} into ${destination}...`);
-			await cloneReference(repo, destination);
-
-			const excludeStatus = await ensureReferencesExclude(cwd);
+			const cloneResult = await Result.tryPromise(() => cloneReference(repo, destination));
+			if (Result.isError(cloneResult)) {
+				const referencesEntries = await fs.readdir(referencesDir).catch(() => []);
+				if (referencesEntries.length === 0) {
+					await fs.rmdir(referencesDir).catch(() => undefined);
+				}
+				throw cloneResult.error;
+			}
 
 			console.log(`\nReference cloned: ${destination}`);
-			if (excludeStatus === 'added-exclude') {
-				console.log(`Added '${EXCLUDE_PATTERN}' to .git/info/exclude`);
-			} else if (excludeStatus === 'already-excluded') {
-				console.log(`'${EXCLUDE_PATTERN}' is already present in .git/info/exclude`);
+			if (excludeStatus.kind === 'added-exclude') {
+				console.log(`Added '${excludeStatus.pattern}' to .git/info/exclude`);
+			} else if (excludeStatus.kind === 'already-excluded') {
+				console.log(`'${excludeStatus.pattern}' is already present in .git/info/exclude`);
 			} else {
 				console.log(
 					"Warning: current directory is not a git repository, so '.git/info/exclude' was not updated."
