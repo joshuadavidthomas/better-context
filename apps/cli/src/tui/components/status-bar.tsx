@@ -18,6 +18,8 @@ export interface StatusBarProps {
 }
 
 export const StatusBar = (props: StatusBarProps) => {
+	const inTmux = Boolean(process.env.TMUX);
+
 	const getHelpText = () => {
 		if (props.isStreaming) {
 			if (props.cancelState === 'pending') {
@@ -58,7 +60,14 @@ export const StatusBar = (props: StatusBarProps) => {
 
 		// Show different help based on whether we have thread resources
 		if (props.threadResources.length > 0) {
+			if (inTmux) {
+				return ' Ask follow-up or [@resource] to add context  [Enter] Send  [Ctrl+J] New line  [/] Commands  [Ctrl+Q] Quit';
+			}
 			return ' Ask follow-up or [@resource] to add context  [/] Commands  [Ctrl+Q] Quit';
+		}
+
+		if (inTmux) {
+			return ' [@resource] Ask question  [Enter] Send  [Ctrl+J] New line  [/] Commands  [Ctrl+Q] Quit';
 		}
 
 		return ' [@resource] Ask question  [/] Commands  [Ctrl+Q] Quit';

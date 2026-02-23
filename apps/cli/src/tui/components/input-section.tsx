@@ -219,16 +219,6 @@ export const InputSection = () => {
 			}
 		}
 
-		if (key.name === 'return' && !isAnyWizardOpen && !messages.isStreaming) {
-			if (
-				cursorIsCurrentlyIn === 'text' ||
-				cursorIsCurrentlyIn === 'pasted' ||
-				(cursorIsCurrentlyIn === 'mention' && isCurrentMentionResolved)
-			) {
-				void handleSubmit();
-			}
-		}
-
 		if (key.name === 'c' && key.ctrl) {
 			if (inputState.length > 0) {
 				setInputState([]);
@@ -281,6 +271,15 @@ export const InputSection = () => {
 				focused={!isAnyWizardOpen && !messages.isStreaming}
 				isStreaming={messages.isStreaming}
 				cancelState={messages.cancelState}
+				onSubmitRequest={() => {
+					if (
+						cursorIsCurrentlyIn === 'text' ||
+						cursorIsCurrentlyIn === 'pasted' ||
+						(cursorIsCurrentlyIn === 'mention' && isCurrentMentionResolved)
+					) {
+						void handleSubmit();
+					}
+				}}
 			/>
 
 			{cursorIsCurrentlyIn === 'mention' &&

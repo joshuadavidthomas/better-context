@@ -17,6 +17,7 @@ interface MainInputProps {
 	focused: boolean;
 	isStreaming: boolean;
 	cancelState: CancelState;
+	onSubmitRequest: () => void;
 }
 
 export const MainInput = (props: MainInputProps) => {
@@ -227,8 +228,37 @@ export const MainInput = (props: MainInputProps) => {
 	}
 
 	function handleKeyDown(event: KeyEvent) {
-		if (event.name === 'return' || event.name === 'linefeed') {
+		const inTmux = Boolean(process.env.TMUX);
+		const isEnterEvent = event.name === 'return' || event.name === 'linefeed';
+		const isSubmitChord = isEnterEvent && (event.ctrl || event.meta);
+		const isPlainEnter =
+			event.name === 'return' &&
+			!event.shift &&
+			!event.ctrl &&
+			!event.meta &&
+			!event.option &&
+			!event.super &&
+			!event.hyper;
+
+		if (isEnterEvent) {
+			if (isSubmitChord) {
+				event.preventDefault();
+				event.stopPropagation();
+				props.onSubmitRequest();
+				return;
+			}
+
+			if (inTmux) {
+				// In tmux, keep Ctrl+J/linefeed as a deterministic newline path.
+				if (event.name === 'linefeed') return;
+				if (!isPlainEnter) return;
+			} else if (!isPlainEnter) {
+				return;
+			}
+
 			event.preventDefault();
+			event.stopPropagation();
+			props.onSubmitRequest();
 			return;
 		}
 
