@@ -103,6 +103,8 @@ type MessagesState = {
 	messages: Message[];
 	addSystemMessage: (content: string) => void;
 	clearMessages: () => void;
+	copyLastMessage: () => Promise<void>;
+	copyAllMessages: () => Promise<void>;
 
 	threadResources: string[];
 
@@ -174,6 +176,22 @@ const toUiMessages = (items: LocalThreadMessage[]): Message[] =>
 		}
 		return { role: 'system', content: message.content };
 	});
+
+const getUserMessageText = (message: Extract<Message, { role: 'user' }>) =>
+	message.content.map((segment) => segment.content).join('');
+
+const getAssistantMessageText = (message: Extract<Message, { role: 'assistant' }>) => {
+	const content = message.content;
+	if (typeof content === 'string') return content;
+	if (content.type === 'text') return content.content;
+	if (content.type === 'chunks') {
+		return content.chunks
+			.filter((chunk): chunk is Extract<BtcaChunk, { type: 'text' }> => chunk.type === 'text')
+			.map((chunk) => chunk.text)
+			.join('\n\n');
+	}
+	return '';
+};
 
 export const MessagesProvider = (props: { children: ReactNode }) => {
 	const initialThread = useMemo(() => createThread(), []);
@@ -365,7 +383,6 @@ export const MessagesProvider = (props: { children: ReactNode }) => {
 					questionWithHistory,
 					handleChunkUpdate
 				);
-				const finalChunks = result.chunks;
 
 				if (cancelStateRef.current === 'pending') return;
 
@@ -374,13 +391,7 @@ export const MessagesProvider = (props: { children: ReactNode }) => {
 					if (stats) addMessage({ role: 'system', content: stats });
 				}
 
-				const textChunks = finalChunks.filter((c) => c.type === 'text');
-				const fullResponse = textChunks.map((c) => c.text).join('\n\n');
-
-				if (fullResponse) {
-					await copyToClipboard(fullResponse);
-					addMessage({ role: 'system', content: 'Answer copied to clipboard!' });
-				}
+				addMessage({ role: 'system', content: 'run /copy to copy message to clipboard' });
 			});
 
 			if (result.isErr() && cancelStateRef.current !== 'pending') {
@@ -429,6 +440,61 @@ export const MessagesProvider = (props: { children: ReactNode }) => {
 		})();
 	}, [addMessage, persistCurrentThread, startNewThread]);
 
+	const copyLastMessage = useCallback(async () => {
+		const assistantMessage = [...messagesRef.current]
+			.reverse()
+			.find((message) => message.role === 'assistant');
+		if (!assistantMessage || assistantMessage.role !== 'assistant') {
+			addMessage({ role: 'system', content: 'No assistant response found to copy.' });
+			return;
+		}
+
+		const assistantIndex = messagesRef.current.lastIndexOf(assistantMessage);
+		const userMessage = messagesRef.current
+			.slice(0, assistantIndex)
+			.reverse()
+			.find((message) => message.role === 'user');
+		if (!userMessage || userMessage.role !== 'user') {
+			addMessage({ role: 'system', content: 'No user question found for the latest response.' });
+			return;
+		}
+
+		const payload = [
+			'User:',
+			getUserMessageText(userMessage),
+			'',
+			'Assistant:',
+			getAssistantMessageText(assistantMessage)
+		].join('\n');
+		const copyResult = await Result.tryPromise(() => copyToClipboard(payload));
+		if (copyResult.isErr()) {
+			addMessage({ role: 'system', content: `Error: ${formatError(copyResult.error)}` });
+			return;
+		}
+
+		addMessage({ role: 'system', content: 'Copied latest exchange to clipboard.' });
+	}, [addMessage]);
+
+	const copyAllMessages = useCallback(async () => {
+		const parts = messagesRef.current.flatMap((message) => {
+			if (message.role === 'user') return [`User:\n${getUserMessageText(message)}`];
+			if (message.role === 'assistant') return [`Assistant:\n${getAssistantMessageText(message)}`];
+			return [];
+		});
+		if (parts.length === 0) {
+			addMessage({ role: 'system', content: 'No thread messages found to copy.' });
+			return;
+		}
+
+		const copyResult = await Result.tryPromise(() => copyToClipboard(parts.join('\n\n')));
+		if (copyResult.isErr()) {
+			addMessage({ role: 'system', content: `Error: ${formatError(copyResult.error)}` });
+			return;
+		}
+
+		addMessage({ role: 'system', content: 'Copied full thread to clipboard.' });
+	}, [addMessage]);
+
 	const resumeThread = useCallback(
 		async (nextThreadId: string) => {
 			if (nextThreadId === threadIdRef.current) return;
@@ -469,6 +535,8 @@ export const MessagesProvider = (props: { children: ReactNode }) => {
 			messages,
 			addSystemMessage: (content) => addMessage({ role: 'system', content }),
 			clearMessages,
+			copyLastMessage,
+			copyAllMessages,
 			threadResources,
 			isStreaming,
 			cancelState,
@@ -481,6 +549,8 @@ export const MessagesProvider = (props: { children: ReactNode }) => {
 			messages,
 			addMessage,
 			clearMessages,
+			copyLastMessage,
+			copyAllMessages,
 			threadResources,
 			isStreaming,
 			cancelState,

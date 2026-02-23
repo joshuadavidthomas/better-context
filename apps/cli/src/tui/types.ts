@@ -48,7 +48,7 @@ export type Message =
 			content: string;
 	  };
 
-export type CommandMode = 'add-repo' | 'connect' | 'clear' | 'resume';
+export type CommandMode = 'add-repo' | 'connect' | 'clear' | 'resume' | 'copy' | 'copy-all';
 
 export type ActiveWizard = 'none' | 'add-repo' | 'connect' | 'resume';
 

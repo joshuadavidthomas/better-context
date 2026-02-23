@@ -182,6 +182,8 @@ REPL supports `@resource` mentions.
 - `/clear` — clear chat history
 - `/resume` — resume a previous thread
 - `/new` — alias for `/clear`
+- `/copy` — copy the latest user question and assistant response
+- `/copy-all` — copy the full thread (all user and assistant messages)
 
 **TUI keyboard shortcuts**:
 

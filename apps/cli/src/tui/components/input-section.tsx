@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { TextareaRenderable } from '@opentui/core';
 import { useKeyboard, useRenderer, useTerminalDimensions } from '@opentui/react';
 
-import type { ActiveWizard, InputState, WizardStep } from '../types.ts';
+import type { ActiveWizard, Command, InputState, WizardStep } from '../types.ts';
 import { inputHistory } from '../history.ts';
 import { useConfigContext } from '../context/config-context.tsx';
 import { useMessagesContext } from '../context/messages-context.tsx';
@@ -165,7 +165,7 @@ export const InputSection = () => {
 		setCurrentWizardStep(null);
 	};
 
-	const handleCommandExecute = (command: { mode: string }) => {
+	const handleCommandExecute = (command: Command) => {
 		setInputState([]);
 		switch (command.mode) {
 			case 'connect':
@@ -186,6 +186,12 @@ export const InputSection = () => {
 					return;
 				}
 				setActiveWizard('resume');
+				break;
+			case 'copy':
+				void messages.copyLastMessage();
+				break;
+			case 'copy-all':
+				void messages.copyAllMessages();
 				break;
 		}
 	};

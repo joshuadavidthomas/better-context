@@ -21,6 +21,16 @@ export const COMMANDS: Command[] = [
 		name: 'resume',
 		description: 'Resume a previous thread',
 		mode: 'resume'
+	},
+	{
+		name: 'copy',
+		description: 'Copy the latest user question and response',
+		mode: 'copy'
+	},
+	{
+		name: 'copy-all',
+		description: 'Copy the full thread',
+		mode: 'copy-all'
 	}
 ];
 
