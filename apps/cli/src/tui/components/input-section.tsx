@@ -50,6 +50,20 @@ export const InputSection = () => {
 		return 'text';
 	}, [inputState, cursorPosition]);
 
+	const inputDisplayLineCount = useMemo(() => {
+		const value = inputState
+			.map((item) => (item.type === 'pasted' ? `[~${item.lines} lines]` : item.content))
+			.join('');
+		const availableWidth = Math.max(1, terminalDimensions.width - 4);
+		if (value.length === 0) return 1;
+		return value
+			.split('\n')
+			.map((line) => Math.max(1, Math.ceil(line.length / availableWidth)))
+			.reduce((sum, lineCount) => sum + lineCount, 0);
+	}, [inputState, terminalDimensions.width]);
+
+	const shouldUseArrowHistory = inputDisplayLineCount <= 1;
+
 	const parseAllMentions = (input: string) => {
 		const resources = extractMentionTokens(input);
 		const question = stripMentionTokens(input);
@@ -182,8 +196,7 @@ export const InputSection = () => {
 		queueMicrotask(() => {
 			if (!inputRef) return;
 			inputRef.gotoBufferEnd();
-			const cursor = inputRef.logicalCursor;
-			setCursorPosition(cursor.col);
+			setCursorPosition(inputRef.cursorOffset);
 		});
 	};
 
@@ -223,7 +236,7 @@ export const InputSection = () => {
 				setCursorPosition(0);
 				if (inputRef) {
 					inputRef.setText('');
-					inputRef.editBuffer.setCursor(0, 0);
+					inputRef.cursorOffset = 0;
 				}
 			} else {
 				globalThis.__BTCA_SERVER__?.stop();
@@ -235,6 +248,7 @@ export const InputSection = () => {
 			key.name === 'up' &&
 			!isAnyWizardOpen &&
 			!messages.isStreaming &&
+			shouldUseArrowHistory &&
 			cursorIsCurrentlyIn !== 'command' &&
 			(cursorIsCurrentlyIn !== 'mention' || isCurrentMentionResolved)
 		) {
@@ -246,6 +260,7 @@ export const InputSection = () => {
 			key.name === 'down' &&
 			!isAnyWizardOpen &&
 			!messages.isStreaming &&
+			shouldUseArrowHistory &&
 			cursorIsCurrentlyIn !== 'command' &&
 			(cursorIsCurrentlyIn !== 'mention' || isCurrentMentionResolved)
 		) {

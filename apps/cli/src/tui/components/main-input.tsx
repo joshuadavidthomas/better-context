@@ -23,6 +23,8 @@ export const MainInput = (props: MainInputProps) => {
 	const renderer = useRenderer();
 	const terminalDimensions = useTerminalDimensions();
 	const textareaRef = useRef<TextareaRenderable | null>(null);
+	const ignoredContentChangeCountRef = useRef(0);
+	const pendingPasteCursorSyncRef = useRef(false);
 
 	const [displayValue, setDisplayValue] = useState('');
 
@@ -33,7 +35,9 @@ export const MainInput = (props: MainInputProps) => {
 			.map((p) => (p.type === 'pasted' ? getPasteDisplay(p.lines) : p.content))
 			.join('');
 
-	const isEmpty = () => getValue().length === 0;
+	const value = getValue();
+
+	const isEmpty = () => value.length === 0;
 
 	const focusInput = () => {
 		const ref = textareaRef.current;
@@ -44,8 +48,7 @@ export const MainInput = (props: MainInputProps) => {
 	const syncCursorFromRef = () => {
 		const ref = textareaRef.current;
 		if (!ref) return;
-		const cursor = ref.logicalCursor;
-		props.setCursorPosition(cursor.row * getAvailableWidth() + cursor.col);
+		props.setCursorPosition(ref.cursorOffset);
 	};
 
 	const getPlaceholder = () => {
@@ -66,23 +69,39 @@ export const MainInput = (props: MainInputProps) => {
 		return Math.max(1, width - 4);
 	};
 
-	const getLineCount = () => {
-		const value = getValue();
+	const getLineCount = (raw: string) => {
 		const availableWidth = getAvailableWidth();
-		if (value.length === 0) return 1;
-		return Math.max(1, Math.ceil(value.length / availableWidth));
+		if (raw.length === 0) return 1;
+		return raw
+			.split('\n')
+			.map((line) => Math.max(1, Math.ceil(line.length / availableWidth)))
+			.reduce((sum, lineCount) => sum + lineCount, 0);
 	};
 
-	const getBoxHeight = () => getLineCount() + 2;
+	const getMaxVisibleLineCount = () => {
+		const byRatio = Math.floor(terminalDimensions.height * 0.25);
+		const byScreen = Math.max(3, terminalDimensions.height - 10);
+		return Math.max(3, Math.min(12, byRatio, byScreen));
+	};
+
+	const lineCount = getLineCount(value);
+	const maxVisibleLineCount = getMaxVisibleLineCount();
+	const visibleLineCount = Math.min(lineCount, maxVisibleLineCount);
+	const isOverflowing = lineCount > maxVisibleLineCount;
+	const getBoxHeight = () => visibleLineCount + 2;
+
+	const setTextProgrammatically = (ref: TextareaRenderable, value: string) => {
+		ignoredContentChangeCountRef.current += 1;
+		ref.setText(value);
+	};
 
 	useEffect(() => {
-		const value = getValue();
 		setDisplayValue(value);
 		const ref = textareaRef.current;
 		if (ref && ref.plainText !== value) {
-			ref.setText(value);
+			setTextProgrammatically(ref, value);
 		}
-	}, [props.inputState]);
+	}, [value]);
 
 	useEffect(() => {
 		if (props.focused) {
@@ -122,21 +141,21 @@ export const MainInput = (props: MainInputProps) => {
 	usePaste((event) => {
 		if (!props.focused) return;
 		const lines = event.text.split('\n').length;
-		const next = [...props.inputState, { type: 'pasted' as const, content: event.text, lines }];
-		props.setInputState(next);
-
-		queueMicrotask(() => {
-			const ref = textareaRef.current;
-			if (!ref) return;
-			const newValue = next
-				.map((p) => (p.type === 'pasted' ? getPasteDisplay(p.lines) : p.content))
-				.join('');
-			ref.setText(newValue);
-			ref.gotoBufferEnd();
-			const cursor = ref.logicalCursor;
-			props.setCursorPosition(cursor.row * getAvailableWidth() + cursor.col);
-		});
+		pendingPasteCursorSyncRef.current = true;
+		props.setInputState((prev) => [
+			...prev,
+			{ type: 'pasted' as const, content: event.text, lines }
+		]);
 	});
+
+	useEffect(() => {
+		if (!pendingPasteCursorSyncRef.current) return;
+		pendingPasteCursorSyncRef.current = false;
+		const ref = textareaRef.current;
+		if (!ref) return;
+		ref.gotoBufferEnd();
+		props.setCursorPosition(ref.cursorOffset);
+	}, [props.inputState]);
 
 	function parseTextSegment(
 		value: string
@@ -173,6 +192,10 @@ export const MainInput = (props: MainInputProps) => {
 	}
 
 	function handleContentChange(newValue: string) {
+		if (ignoredContentChangeCountRef.current > 0) {
+			ignoredContentChangeCountRef.current -= 1;
+			return;
+		}
 		setDisplayValue(newValue);
 		const pastedBlocks = props.inputState.filter((p) => p.type === 'pasted');
 
@@ -212,15 +235,7 @@ export const MainInput = (props: MainInputProps) => {
 		if (event.name === 'backspace') {
 			const ref = textareaRef.current;
 			if (!ref) return;
-			const cursor = ref.logicalCursor;
-			const plainText = ref.plainText;
-
-			let absolutePos = 0;
-			const lines = plainText.split('\n');
-			for (let i = 0; i < cursor.row; i++) {
-				absolutePos += (lines[i]?.length ?? 0) + 1;
-			}
-			absolutePos += cursor.col;
+			const absolutePos = ref.cursorOffset;
 
 			let offset = 0;
 			for (let i = 0; i < props.inputState.length; i++) {
@@ -236,10 +251,10 @@ export const MainInput = (props: MainInputProps) => {
 						const newValue = next
 							.map((p) => (p.type === 'pasted' ? getPasteDisplay(p.lines) : p.content))
 							.join('');
-						ref.setText(newValue);
+						setTextProgrammatically(ref, newValue);
 
-						ref.editBuffer.setCursor(0, offset);
-						props.setCursorPosition(offset);
+						ref.cursorOffset = offset;
+						props.setCursorPosition(ref.cursorOffset);
 						return;
 					}
 					break;
@@ -251,8 +266,7 @@ export const MainInput = (props: MainInputProps) => {
 		queueMicrotask(() => {
 			const ref = textareaRef.current;
 			if (!ref) return;
-			const cursor = ref.logicalCursor;
-			props.setCursorPosition(cursor.row * getAvailableWidth() + cursor.col);
+			props.setCursorPosition(ref.cursorOffset);
 		});
 	}
 
@@ -265,49 +279,51 @@ export const MainInput = (props: MainInputProps) => {
 				width: '100%'
 			}}
 		>
-			<text
-				style={{
-					position: 'absolute',
-					top: 0,
-					left: 0,
-					width: '100%',
-					height: getLineCount(),
-					zIndex: 2,
-					paddingLeft: 1,
-					paddingRight: 1
-				}}
-				wrapMode="char"
-				onMouseDown={(e) => {
-					const ref = textareaRef.current;
-					if (!ref) return;
-					ref.focus();
-					const availableWidth = getAvailableWidth();
-					const row = e.y;
-					const col = e.x - 1;
-					const pos = row * availableWidth + col;
-					const clampedPos = Math.min(pos, getValue().length);
-					ref.editBuffer.setCursor(0, clampedPos);
-					queueMicrotask(() => {
-						props.setCursorPosition(clampedPos);
-					});
-				}}
-			>
-				{isEmpty() ? (
-					<span style={{ fg: colors.textSubtle }}>{getPlaceholder()}</span>
-				) : (
-					props.inputState.map((part, i) =>
-						part.type === 'pasted' ? (
-							<span key={i} style={{ fg: colors.bg, bg: colors.accent }}>
-								{`[~${part.lines} lines]`}
-							</span>
-						) : (
-							<span key={i} style={{ fg: getColor(part.type) }}>
-								{part.content}
-							</span>
+			{!isOverflowing ? (
+				<text
+					style={{
+						position: 'absolute',
+						top: 0,
+						left: 0,
+						width: '100%',
+						height: visibleLineCount,
+						zIndex: 2,
+						paddingLeft: 1,
+						paddingRight: 1
+					}}
+					wrapMode="char"
+					onMouseDown={(e) => {
+						const ref = textareaRef.current;
+						if (!ref) return;
+						ref.focus();
+						const availableWidth = getAvailableWidth();
+						const row = e.y;
+						const col = e.x - 1;
+						const pos = row * availableWidth + col;
+						const clampedPos = Math.min(pos, value.length);
+						ref.cursorOffset = clampedPos;
+						queueMicrotask(() => {
+							props.setCursorPosition(clampedPos);
+						});
+					}}
+				>
+					{isEmpty() ? (
+						<span style={{ fg: colors.textSubtle }}>{getPlaceholder()}</span>
+					) : (
+						props.inputState.map((part, i) =>
+							part.type === 'pasted' ? (
+								<span key={i} style={{ fg: colors.bg, bg: colors.accent }}>
+									{`[~${part.lines} lines]`}
+								</span>
+							) : (
+								<span key={i} style={{ fg: getColor(part.type) }}>
+									{part.content}
+								</span>
+							)
 						)
-					)
-				)}
-			</text>
+					)}
+				</text>
+			) : null}
 
 			<textarea
 				id="main-input"
@@ -317,6 +333,7 @@ export const MainInput = (props: MainInputProps) => {
 				}}
 				initialValue=""
 				wrapMode="char"
+				placeholder={isOverflowing ? getPlaceholder() : null}
 				focused={props.focused}
 				onContentChange={() => {
 					const ref = textareaRef.current;
@@ -328,17 +345,21 @@ export const MainInput = (props: MainInputProps) => {
 				onCursorChange={() => {
 					syncCursorFromRef();
 				}}
-				textColor="transparent"
+				textColor={isOverflowing ? colors.text : 'transparent'}
 				backgroundColor="transparent"
 				focusedBackgroundColor="transparent"
+				focusedTextColor={isOverflowing ? colors.text : 'transparent'}
 				cursorColor={colors.accent}
+				scrollMargin={1}
+				scrollSpeed={2}
 				style={{
 					position: 'absolute',
 					top: 0,
 					left: 0,
 					width: '100%',
+					height: visibleLineCount,
 					minHeight: 1,
-					zIndex: 1,
+					zIndex: isOverflowing ? 2 : 1,
 					paddingLeft: 1,
 					paddingRight: 1
 				}}

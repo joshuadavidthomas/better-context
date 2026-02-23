@@ -84,7 +84,7 @@ async function main() {
 	console.log('4. Testing Model Creation...');
 	const firstProvider = providers[0]!;
 	// Use appropriate model ID based on provider
-	// For opencode, use big-pickle (free model) or claude-sonnet-4-5
+	// For opencode, use big-pickle (free model) or claude-sonnet-4-6
 	const testModelId = firstProvider === 'opencode' ? 'big-pickle' : 'claude-sonnet-4-20250514';
 	try {
 		// Just test that we can create a model - don't actually call it

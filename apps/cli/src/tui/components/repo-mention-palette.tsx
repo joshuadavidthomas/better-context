@@ -91,7 +91,7 @@ export const RepoMentionPalette = (props: RepoMentionPaletteProps) => {
 			.map((p) => (p.type === 'pasted' ? `[~${p.lines} lines]` : p.content))
 			.join('');
 		inputRef.setText(newText);
-		inputRef.editBuffer.setCursor(0, newCursorPos);
+		inputRef.cursorOffset = newCursorPos;
 	};
 
 	useKeyboard((key) => {

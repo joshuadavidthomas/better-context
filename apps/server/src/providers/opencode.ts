@@ -121,7 +121,7 @@ export const OPENCODE_ZEN_MODELS = [
 	'gpt-5-codex',
 	'gpt-5-nano',
 	// Claude models
-	'claude-sonnet-4-5',
+	'claude-sonnet-4-6',
 	'claude-sonnet-4',
 	'claude-haiku-4-5',
 	'claude-3-5-haiku',

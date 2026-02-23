@@ -116,7 +116,7 @@ All scripts use Turborepo for caching. Run from the repository root.
 
 **opencode**
 
-- "claude-sonnet-4-5"
+- "claude-sonnet-4-6"
 - "claude-haiku-4-5"
 - "gemini-3-flash"
 

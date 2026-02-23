@@ -24,8 +24,8 @@ export const BLESSED_MODELS: BlessedModel[] = [
 	},
 	{
 		provider: 'opencode',
-		model: 'claude-sonnet-4-5',
-		description: 'Claude Sonnet 4.5 via OpenCode Zen (API key).',
+		model: 'claude-sonnet-4-6',
+		description: 'Claude Sonnet 4.6 via OpenCode Zen (API key).',
 		providerSetupUrl: 'https://opencode.ai/zen',
 		isDefault: false
 	},

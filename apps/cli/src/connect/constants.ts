@@ -9,7 +9,7 @@ export const CURATED_MODELS: Record<string, { id: string; label: string }[]> = {
 	],
 	opencode: [
 		{ id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5' },
-		{ id: 'claude-sonnet-4-5', label: 'Claude Sonnet 4.5' },
+		{ id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
 		{ id: 'gemini-3-flash', label: 'Gemini 3 Flash' },
 		{ id: 'glm-4.7', label: 'GLM 4.7' },
 		{ id: 'kimi-k2.5', label: 'Kimi K2.5' },
