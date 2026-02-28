@@ -5,7 +5,7 @@ import { parseJsonc } from '@btca/shared';
 import { z } from 'zod';
 
 import { CommonHints, type TaggedErrorOptions } from '../errors.ts';
-import { Metrics } from '../metrics/index.ts';
+import { metricsError, metricsInfo } from '../metrics/index.ts';
 import { GitResourceSchema, type GitResource } from '../resources/schema.ts';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -140,7 +140,7 @@ export async function loadAuth(): Promise<RemoteAuth | null> {
 		if (!parsed) return null;
 		const authResult = RemoteAuthSchema.safeParse(parsed);
 		if (!authResult.success) {
-			Metrics.error('remote.auth.invalid', { path: authPath, error: authResult.error.message });
+			metricsError('remote.auth.invalid', { path: authPath, error: authResult.error.message });
 			return null;
 		}
 		return authResult.data;
@@ -163,7 +163,7 @@ export async function saveAuth(auth: RemoteAuth): Promise<void> {
 				cause
 			});
 		}
-		Metrics.info('remote.auth.saved', { path: authPath });
+		metricsInfo('remote.auth.saved', { path: authPath });
 	}
 
 	/**
@@ -173,7 +173,7 @@ export async function deleteAuth(): Promise<void> {
 		const authPath = getAuthPath();
 		try {
 			await fs.unlink(authPath);
-			Metrics.info('remote.auth.deleted', { path: authPath });
+			metricsInfo('remote.auth.deleted', { path: authPath });
 		} catch {
 			return;
 		}
@@ -208,7 +208,7 @@ export async function loadConfig(cwd: string = process.cwd()): Promise<RemoteCon
 			});
 		}
 
-		Metrics.info('remote.config.loaded', {
+		metricsInfo('remote.config.loaded', {
 			path: configPath,
 			project: parsedResult.data.project,
 			resourceCount: parsedResult.data.resources.length
@@ -240,7 +240,7 @@ export async function saveConfig(
 				cause
 			});
 		}
-		Metrics.info('remote.config.saved', {
+		metricsInfo('remote.config.saved', {
 			path: configPath,
 			project: config.project,
 			resourceCount: config.resources.length

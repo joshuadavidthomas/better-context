@@ -55,12 +55,3 @@ export const withMetricsSpan = async <T>(
 		throw errorCause;
 	}
 };
-
-export const Metrics = {
-	setQuiet: setQuietMetrics,
-	isQuiet: isMetricsQuiet,
-	errorInfo: metricsErrorInfo,
-	info: metricsInfo,
-	error: metricsError,
-	span: withMetricsSpan
-} as const;

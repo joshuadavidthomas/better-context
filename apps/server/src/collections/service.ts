@@ -5,7 +5,7 @@ import { Effect } from 'effect';
 import type { ConfigService as ConfigServiceShape } from '../config/index.ts';
 import { runTransaction } from '../context/transaction.ts';
 import { CommonHints, getErrorHint, getErrorMessage } from '../errors.ts';
-import { Metrics } from '../metrics/index.ts';
+import { metricsInfo } from '../metrics/index.ts';
 import type { ResourcesService } from '../resources/service.ts';
 import { isGitResource, isNpmResource } from '../resources/schema.ts';
 import { FS_RESOURCE_SYSTEM_NOTE, type BtcaFsResource } from '../resources/types.ts';
@@ -284,7 +284,7 @@ export const createCollectionsService = (args: {
 						hint: `${CommonHints.LIST_RESOURCES} ${CommonHints.ADD_RESOURCE}`
 					});
 
-				Metrics.info('collections.load', { resources: uniqueNames, quiet });
+				metricsInfo('collections.load', { resources: uniqueNames, quiet });
 
 				const sortedNames = [...uniqueNames].sort((a, b) => a.localeCompare(b));
 				const key = getCollectionKey(sortedNames);

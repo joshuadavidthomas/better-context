@@ -1,7 +1,7 @@
 import { stripUserQuestionFromStart, extractCoreQuestion } from '@btca/shared';
 
 import { getErrorHint, getErrorMessage, getErrorTag } from '../errors.ts';
-import { Metrics } from '../metrics/index.ts';
+import { metricsError, metricsErrorInfo, metricsInfo } from '../metrics/index.ts';
 import type { AgentEvent } from '../agent/loop.ts';
 
 import type {
@@ -90,7 +90,7 @@ export const createSseStream = (args: {
 		return new ReadableStream<Uint8Array>({
 			start(controller) {
 				streamStartMs = performance.now();
-				Metrics.info('stream.start', {
+				metricsInfo('stream.start', {
 					collectionKey: args.meta.collection.key,
 					resources: args.meta.resources,
 					model: args.meta.model
@@ -263,7 +263,7 @@ export const createSseStream = (args: {
 													}
 												: undefined;
 
-									Metrics.info('stream.done', {
+									metricsInfo('stream.done', {
 										collectionKey: args.meta.collection.key,
 										textLength: finalText.length,
 										reasoningLength: accumulatedReasoning.length,
@@ -295,9 +295,9 @@ export const createSseStream = (args: {
 								}
 
 								case 'error': {
-									Metrics.error('stream.error', {
+									metricsError('stream.error', {
 										collectionKey: args.meta.collection.key,
-										error: Metrics.errorInfo(event.error)
+										error: metricsErrorInfo(event.error)
 									});
 									const err: BtcaStreamErrorEvent = {
 										type: 'error',
@@ -311,9 +311,9 @@ export const createSseStream = (args: {
 							}
 						}
 					} catch (cause) {
-						Metrics.error('stream.error', {
+						metricsError('stream.error', {
 							collectionKey: args.meta.collection.key,
-							error: Metrics.errorInfo(cause)
+							error: metricsErrorInfo(cause)
 						});
 						const err: BtcaStreamErrorEvent = {
 							type: 'error',
@@ -325,7 +325,7 @@ export const createSseStream = (args: {
 					}
 
 					{
-						Metrics.info('stream.closed', { collectionKey: args.meta.collection.key });
+						metricsInfo('stream.closed', { collectionKey: args.meta.collection.key });
 						if (!closed) {
 							closed = true;
 							try {

@@ -1,4 +1,4 @@
-import { Metrics } from '../metrics/index.ts';
+import { metricsError, metricsErrorInfo, metricsInfo } from '../metrics/index.ts';
 import { requireContext } from './index.ts';
 
 export const runTransaction = async <T>(name: string, fn: () => Promise<T>): Promise<T> => {
@@ -7,17 +7,17 @@ export const runTransaction = async <T>(name: string, fn: () => Promise<T>): Pro
 	store.txDepth = depth + 1;
 
 	const start = performance.now();
-	Metrics.info('tx.start', { name, depth });
+	metricsInfo('tx.start', { name, depth });
 	try {
 		const value = await fn();
-		Metrics.info('tx.commit', { name, depth, ms: Math.round(performance.now() - start) });
+		metricsInfo('tx.commit', { name, depth, ms: Math.round(performance.now() - start) });
 		return value;
 	} catch (cause) {
-		Metrics.error('tx.rollback', {
+		metricsError('tx.rollback', {
 			name,
 			depth,
 			ms: Math.round(performance.now() - start),
-			error: Metrics.errorInfo(cause)
+			error: metricsErrorInfo(cause)
 		});
 		throw cause;
 	} finally {

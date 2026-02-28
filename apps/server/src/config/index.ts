@@ -6,7 +6,7 @@ import { Effect } from 'effect';
 import { z } from 'zod';
 
 import { CommonHints, type TaggedErrorOptions } from '../errors.ts';
-import { Metrics } from '../metrics/index.ts';
+import { metricsError, metricsInfo } from '../metrics/index.ts';
 import { getSupportedProviders, isProviderSupported } from '../providers/index.ts';
 import { ResourceDefinitionSchema, type ResourceDefinition } from '../resources/schema.ts';
 
@@ -254,20 +254,20 @@ export type Service = ConfigService;
 		const legacyExists = await Bun.file(legacyPath).exists();
 		if (!legacyExists) return null;
 
-		Metrics.info('config.legacy.found', { path: legacyPath });
+		metricsInfo('config.legacy.found', { path: legacyPath });
 
 		let content: string;
 		try {
 			content = await Bun.file(legacyPath).text();
 		} catch (cause) {
-			Metrics.error('config.legacy.read_failed', { path: legacyPath, error: String(cause) });
+			metricsError('config.legacy.read_failed', { path: legacyPath, error: String(cause) });
 			return null;
 		}
 		let parsed: unknown;
 		try {
 			parsed = JSON.parse(content);
 		} catch (cause) {
-			Metrics.error('config.legacy.parse_failed', { path: legacyPath, error: String(cause) });
+			metricsError('config.legacy.parse_failed', { path: legacyPath, error: String(cause) });
 			return null;
 		}
 
@@ -277,7 +277,7 @@ export type Service = ConfigService;
 		const resourcesResult = LegacyResourcesConfigSchema.safeParse(parsed);
 		if (resourcesResult.success) {
 			const legacy = resourcesResult.data;
-			Metrics.info('config.legacy.parsed', {
+			metricsInfo('config.legacy.parsed', {
 				format: 'resources',
 				resourceCount: legacy.resources.length,
 				model: legacy.model,
@@ -299,7 +299,7 @@ export type Service = ConfigService;
 		const reposResult = LegacyReposConfigSchema.safeParse(parsed);
 		if (reposResult.success) {
 			const legacy = reposResult.data;
-			Metrics.info('config.legacy.parsed', {
+			metricsInfo('config.legacy.parsed', {
 				format: 'repos',
 				repoCount: legacy.repos.length,
 				model: legacy.model,
@@ -325,7 +325,7 @@ export type Service = ConfigService;
 		}
 
 		// Neither format matched
-		Metrics.error('config.legacy.invalid', {
+		metricsError('config.legacy.invalid', {
 			path: legacyPath,
 			error: 'Config does not match any known legacy format'
 		});
@@ -359,7 +359,7 @@ export type Service = ConfigService;
 			`Check that you have write permissions to "${configDir}".`
 		);
 
-		Metrics.info('config.legacy.migrated', {
+		metricsInfo('config.legacy.migrated', {
 			newPath: newConfigPath,
 			resourceCount: migrated.resources.length,
 			migratedCount
@@ -368,9 +368,9 @@ export type Service = ConfigService;
 		// Rename the legacy file to mark it as migrated
 		try {
 			await fs.rename(legacyPath, `${legacyPath}.migrated`);
-			Metrics.info('config.legacy.renamed', { from: legacyPath, to: `${legacyPath}.migrated` });
+			metricsInfo('config.legacy.renamed', { from: legacyPath, to: `${legacyPath}.migrated` });
 		} catch {
-			Metrics.info('config.legacy.rename_skipped', { path: legacyPath });
+			metricsInfo('config.legacy.rename_skipped', { path: legacyPath });
 		}
 
 		return migrated;
@@ -566,7 +566,7 @@ export type Service = ConfigService;
 				}
 				setMutableConfig(updated);
 				await saveConfig(configPath, updated);
-				Metrics.info('config.model.updated', { provider, model });
+				metricsInfo('config.model.updated', { provider, model });
 				return {
 					provider,
 					model,
@@ -592,7 +592,7 @@ export type Service = ConfigService;
 				};
 				setMutableConfig(updated);
 				await saveConfig(configPath, updated);
-				Metrics.info('config.resource.added', { name: resource.name, type: resource.type });
+				metricsInfo('config.resource.added', { name: resource.name, type: resource.type });
 				return resource;
 			},
 
@@ -626,7 +626,7 @@ export type Service = ConfigService;
 						};
 						currentProjectConfig = updated;
 						await saveConfig(configPath, updated);
-						Metrics.info('config.resource.removed', { name, from: 'project' });
+						metricsInfo('config.resource.removed', { name, from: 'project' });
 					} else if (isInGlobal) {
 						// Resource is only in global config
 						// User wants to remove a global resource from project context
@@ -651,7 +651,7 @@ export type Service = ConfigService;
 					};
 					setMutableConfig(updated);
 					await saveConfig(configPath, updated);
-					Metrics.info('config.resource.removed', { name, from: 'global' });
+					metricsInfo('config.resource.removed', { name, from: 'global' });
 				}
 			},
 
@@ -675,18 +675,18 @@ export type Service = ConfigService;
 					}
 				}
 
-				Metrics.info('config.resources.cleared', { count: clearedCount });
+				metricsInfo('config.resources.cleared', { count: clearedCount });
 				return { cleared: clearedCount };
 			},
 
 			reload: async () => {
 				// Reload the config file from disk
 				// configPath points to either project config (if it existed at startup) or global config
-				Metrics.info('config.reload.start', { configPath });
+				metricsInfo('config.reload.start', { configPath });
 
 				const configExists = await Bun.file(configPath).exists();
 				if (!configExists) {
-					Metrics.info('config.reload.skipped', { reason: 'file not found', configPath });
+					metricsInfo('config.reload.skipped', { reason: 'file not found', configPath });
 					return;
 				}
 
@@ -699,7 +699,7 @@ export type Service = ConfigService;
 					currentGlobalConfig = reloaded;
 				}
 
-				Metrics.info('config.reload.done', {
+				metricsInfo('config.reload.done', {
 					resources: reloaded.resources.length,
 					configPath
 				});
@@ -736,7 +736,7 @@ export type Service = ConfigService;
 
 export const load = async (): Promise<ConfigService> => {
 		const cwd = process.cwd();
-		Metrics.info('config.load.start', { cwd });
+		metricsInfo('config.load.start', { cwd });
 
 		const globalConfigPath = `${expandHome(GLOBAL_CONFIG_DIR)}/${GLOBAL_CONFIG_FILENAME}`;
 		const projectConfigPath = `${cwd}/${PROJECT_CONFIG_FILENAME}`;
@@ -750,24 +750,24 @@ export const load = async (): Promise<ConfigService> => {
 			const legacyConfigPath = `${expandHome(GLOBAL_CONFIG_DIR)}/${LEGACY_CONFIG_FILENAME}`;
 			const migrated = await migrateLegacyConfig(legacyConfigPath, globalConfigPath);
 			if (migrated) {
-				Metrics.info('config.load.global', { source: 'migrated', path: globalConfigPath });
+				metricsInfo('config.load.global', { source: 'migrated', path: globalConfigPath });
 				globalConfig = migrated;
 			} else {
-				Metrics.info('config.load.global', { source: 'default', path: globalConfigPath });
+				metricsInfo('config.load.global', { source: 'default', path: globalConfigPath });
 				globalConfig = await createDefaultConfig(globalConfigPath);
 			}
 		} else {
-			Metrics.info('config.load.global', { source: 'existing', path: globalConfigPath });
+			metricsInfo('config.load.global', { source: 'existing', path: globalConfigPath });
 			globalConfig = await loadConfigFromPath(globalConfigPath);
 		}
 
 		// Now check for project config and merge if it exists
 		const projectExists = await Bun.file(projectConfigPath).exists();
 		if (projectExists) {
-			Metrics.info('config.load.project', { source: 'project', path: projectConfigPath });
+			metricsInfo('config.load.project', { source: 'project', path: projectConfigPath });
 			let projectConfig = await loadConfigFromPath(projectConfigPath);
 
-			Metrics.info('config.load.merged', {
+			metricsInfo('config.load.merged', {
 				globalResources: globalConfig.resources.length,
 				projectResources: projectConfig.resources.length
 			});
@@ -788,7 +788,7 @@ export const load = async (): Promise<ConfigService> => {
 					legacyExists = false;
 				}
 				if (legacyExists) {
-					Metrics.info('config.project.legacy_data_dir', {
+					metricsInfo('config.project.legacy_data_dir', {
 						path: legacyProjectDataDir,
 						action: 'migrating'
 					});
@@ -809,7 +809,7 @@ export const load = async (): Promise<ConfigService> => {
 		}
 
 		// No project config, use global only
-		Metrics.info('config.load.source', { source: 'global', path: globalConfigPath });
+		metricsInfo('config.load.source', { source: 'global', path: globalConfigPath });
 		const globalDataDir = globalConfig.dataDirectory ?? expandHome(GLOBAL_DATA_DIR);
 		const resolvedGlobalDataDir = resolveDataDirectory(
 			globalDataDir,

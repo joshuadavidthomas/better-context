@@ -8,7 +8,12 @@ import { load as loadConfig } from './config/index.ts';
 import { toHttpErrorPayload } from './effect/errors.ts';
 import { createServerRuntime } from './effect/runtime.ts';
 import * as ServerServices from './effect/services.ts';
-import { Metrics } from './metrics/index.ts';
+import {
+	metricsError,
+	metricsErrorInfo,
+	metricsInfo,
+	setQuietMetrics
+} from './metrics/index.ts';
 import { createModelsDevPricing } from './pricing/models-dev.ts';
 import { createResourcesService } from './resources/service.ts';
 import { GitResourceSchema, LocalResourceSchema, NpmResourceSchema } from './resources/schema.ts';
@@ -179,7 +184,7 @@ const createApp = () => {
 	): Effect.Effect<HttpServerResponse.HttpServerResponse, never, R> =>
 		Effect.catchCause(effect, (cause) => {
 			const error = Cause.squash(cause);
-			Metrics.error('http.error', { error: Metrics.errorInfo(error) });
+			metricsError('http.error', { error: metricsErrorInfo(error) });
 			const payload = toHttpErrorPayload(error);
 			return Effect.succeed(
 				HttpServerResponse.jsonUnsafe(
@@ -252,7 +257,7 @@ const createApp = () => {
 					);
 
 					const collectionKey = ServerServices.loadedResourceCollectionKey(resourceNames);
-					Metrics.info('question.received', {
+					metricsInfo('question.received', {
 						stream: false,
 						quiet: decoded.quiet ?? false,
 						questionLength: decoded.question.length,
@@ -264,13 +269,13 @@ const createApp = () => {
 						resourceNames,
 						quiet: decoded.quiet
 					});
-					Metrics.info('collection.ready', { collectionKey, path: collection.path });
+					metricsInfo('collection.ready', { collectionKey, path: collection.path });
 
 					const result = yield* ServerServices.askQuestion({
 						collection,
 						question: decoded.question
 					});
-					Metrics.info('question.done', {
+					metricsInfo('question.done', {
 						collectionKey,
 						answerLength: result.answer.length,
 						model: result.model
@@ -297,7 +302,7 @@ const createApp = () => {
 					);
 
 					const collectionKey = ServerServices.loadedResourceCollectionKey(resourceNames);
-					Metrics.info('question.received', {
+					metricsInfo('question.received', {
 						stream: true,
 						quiet: decoded.quiet ?? false,
 						questionLength: decoded.question.length,
@@ -309,7 +314,7 @@ const createApp = () => {
 						resourceNames,
 						quiet: decoded.quiet
 					});
-					Metrics.info('collection.ready', { collectionKey, path: collection.path });
+					metricsInfo('collection.ready', { collectionKey, path: collection.path });
 
 					const { stream: eventStream, model } = yield* ServerServices.askQuestionStream({
 						collection,
@@ -326,7 +331,7 @@ const createApp = () => {
 						}
 					} satisfies BtcaStreamMetaEvent;
 
-					Metrics.info('question.stream.start', { collectionKey });
+					metricsInfo('question.stream.start', { collectionKey });
 					modelsDevPricing.prefetch();
 					const stream = createSseStream({
 						meta,
@@ -440,14 +445,14 @@ export interface StartServerOptions {
 
 export const startServer = async (options: StartServerOptions = {}): Promise<ServerInstance> => {
 	if (options.quiet) {
-		Metrics.setQuiet(true);
+		setQuietMetrics(true);
 	}
 
 	const requestedPort = options.port ?? PORT;
-	Metrics.info('server.starting', { port: requestedPort });
+	metricsInfo('server.starting', { port: requestedPort });
 
 	const config = await loadConfig();
-	Metrics.info('config.ready', {
+	metricsInfo('config.ready', {
 		provider: config.provider,
 		model: config.model,
 		maxSteps: config.maxSteps,
@@ -472,7 +477,7 @@ export const startServer = async (options: StartServerOptions = {}): Promise<Ser
 	});
 
 	const actualPort = server.port ?? requestedPort;
-	Metrics.info('server.started', { port: actualPort });
+	metricsInfo('server.started', { port: actualPort });
 
 	return {
 		port: actualPort,
@@ -492,7 +497,7 @@ export type { BtcaStreamEvent, BtcaStreamMetaEvent } from './stream/types.ts';
 if (import.meta.main) {
 	const server = await startServer({ port: PORT });
 	const shutdown = () => {
-		Metrics.info('server.shutdown', { reason: 'signal' });
+		metricsInfo('server.shutdown', { reason: 'signal' });
 		server.stop();
 		process.exit(0);
 	};

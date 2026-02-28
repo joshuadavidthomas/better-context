@@ -6,7 +6,7 @@ import { Effect } from 'effect';
 
 import type { ConfigService as ConfigServiceShape } from '../config/index.ts';
 import { getErrorHint, getErrorMessage, type TaggedErrorOptions } from '../errors.ts';
-import { Metrics } from '../metrics/index.ts';
+import { metricsError, metricsErrorInfo, metricsInfo } from '../metrics/index.ts';
 import {
 	getAuthenticatedProviders,
 	getProviderAuthHint,
@@ -146,7 +146,7 @@ export const createAgentService = (config: ConfigServiceShape): AgentService => 
 		 * Ask a question and stream the response using the new AI SDK loop
 		 */
 		const askStream: AgentService['askStream'] = async ({ collection, question }) => {
-			Metrics.info('agent.ask.start', {
+			metricsInfo('agent.ask.start', {
 				provider: config.provider,
 				model: config.model,
 				questionLength: question.length
@@ -192,7 +192,7 @@ export const createAgentService = (config: ConfigServiceShape): AgentService => 
 		const ask: AgentService['ask'] = async ({ collection, question }) => {
 			return Effect.runPromise(
 				Effect.gen(function* () {
-					Metrics.info('agent.ask.start', {
+					metricsInfo('agent.ask.start', {
 						provider: config.provider,
 						model: config.model,
 						questionLength: question.length
@@ -222,7 +222,7 @@ export const createAgentService = (config: ConfigServiceShape): AgentService => 
 							})
 					});
 
-					Metrics.info('agent.ask.complete', {
+					metricsInfo('agent.ask.complete', {
 						provider: config.provider,
 						model: config.model,
 						answerLength: result.answer.length,
@@ -236,7 +236,7 @@ export const createAgentService = (config: ConfigServiceShape): AgentService => 
 					};
 				}).pipe(
 					Effect.tapError((error) =>
-						Effect.sync(() => Metrics.error('agent.ask.error', { error: Metrics.errorInfo(error) }))
+						Effect.sync(() => metricsError('agent.ask.error', { error: metricsErrorInfo(error) }))
 					),
 					Effect.ensuring(cleanupCollection(collection))
 				)
