@@ -344,19 +344,3 @@ export async function updateModel(
 	await saveConfig(config, cwd);
 	return config;
 }
-
-export const RemoteConfigService = {
-	getAuthPath,
-	getConfigPath,
-	isAuthenticated,
-	loadAuth,
-	saveAuth,
-	deleteAuth,
-	configExists,
-	loadConfig,
-	saveConfig,
-	createDefaultConfig,
-	addResource,
-	removeResource,
-	updateModel
-} as const;
