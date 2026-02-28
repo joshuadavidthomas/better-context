@@ -1,6 +1,7 @@
 import { BunServices } from '@effect/platform-bun';
 import { Cause, Effect, Exit, Option, pipe } from 'effect';
 import { Argument, Command, Flag } from 'effect/unstable/cli';
+import { runAddCommand } from '../commands/add.ts';
 import { runAskCommand } from '../commands/ask.ts';
 import { runClearCommand } from '../commands/clear.ts';
 import { runConnectCommand } from '../commands/connect.ts';
@@ -41,6 +42,33 @@ const clear = Command.make(
 	{ server: serverFlag, port: portFlag },
 	({ server, port }) =>
 		Effect.tryPromise(() => runClearCommand(resolveServerOptions({ server, port })))
+);
+const add = Command.make(
+	'add',
+	{
+		reference: pipe(Argument.string('reference'), Argument.optional),
+		global: pipe(Flag.boolean('global'), Flag.withAlias('g')),
+		name: pipe(Flag.string('name'), Flag.withAlias('n'), Flag.optional),
+		branch: pipe(Flag.string('branch'), Flag.withAlias('b'), Flag.optional),
+		searchPath: pipe(Flag.string('search-path'), Flag.withAlias('s'), Flag.atLeast(0)),
+		notes: pipe(Flag.string('notes'), Flag.optional),
+		type: pipe(Flag.string('type'), Flag.withAlias('t'), Flag.optional),
+		server: serverFlag,
+		port: portFlag
+	},
+	({ reference, global, name, branch, searchPath, notes, type, server, port }) =>
+		Effect.tryPromise(() =>
+			runAddCommand({
+				reference: Option.getOrUndefined(reference),
+				global,
+				name: Option.getOrUndefined(name),
+				branch: Option.getOrUndefined(branch),
+				searchPath: [...searchPath],
+				notes: Option.getOrUndefined(notes),
+				type: Option.getOrUndefined(type),
+				globalOpts: resolveServerOptions({ server, port })
+			})
+		)
 );
 const ask = Command.make(
 	'ask',
@@ -179,6 +207,7 @@ const wipe = Command.make(
 const root = pipe(
 	Command.make('btca'),
 	Command.withSubcommands([
+		add,
 		ask,
 		clear,
 		connect,

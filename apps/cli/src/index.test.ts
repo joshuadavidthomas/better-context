@@ -24,7 +24,7 @@ describe('cli dispatch', () => {
 	test('keeps subcommand help contextual for btca add', () => {
 		const result = runCli(['add', '--help']);
 		expect(result.exitCode).toBe(0);
-		expect(result.output).toContain('Usage: btca add');
+		expect(result.output).toContain('USAGE\n  btca add');
 	});
 
 	test('rejects unknown top-level commands with a suggestion', () => {

@@ -168,6 +168,7 @@ const migratedCommands = new Set([
 	'disconnect',
 	'init',
 	'ask',
+	'add',
 	'reference',
 	'resources',
 	'skill',
