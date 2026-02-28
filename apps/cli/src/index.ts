@@ -169,6 +169,7 @@ const migratedCommands = new Set([
 	'init',
 	'ask',
 	'add',
+	'mcp',
 	'reference',
 	'resources',
 	'skill',

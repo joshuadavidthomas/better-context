@@ -112,15 +112,23 @@ const init = Command.make(
 const mcp = pipe(
 	Command.make(
 		'mcp',
-		{ server: serverFlag, port: portFlag },
-		({ server, port }) =>
-			Effect.tryPromise(() =>
-				runMcpServerCommand({ globalOpts: resolveServerOptions({ server, port }) })
-			)
-	),
-	Command.withSubcommands([
-		Command.make('local', {}, () => Effect.tryPromise(() => runMcpConfigureLocalCommand()))
-	])
+		{
+			mode: pipe(Argument.string('mode'), Argument.optional),
+			server: serverFlag,
+			port: portFlag
+		},
+		({ mode, server, port }) =>
+			Effect.tryPromise(() => {
+				const selectedMode = Option.getOrUndefined(mode);
+				if (!selectedMode) {
+					return runMcpServerCommand({ globalOpts: resolveServerOptions({ server, port }) });
+				}
+				if (selectedMode === 'local') {
+					return runMcpConfigureLocalCommand();
+				}
+				throw new Error(`Unknown mcp mode "${selectedMode}". Use "local" or omit it.`);
+			})
+	)
 );
 const connect = Command.make(
 	'connect',
