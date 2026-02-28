@@ -7,6 +7,12 @@ import { streamText, tool, stepCountIs, type ModelMessage } from 'ai';
 import { Model } from '../providers/index.ts';
 import type { ProviderOptions } from '../providers/registry.ts';
 import { ReadTool, GrepTool, GlobTool, ListTool } from '../tools/index.ts';
+import type {
+	ReadToolParametersType,
+	GrepToolParametersType,
+	GlobToolParametersType,
+	ListToolParametersType
+} from '../tools/index.ts';
 
 export namespace AgentLoop {
 	// Event types for streaming
@@ -88,7 +94,7 @@ export namespace AgentLoop {
 			read: tool({
 				description: 'Read the contents of a file. Returns the file contents with line numbers.',
 				inputSchema: ReadTool.Parameters,
-				execute: async (params: ReadTool.ParametersType) => {
+				execute: async (params: ReadToolParametersType) => {
 					const result = await ReadTool.execute(params, { basePath, vfsId });
 					return result.output;
 				}
@@ -98,7 +104,7 @@ export namespace AgentLoop {
 				description:
 					'Search for a regex pattern in file contents. Returns matching lines with file paths and line numbers.',
 				inputSchema: GrepTool.Parameters,
-				execute: async (params: GrepTool.ParametersType) => {
+				execute: async (params: GrepToolParametersType) => {
 					const result = await GrepTool.execute(params, { basePath, vfsId });
 					return result.output;
 				}
@@ -108,7 +114,7 @@ export namespace AgentLoop {
 				description:
 					'Find files matching a glob pattern (e.g. "**/*.ts", "src/**/*.js"). Returns a list of matching file paths sorted by modification time.',
 				inputSchema: GlobTool.Parameters,
-				execute: async (params: GlobTool.ParametersType) => {
+				execute: async (params: GlobToolParametersType) => {
 					const result = await GlobTool.execute(params, { basePath, vfsId });
 					return result.output;
 				}
@@ -118,7 +124,7 @@ export namespace AgentLoop {
 				description:
 					'List the contents of a directory. Returns files and subdirectories with their types.',
 				inputSchema: ListTool.Parameters,
-				execute: async (params: ListTool.ParametersType) => {
+				execute: async (params: ListToolParametersType) => {
 					const result = await ListTool.execute(params, { basePath, vfsId });
 					return result.output;
 				}

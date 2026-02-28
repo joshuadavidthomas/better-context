@@ -7,16 +7,19 @@ export type ContextStore = {
 
 const storage = new AsyncLocalStorage<ContextStore>();
 
-export namespace Context {
-	export const run = <T>(store: ContextStore, fn: () => Promise<T> | T): Promise<T> => {
-		return Promise.resolve(storage.run(store, fn));
-	};
+export const runContext = <T>(store: ContextStore, fn: () => Promise<T> | T): Promise<T> =>
+	Promise.resolve(storage.run(store, fn));
 
-	export const get = (): ContextStore | undefined => storage.getStore();
+export const getContext = (): ContextStore | undefined => storage.getStore();
 
-	export const require = (): ContextStore => {
-		return storage.getStore() ?? { requestId: 'unknown', txDepth: 0 };
-	};
+export const requireContext = (): ContextStore =>
+	storage.getStore() ?? { requestId: 'unknown', txDepth: 0 };
 
-	export const requestId = (): string => storage.getStore()?.requestId ?? 'unknown';
-}
+export const requestId = (): string => storage.getStore()?.requestId ?? 'unknown';
+
+export const Context = {
+	run: runContext,
+	get: getContext,
+	require: requireContext,
+	requestId
+} as const;
