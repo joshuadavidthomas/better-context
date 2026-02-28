@@ -170,6 +170,7 @@ const migratedCommands = new Set([
 	'ask',
 	'reference',
 	'resources',
+	'skill',
 	'status',
 	'serve',
 	'telemetry',

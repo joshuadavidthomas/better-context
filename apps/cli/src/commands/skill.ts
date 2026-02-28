@@ -11,13 +11,15 @@ const INSTALL_COMMAND = [
 
 export const skillCommand = new Command('skill')
 	.description('Install the btca CLI skill via skills.sh')
-	.action(async () => {
-		const subprocess = Bun.spawn(INSTALL_COMMAND, {
-			stdio: ['inherit', 'inherit', 'inherit']
-		});
+	.action(runSkillCommand);
 
-		const exitCode = await subprocess.exited;
-		if (exitCode !== 0) {
-			process.exit(exitCode);
-		}
+export async function runSkillCommand() {
+	const subprocess = Bun.spawn(INSTALL_COMMAND, {
+		stdio: ['inherit', 'inherit', 'inherit']
 	});
+
+	const exitCode = await subprocess.exited;
+	if (exitCode !== 0) {
+		process.exit(exitCode);
+	}
+}

@@ -6,10 +6,12 @@ import { runClearCommand } from '../commands/clear.ts';
 import { runConnectCommand } from '../commands/connect.ts';
 import { runDisconnectCommand } from '../commands/disconnect.ts';
 import { runInitCommand } from '../commands/init.ts';
+import { runMcpConfigureLocalCommand, runMcpServerCommand } from '../commands/mcp.ts';
 import { runReferenceCommand } from '../commands/reference.ts';
 import { runRemoveCommand } from '../commands/remove.ts';
 import { runResourcesCommand } from '../commands/resources.ts';
 import { runServeCommand } from '../commands/serve.ts';
+import { runSkillCommand } from '../commands/skill.ts';
 import { runStatusCommand } from '../commands/status.ts';
 import {
 	runTelemetryOffCommand,
@@ -79,6 +81,19 @@ const init = Command.make(
 	},
 	({ force }) => Effect.tryPromise(() => runInitCommand({ force }))
 );
+const mcp = pipe(
+	Command.make(
+		'mcp',
+		{ server: serverFlag, port: portFlag },
+		({ server, port }) =>
+			Effect.tryPromise(() =>
+				runMcpServerCommand({ globalOpts: resolveServerOptions({ server, port }) })
+			)
+	),
+	Command.withSubcommands([
+		Command.make('local', {}, () => Effect.tryPromise(() => runMcpConfigureLocalCommand()))
+	])
+);
 const connect = Command.make(
 	'connect',
 	{
@@ -144,6 +159,7 @@ const remove = Command.make(
 			})
 		)
 );
+const skill = Command.make('skill', {}, () => Effect.tryPromise(() => runSkillCommand()));
 const telemetry = pipe(
 	Command.make('telemetry'),
 	Command.withSubcommands([
@@ -168,9 +184,11 @@ const root = pipe(
 		connect,
 		disconnect,
 		init,
+		mcp,
 		reference,
 		resources,
 		status,
+		skill,
 		serve,
 		telemetry,
 		remove,

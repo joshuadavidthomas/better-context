@@ -303,12 +303,12 @@ const configureEditor = async (editor: McpEditor) => {
 	throw new Error(`Unsupported editor: ${editor}`);
 };
 
-const runLocalServer = async (command: Command) => {
-	const globalOpts = command.parent?.opts() as { server?: string; port?: number } | undefined;
-
+export const runMcpServerCommand = async (args: {
+	globalOpts?: { server?: string; port?: number };
+}) => {
 	const serverManager = await ensureServer({
-		serverUrl: globalOpts?.server,
-		port: globalOpts?.port,
+		serverUrl: args.globalOpts?.server,
+		port: args.globalOpts?.port,
 		quiet: true
 	});
 
@@ -377,29 +377,32 @@ const runLocalServer = async (command: Command) => {
 	transport.listen();
 };
 
+export const runMcpConfigureLocalCommand = async () => {
+	const result = await Result.tryPromise(async () => {
+		const editor = await promptEditor();
+		const filePath = await configureEditor(editor);
+		console.log(`\nLocal MCP configured for ${editor} in: ${filePath}\n`);
+	});
+
+	if (Result.isError(result)) {
+		if (result.error instanceof Error && result.error.message === 'Invalid selection') {
+			console.error('\nError: Invalid selection. Please try again.');
+		} else {
+			console.error(formatError(result.error));
+		}
+		process.exit(1);
+	}
+};
+
 const configureLocalMcp = new Command('local')
 	.description('Configure local MCP settings for your editor')
-	.action(async () => {
-		const result = await Result.tryPromise(async () => {
-			const editor = await promptEditor();
-			const filePath = await configureEditor(editor);
-			console.log(`\nLocal MCP configured for ${editor} in: ${filePath}\n`);
-		});
-
-		if (Result.isError(result)) {
-			if (result.error instanceof Error && result.error.message === 'Invalid selection') {
-				console.error('\nError: Invalid selection. Please try again.');
-			} else {
-				console.error(formatError(result.error));
-			}
-			process.exit(1);
-		}
-	});
+	.action(runMcpConfigureLocalCommand);
 
 export const mcpCommand = new Command('mcp')
 	.description('Run the local MCP server or configure editor MCP settings')
 	.action(async (_options, command) => {
-		const result = await Result.tryPromise(() => runLocalServer(command));
+		const globalOpts = command.parent?.opts() as { server?: string; port?: number } | undefined;
+		const result = await Result.tryPromise(() => runMcpServerCommand({ globalOpts }));
 		if (Result.isError(result)) {
 			console.error(formatError(result.error));
 			process.exit(1);
