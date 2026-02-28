@@ -1,6 +1,6 @@
 import { Effect, ServiceMap } from 'effect';
 import { Agent } from '../agent/service.ts';
-import { Collections } from '../collections/service.ts';
+import type { CollectionsService as CollectionsServiceShape } from '../collections/service.ts';
 import { getCollectionKey } from '../collections/types.ts';
 import { Config } from '../config/index.ts';
 import type { ResourceDefinition } from '../resources/schema.ts';
@@ -9,7 +9,10 @@ export class ConfigService extends ServiceMap.Service<ConfigService, Config.Serv
 	'btca-server/effect/ConfigService'
 ) {}
 
-export class CollectionsService extends ServiceMap.Service<CollectionsService, Collections.Service>()(
+export class CollectionsService extends ServiceMap.Service<
+	CollectionsService,
+	CollectionsServiceShape
+>()(
 	'btca-server/effect/CollectionsService'
 ) {}
 
@@ -108,17 +111,17 @@ export const listProviders: Effect.Effect<
 export const loadCollection = (args: {
 	resourceNames: readonly string[];
 	quiet?: boolean;
-}): Effect.Effect<Awaited<ReturnType<Collections.Service['load']>>, unknown, CollectionsService> =>
+}): Effect.Effect<Awaited<ReturnType<CollectionsServiceShape['load']>>, unknown, CollectionsService> =>
 	Effect.flatMap(collectionsService, (collections) => collections.loadEffect(args));
 
 export const askQuestion = (args: {
-	collection: Awaited<ReturnType<Collections.Service['load']>>;
+	collection: Awaited<ReturnType<CollectionsServiceShape['load']>>;
 	question: string;
 }): Effect.Effect<Awaited<ReturnType<Agent.Service['ask']>>, unknown, AgentService> =>
 	Effect.flatMap(agentService, (agent) => agent.askEffect(args));
 
 export const askQuestionStream = (args: {
-	collection: Awaited<ReturnType<Collections.Service['load']>>;
+	collection: Awaited<ReturnType<CollectionsServiceShape['load']>>;
 	question: string;
 }): Effect.Effect<Awaited<ReturnType<Agent.Service['askStream']>>, unknown, AgentService> =>
 	Effect.flatMap(agentService, (agent) => agent.askStreamEffect(args));

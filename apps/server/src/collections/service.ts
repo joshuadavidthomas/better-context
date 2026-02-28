@@ -18,17 +18,16 @@ import {
 	type VirtualResourceMetadata
 } from './virtual-metadata.ts';
 
-export namespace Collections {
-	export type Service = {
-		load: (args: {
-			resourceNames: readonly string[];
-			quiet?: boolean;
-		}) => Promise<CollectionResult>;
-		loadEffect: (args: {
-			resourceNames: readonly string[];
-			quiet?: boolean;
-		}) => Effect.Effect<CollectionResult, CollectionError>;
-	};
+export type CollectionsService = {
+	load: (args: {
+		resourceNames: readonly string[];
+		quiet?: boolean;
+	}) => Promise<CollectionResult>;
+	loadEffect: (args: {
+		resourceNames: readonly string[];
+		quiet?: boolean;
+	}) => Effect.Effect<CollectionResult, CollectionError>;
+};
 
 	const encodePathSegments = (value: string) => value.split('/').map(encodeURIComponent).join('/');
 
@@ -266,11 +265,11 @@ export namespace Collections {
 		};
 	};
 
-	export const create = (args: {
+export const createCollectionsService = (args: {
 		config: Config.Service;
 		resources: ResourcesService;
-	}): Service => {
-		const load: Service['load'] = ({ resourceNames, quiet = false }) =>
+	}): CollectionsService => {
+		const load: CollectionsService['load'] = ({ resourceNames, quiet = false }) =>
 			Transaction.run('collections.load', async () => {
 				const uniqueNames = Array.from(new Set(resourceNames));
 				if (uniqueNames.length === 0)
@@ -368,7 +367,7 @@ export namespace Collections {
 				}
 			});
 
-		const loadEffect: Service['loadEffect'] = ({ resourceNames, quiet }) =>
+		const loadEffect: CollectionsService['loadEffect'] = ({ resourceNames, quiet }) =>
 			Effect.tryPromise({
 				try: () => load({ resourceNames, quiet }),
 				catch: (cause) =>
@@ -386,4 +385,7 @@ export namespace Collections {
 			loadEffect
 		};
 	};
-}
+
+export const Collections = {
+	create: createCollectionsService
+} as const;
