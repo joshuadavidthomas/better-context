@@ -494,10 +494,11 @@ export const startServer = async (options: StartServerOptions = {}): Promise<Ser
 	const agent = Agent.create(config);
 	const appLayer = createApp({ config, resources, collections, agent });
 	const { handler, dispose } = HttpRouter.toWebHandler(appLayer);
+	const requestContext = ServiceMap.makeUnsafe<unknown>(new Map());
 
 	const server = Bun.serve({
 		port: requestedPort,
-		fetch: (request) => handler(request, ServiceMap.empty() as ServiceMap.ServiceMap<any>),
+		fetch: (request) => handler(request, requestContext),
 		idleTimeout: 60
 	});
 
