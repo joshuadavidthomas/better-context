@@ -2,7 +2,7 @@ import { stripUserQuestionFromStart, extractCoreQuestion } from '@btca/shared';
 
 import { getErrorHint, getErrorMessage, getErrorTag } from '../errors.ts';
 import { Metrics } from '../metrics/index.ts';
-import type { AgentLoop } from '../agent/loop.ts';
+import type { AgentEvent } from '../agent/loop.ts';
 
 import type {
 	BtcaStreamDoneEvent,
@@ -38,7 +38,7 @@ const costFor = (tokens: number | undefined, usdPerMTokens: number | undefined) 
 export namespace StreamService {
 	export const createSseStream = (args: {
 		meta: BtcaStreamMetaEvent;
-		eventStream: AsyncIterable<AgentLoop.AgentEvent>;
+		eventStream: AsyncIterable<AgentEvent>;
 		question?: string; // Original question - used to filter echoed user message
 		requestStartMs?: number;
 		pricing?: {

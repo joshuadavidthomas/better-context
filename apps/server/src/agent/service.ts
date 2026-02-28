@@ -12,7 +12,7 @@ import type { CollectionResult } from '../collections/types.ts';
 import { clearVirtualCollectionMetadata } from '../collections/virtual-metadata.ts';
 import { VirtualFs } from '../vfs/virtual-fs.ts';
 import type { AgentResult } from './types.ts';
-import { AgentLoop } from './loop.ts';
+import { AgentLoop, type AgentEvent } from './loop.ts';
 
 export namespace Agent {
 	// ─────────────────────────────────────────────────────────────────────────────
@@ -92,13 +92,13 @@ export namespace Agent {
 
 	export type Service = {
 		askStream: (args: { collection: CollectionResult; question: string }) => Promise<{
-			stream: AsyncIterable<AgentLoop.AgentEvent>;
+			stream: AsyncIterable<AgentEvent>;
 			model: { provider: string; model: string };
 		}>;
 		askStreamEffect: (
 			args: { collection: CollectionResult; question: string }
 		) => Effect.Effect<{
-			stream: AsyncIterable<AgentLoop.AgentEvent>;
+			stream: AsyncIterable<AgentEvent>;
 			model: { provider: string; model: string };
 		}, unknown>;
 
