@@ -1,6 +1,7 @@
 import { Cause, Effect, Exit } from 'effect';
 import { launchRepl } from './commands/repl.ts';
 import { launchTui } from './commands/tui.ts';
+import { firstOperand, normalizeCliArgv } from './effect/argv.ts';
 import { runEffectCli } from './effect/cli-app.ts';
 import { formatCliError } from './effect/errors.ts';
 import { createCliRuntime } from './effect/runtime.ts';
@@ -75,24 +76,8 @@ const suggestCommand = (token: string) => {
 	return bestDistance <= 2 ? suggestion : null;
 };
 
-const firstOperand = (): string | null => {
-	const args = process.argv.slice(2);
-	const flagsWithValue = new Set(['--server', '--port']);
-
-	for (let i = 0; i < args.length; i += 1) {
-		const token = args[i]!;
-		if (token === '--') return null;
-		if (!token.startsWith('-')) return token;
-		if (flagsWithValue.has(token)) {
-			i += 1;
-		}
-	}
-
-	return null;
-};
-
 const unknownTopLevelCommand = () => {
-	const token = firstOperand();
+	const token = firstOperand(normalizeCliArgv(process.argv.slice(2)));
 	if (token === null) return null;
 	return knownCommands.has(token) ? null : token;
 };
@@ -177,7 +162,7 @@ const parseRootLaunchOptions = () => {
 	return options;
 };
 
-if (firstOperand() === null && !shouldDelegateRoot()) {
+if (firstOperand(normalizeCliArgv(process.argv.slice(2))) === null && !shouldDelegateRoot()) {
 	const runtime = createCliRuntime();
 	const launchOptions = parseRootLaunchOptions();
 	const launchEffect = Effect.tryPromise(async () => {
@@ -195,7 +180,12 @@ if (firstOperand() === null && !shouldDelegateRoot()) {
 		process.exit(1);
 	}
 } else {
-	const exitCode = await runEffectCli(process.argv, VERSION);
+	const normalizedArgv = [
+		process.argv[0]!,
+		process.argv[1]!,
+		...normalizeCliArgv(process.argv.slice(2))
+	];
+	const exitCode = await runEffectCli(normalizedArgv, VERSION);
 	if (exitCode !== 0) {
 		process.exit(exitCode);
 	}

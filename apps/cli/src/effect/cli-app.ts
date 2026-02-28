@@ -20,10 +20,13 @@ import {
 	runTelemetryStatusCommand
 } from '../commands/telemetry.ts';
 import { runWipeCommand } from '../commands/wipe.ts';
+import { normalizeCliArgv } from './argv.ts';
 import { formatCliCommandError } from './errors.ts';
 
 const serverFlag = pipe(Flag.string('server'), Flag.optional);
 const portFlag = pipe(Flag.integer('port'), Flag.optional);
+const noThinkingFlag = pipe(Flag.boolean('no-thinking'), Flag.optional);
+const noToolsFlag = pipe(Flag.boolean('no-tools'), Flag.optional);
 
 const resolveServerOptions = ({
 	server,
@@ -37,11 +40,8 @@ const resolveServerOptions = ({
 	quiet: true
 });
 
-const clear = Command.make(
-	'clear',
-	{ server: serverFlag, port: portFlag },
-	({ server, port }) =>
-		Effect.tryPromise(() => runClearCommand(resolveServerOptions({ server, port })))
+const clear = Command.make('clear', { server: serverFlag, port: portFlag }, ({ server, port }) =>
+	Effect.tryPromise(() => runClearCommand(resolveServerOptions({ server, port })))
 );
 const add = Command.make(
 	'add',
@@ -76,18 +76,20 @@ const ask = Command.make(
 		question: pipe(Flag.string('question'), Flag.withAlias('q')),
 		resource: pipe(Flag.string('resource'), Flag.withAlias('r'), Flag.atLeast(0)),
 		thinking: pipe(Flag.boolean('thinking'), Flag.optional),
+		noThinking: noThinkingFlag,
 		tools: pipe(Flag.boolean('tools'), Flag.optional),
+		noTools: noToolsFlag,
 		subAgent: pipe(Flag.boolean('sub-agent'), Flag.optional),
 		server: serverFlag,
 		port: portFlag
 	},
-	({ question, resource, thinking, tools, subAgent, server, port }) =>
+	({ question, resource, thinking, noThinking, tools, noTools, subAgent, server, port }) =>
 		Effect.tryPromise(() =>
 			runAskCommand({
 				question,
 				resource: [...resource],
-				thinking: Option.getOrUndefined(thinking),
-				tools: Option.getOrUndefined(tools),
+				thinking: Option.getOrUndefined(noThinking) ? false : Option.getOrUndefined(thinking),
+				tools: Option.getOrUndefined(noTools) ? false : Option.getOrUndefined(tools),
 				subAgent: Option.getOrUndefined(subAgent),
 				globalOpts: resolveServerOptions({ server, port })
 			})
@@ -238,7 +240,7 @@ export const runEffectCli = async (
 	version: string
 ): Promise<number> => {
 	const run = Command.runWith(root, { version });
-	const cliEffect = run(argv.slice(2)).pipe(Effect.provide(BunServices.layer));
+	const cliEffect = run(normalizeCliArgv(argv.slice(2))).pipe(Effect.provide(BunServices.layer));
 	const exit = await Effect.runPromiseExit(cliEffect);
 	if (Exit.isFailure(exit)) {
 		console.error(formatCliCommandError(Cause.squash(exit.cause)));
