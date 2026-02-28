@@ -1,10 +1,11 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import * as readline from 'readline';
+import { Effect } from 'effect';
 
 import { addResource, BtcaError } from '../client/index.ts';
 import { dim } from '../lib/utils/colors.ts';
-import { ensureServer } from '../server/manager.ts';
+import { withServerEffect } from '../server/manager.ts';
 
 interface GitHubUrlParts {
 	owner: string;
@@ -269,6 +270,21 @@ async function promptSelect<T extends string>(
 	});
 }
 
+const runWithServer = <A>(
+	globalOpts: { server?: string; port?: number } | undefined,
+	run: (serverUrl: string) => Promise<A>
+) =>
+	Effect.runPromise(
+		withServerEffect(
+			{
+				serverUrl: globalOpts?.server,
+				port: globalOpts?.port,
+				quiet: true
+			},
+			(server) => Effect.tryPromise(() => run(server.url))
+		)
+	);
+
 /**
  * Interactive wizard for adding a git resource.
  */
@@ -321,23 +337,17 @@ async function addGitResourceWizard(
 			return;
 		}
 
-		const server = await ensureServer({
-			serverUrl: globalOpts?.server,
-			port: globalOpts?.port,
-			quiet: true
-		});
-
-		const resource = await addResource(server.url, {
-			type: 'git',
-			name,
-			url: finalUrl,
-			branch,
-			...(searchPaths.length === 1 && { searchPath: searchPaths[0] }),
-			...(searchPaths.length > 1 && { searchPaths }),
-			...(notes && { specialNotes: notes })
-		});
-
-		server.stop();
+		const resource = await runWithServer(globalOpts, (serverUrl) =>
+			addResource(serverUrl, {
+				type: 'git',
+				name,
+				url: finalUrl,
+				branch,
+				...(searchPaths.length === 1 && { searchPath: searchPaths[0] }),
+				...(searchPaths.length > 1 && { searchPaths }),
+				...(notes && { specialNotes: notes })
+			})
+		);
 
 		console.log(`\nAdded resource: ${name}`);
 		if (resource.type === 'git' && resource.url !== finalUrl) {
@@ -391,20 +401,14 @@ async function addLocalResourceWizard(
 			return;
 		}
 
-		const server = await ensureServer({
-			serverUrl: globalOpts?.server,
-			port: globalOpts?.port,
-			quiet: true
-		});
-
-		await addResource(server.url, {
-			type: 'local',
-			name,
-			path: finalPath,
-			...(notes && { specialNotes: notes })
-		});
-
-		server.stop();
+		await runWithServer(globalOpts, (serverUrl) =>
+			addResource(serverUrl, {
+				type: 'local',
+				name,
+				path: finalPath,
+				...(notes && { specialNotes: notes })
+			})
+		);
 
 		console.log(`\nAdded resource: ${name}`);
 		console.log('\nYou can now use this resource:');
@@ -460,21 +464,15 @@ async function addNpmResourceWizard(
 			return;
 		}
 
-		const server = await ensureServer({
-			serverUrl: globalOpts?.server,
-			port: globalOpts?.port,
-			quiet: true
-		});
-
-		await addResource(server.url, {
-			type: 'npm',
-			name,
-			package: packageName,
-			...(versionInput ? { version: versionInput } : {}),
-			...(notes ? { specialNotes: notes } : {})
-		});
-
-		server.stop();
+		await runWithServer(globalOpts, (serverUrl) =>
+			addResource(serverUrl, {
+				type: 'npm',
+				name,
+				package: packageName,
+				...(versionInput ? { version: versionInput } : {}),
+				...(notes ? { specialNotes: notes } : {})
+			})
+		);
 
 		console.log(`\nAdded resource: ${name}`);
 		console.log('\nYou can now use this resource:');
@@ -555,27 +553,22 @@ export const runAddCommand = async (args: {
 		}
 
 		if (args.name && resourceType === 'git' && parseGitHubUrl(args.reference)) {
+			const name = args.name;
 			const normalizedUrl = normalizeGitHubUrl(args.reference);
-			const server = await ensureServer({
-				serverUrl: args.globalOpts?.server,
-				port: args.globalOpts?.port,
-				quiet: true
-			});
-
 			const searchPaths = args.searchPath ?? [];
-			const resource = await addResource(server.url, {
-				type: 'git',
-				name: args.name,
-				url: normalizedUrl,
-				branch: args.branch ?? 'main',
-				...(searchPaths.length === 1 && { searchPath: searchPaths[0] }),
-				...(searchPaths.length > 1 && { searchPaths }),
-				...(args.notes && { specialNotes: args.notes })
-			});
+			const resource = await runWithServer(args.globalOpts, (serverUrl) =>
+				addResource(serverUrl, {
+					type: 'git',
+					name,
+					url: normalizedUrl,
+					branch: args.branch ?? 'main',
+					...(searchPaths.length === 1 && { searchPath: searchPaths[0] }),
+					...(searchPaths.length > 1 && { searchPaths }),
+					...(args.notes && { specialNotes: args.notes })
+				})
+			);
 
-			server.stop();
-
-			console.log(`Added git resource: ${args.name}`);
+			console.log(`Added git resource: ${name}`);
 			if (resource.type === 'git' && resource.url !== normalizedUrl) {
 				console.log(`  URL normalized: ${resource.url}`);
 			}
@@ -583,28 +576,24 @@ export const runAddCommand = async (args: {
 		}
 
 		if (args.name && resourceType === 'local') {
+			const name = args.name;
 			const resolvedPath = path.isAbsolute(args.reference)
 				? args.reference
 				: path.resolve(process.cwd(), args.reference);
-			const server = await ensureServer({
-				serverUrl: args.globalOpts?.server,
-				port: args.globalOpts?.port,
-				quiet: true
-			});
-
-			await addResource(server.url, {
-				type: 'local',
-				name: args.name,
-				path: resolvedPath,
-				...(args.notes && { specialNotes: args.notes })
-			});
-
-			server.stop();
-			console.log(`Added local resource: ${args.name}`);
+			await runWithServer(args.globalOpts, (serverUrl) =>
+				addResource(serverUrl, {
+					type: 'local',
+					name,
+					path: resolvedPath,
+					...(args.notes && { specialNotes: args.notes })
+				})
+			);
+			console.log(`Added local resource: ${name}`);
 			return;
 		}
 
 		if (args.name && resourceType === 'npm') {
+			const name = args.name;
 			const parsed = parseNpmReference(args.reference);
 			if (!parsed) {
 				throw new Error(
@@ -612,22 +601,16 @@ export const runAddCommand = async (args: {
 				);
 			}
 
-			const server = await ensureServer({
-				serverUrl: args.globalOpts?.server,
-				port: args.globalOpts?.port,
-				quiet: true
-			});
-
-			await addResource(server.url, {
-				type: 'npm',
-				name: args.name,
-				package: parsed.packageName,
-				...(parsed.version ? { version: parsed.version } : {}),
-				...(args.notes ? { specialNotes: args.notes } : {})
-			});
-
-			server.stop();
-			console.log(`Added npm resource: ${args.name}`);
+			await runWithServer(args.globalOpts, (serverUrl) =>
+				addResource(serverUrl, {
+					type: 'npm',
+					name,
+					package: parsed.packageName,
+					...(parsed.version ? { version: parsed.version } : {}),
+					...(args.notes ? { specialNotes: args.notes } : {})
+				})
+			);
+			console.log(`Added npm resource: ${name}`);
 			return;
 		}
 
