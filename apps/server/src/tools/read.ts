@@ -4,7 +4,6 @@
  */
 import * as path from 'node:path';
 import { z } from 'zod';
-import { Result } from 'better-result';
 
 import type { ToolContext } from './context.ts';
 import { VirtualSandbox } from './virtual-sandbox.ts';
@@ -91,11 +90,13 @@ export namespace ReadTool {
 			const filename = path.basename(resolvedPath);
 			let suggestions: string[] = [];
 
-			const filesResult = await Result.tryPromise(() => VirtualFs.readdir(dir, vfsId));
-			const files = filesResult.match({
-				ok: (entries) => entries.map((entry) => entry.name),
-				err: () => []
-			});
+			let files: string[] = [];
+			try {
+				const entries = await VirtualFs.readdir(dir, vfsId);
+				files = entries.map((entry) => entry.name);
+			} catch {
+				files = [];
+			}
 			suggestions = files
 				.filter((f) => f.toLowerCase().includes(filename.toLowerCase().slice(0, 3)))
 				.slice(0, 5);

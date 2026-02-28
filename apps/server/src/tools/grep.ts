@@ -4,7 +4,6 @@
  */
 import * as path from 'node:path';
 import { z } from 'zod';
-import { Result } from 'better-result';
 
 import type { ToolContext } from './context.ts';
 import { VirtualSandbox } from './virtual-sandbox.ts';
@@ -41,26 +40,28 @@ export namespace GrepTool {
 	};
 
 	const safeStat = async (filePath: string, vfsId?: string) => {
-		const result = await Result.tryPromise(() => VirtualFs.stat(filePath, vfsId));
-		return result.match({
-			ok: (value) => value,
-			err: () => null
-		});
+		try {
+			return await VirtualFs.stat(filePath, vfsId);
+		} catch {
+			return null;
+		}
 	};
 
 	const safeReadBuffer = async (filePath: string, vfsId?: string) => {
-		const result = await Result.tryPromise(() => VirtualFs.readFileBuffer(filePath, vfsId));
-		return result.match({
-			ok: (value) => value,
-			err: () => null
-		});
+		try {
+			return await VirtualFs.readFileBuffer(filePath, vfsId);
+		} catch {
+			return null;
+		}
 	};
 
-	const compileRegex = (pattern: string) =>
-		Result.try(() => new RegExp(pattern)).match({
-			ok: (value) => value,
-			err: () => null
-		});
+	const compileRegex = (pattern: string) => {
+		try {
+			return new RegExp(pattern);
+		} catch {
+			return null;
+		}
+	};
 
 	/**
 	 * Execute the grep tool

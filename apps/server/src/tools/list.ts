@@ -4,7 +4,6 @@
  */
 import * as path from 'node:path';
 import { z } from 'zod';
-import { Result } from 'better-result';
 
 import type { ToolContext } from './context.ts';
 import { VirtualSandbox } from './virtual-sandbox.ts';
@@ -37,11 +36,11 @@ export namespace ListTool {
 	};
 
 	const safeStat = async (filePath: string, vfsId?: string) => {
-		const result = await Result.tryPromise(() => VirtualFs.stat(filePath, vfsId));
-		return result.match({
-			ok: (value) => value,
-			err: () => null
-		});
+		try {
+			return await VirtualFs.stat(filePath, vfsId);
+		} catch {
+			return null;
+		}
 	};
 
 	/**

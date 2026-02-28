@@ -1,7 +1,5 @@
 import * as path from 'node:path';
 
-import { Result } from 'better-result';
-
 import { VirtualFs } from '../vfs/virtual-fs.ts';
 
 const posix = path.posix;
@@ -52,41 +50,40 @@ export namespace VirtualSandbox {
 		vfsId?: string
 	) {
 		const resolved = resolvePath(basePath, requestedPath);
-		const result = await Result.tryPromise(() => VirtualFs.realpath(resolved, vfsId));
-		return result.match({
-			ok: (value) => value,
-			err: () => resolved
-		});
+		try {
+			return await VirtualFs.realpath(resolved, vfsId);
+		} catch {
+			return resolved;
+		}
 	}
 
 	export async function exists(basePath: string, requestedPath: string, vfsId?: string) {
-		const resolvedResult = Result.try(() => resolvePath(basePath, requestedPath));
-		if (!Result.isOk(resolvedResult)) return false;
-		const result = await Result.tryPromise(() => VirtualFs.exists(resolvedResult.value, vfsId));
-		return result.match({
-			ok: (value) => value,
-			err: () => false
-		});
+		try {
+			const resolved = resolvePath(basePath, requestedPath);
+			return await VirtualFs.exists(resolved, vfsId);
+		} catch {
+			return false;
+		}
 	}
 
 	export async function isDirectory(basePath: string, requestedPath: string, vfsId?: string) {
-		const resolvedResult = Result.try(() => resolvePath(basePath, requestedPath));
-		if (!Result.isOk(resolvedResult)) return false;
-		const result = await Result.tryPromise(() => VirtualFs.stat(resolvedResult.value, vfsId));
-		return result.match({
-			ok: (stats) => stats.isDirectory,
-			err: () => false
-		});
+		try {
+			const resolved = resolvePath(basePath, requestedPath);
+			const stats = await VirtualFs.stat(resolved, vfsId);
+			return stats.isDirectory;
+		} catch {
+			return false;
+		}
 	}
 
 	export async function isFile(basePath: string, requestedPath: string, vfsId?: string) {
-		const resolvedResult = Result.try(() => resolvePath(basePath, requestedPath));
-		if (!Result.isOk(resolvedResult)) return false;
-		const result = await Result.tryPromise(() => VirtualFs.stat(resolvedResult.value, vfsId));
-		return result.match({
-			ok: (stats) => stats.isFile,
-			err: () => false
-		});
+		try {
+			const resolved = resolvePath(basePath, requestedPath);
+			const stats = await VirtualFs.stat(resolved, vfsId);
+			return stats.isFile;
+		} catch {
+			return false;
+		}
 	}
 
 	export async function validatePath(basePath: string, requestedPath: string, vfsId?: string) {
