@@ -1,4 +1,4 @@
-import { Result } from 'better-result';
+import { Effect } from 'effect';
 import type { BtcaStreamEvent } from 'btca-server/stream/types';
 import { ensureServer, type ServerManager } from '../server/manager.ts';
 import {
@@ -85,6 +85,10 @@ interface StreamHandlers {
 	onError?: (message: string) => void;
 }
 
+function runReplEffect<A>(effect: Effect.Effect<A, unknown>) {
+	return Effect.runPromise(effect);
+}
+
 function handleStreamEvent(event: BtcaStreamEvent, handlers: StreamHandlers): void {
 	switch (event.type) {
 		case 'reasoning.delta':
@@ -115,7 +119,7 @@ async function prompt(message: string): Promise<string | null> {
 	const decoder = new TextDecoder();
 	let input = '';
 
-	const result = await Result.tryPromise(async () => {
+	try {
 		while (true) {
 			const { value, done } = await reader.read();
 			if (done) return null;
@@ -125,12 +129,9 @@ async function prompt(message: string): Promise<string | null> {
 				return input.slice(0, newlineIndex).trim();
 			}
 		}
-	});
-	reader.releaseLock();
-	if (result.isErr()) {
-		throw result.error;
+	} finally {
+		reader.releaseLock();
 	}
-	return result.value;
 }
 
 /**
@@ -141,7 +142,7 @@ export async function launchRepl(options: ReplOptions): Promise<void> {
 	const showThinking = options.subAgent ? false : (options.thinking ?? true);
 	const showTools = options.subAgent ? false : (options.tools ?? true);
 
-	const result = await Result.tryPromise(async () => {
+	try {
 		server = await ensureServer({
 			serverUrl: options.server,
 			port: options.port
@@ -165,9 +166,7 @@ export async function launchRepl(options: ReplOptions): Promise<void> {
 		const { resources } = resourcesResult;
 
 		if (resources.length === 0) {
-			console.error('Error: No resources configured.');
-			console.error('Add resources with "btca add" or check "btca resources".');
-			process.exit(1);
+			throw new Error('No resources configured. Add resources with "btca add" or check "btca resources".');
 		}
 
 		console.log('btca REPL mode (--no-tui)');
@@ -257,69 +256,69 @@ Examples:
 			}
 
 			// Stream the response
-			const streamResult = await Result.tryPromise(async () => {
-				console.log(`[Searching: ${sessionResources.join(', ')}]\n`);
+			try {
+				await runReplEffect(
+					Effect.tryPromise(async () => {
+						console.log(`[Searching: ${sessionResources.join(', ')}]\n`);
 
-				const response = await askQuestionStream(activeServer.url, {
-					question,
-					resources: sessionResources,
-					quiet: true
-				});
+						const response = await askQuestionStream(activeServer.url, {
+							question,
+							resources: sessionResources,
+							quiet: true
+						});
 
-				let inReasoning = false;
-				let hasText = false;
+						let inReasoning = false;
+						let hasText = false;
 
-				for await (const event of parseSSEStream(response)) {
-					handleStreamEvent(event, {
-						onReasoningDelta: (delta) => {
-							if (!showThinking) return;
-							if (!inReasoning) {
-								process.stdout.write('<thinking>\n');
-								inReasoning = true;
-							}
-							process.stdout.write(delta);
-						},
-						onTextDelta: (delta) => {
-							if (inReasoning) {
-								process.stdout.write('\n</thinking>\n\n');
-								inReasoning = false;
-							}
-							hasText = true;
-							process.stdout.write(delta);
-						},
-						onToolCall: (tool) => {
-							if (inReasoning) {
-								process.stdout.write('\n</thinking>\n\n');
-								inReasoning = false;
-							}
-							if (!showTools) return;
-							if (hasText) process.stdout.write('\n');
-							console.log(`[${tool}]`);
-						},
-						onError: (message) => {
-							console.error(`\nError: ${message}`);
+						for await (const event of parseSSEStream(response)) {
+							handleStreamEvent(event, {
+								onReasoningDelta: (delta) => {
+									if (!showThinking) return;
+									if (!inReasoning) {
+										process.stdout.write('<thinking>\n');
+										inReasoning = true;
+									}
+									process.stdout.write(delta);
+								},
+								onTextDelta: (delta) => {
+									if (inReasoning) {
+										process.stdout.write('\n</thinking>\n\n');
+										inReasoning = false;
+									}
+									hasText = true;
+									process.stdout.write(delta);
+								},
+								onToolCall: (tool) => {
+									if (inReasoning) {
+										process.stdout.write('\n</thinking>\n\n');
+										inReasoning = false;
+									}
+									if (!showTools) return;
+									if (hasText) process.stdout.write('\n');
+									console.log(`[${tool}]`);
+								},
+								onError: (message) => {
+									console.error(`\nError: ${message}`);
+								}
+							});
 						}
-					});
-				}
 
-				if (inReasoning) {
-					process.stdout.write('\n</thinking>\n');
-				}
+						if (inReasoning) {
+							process.stdout.write('\n</thinking>\n');
+						}
 
-				console.log('\n');
-			});
-
-			if (Result.isError(streamResult)) {
-				console.error(formatError(streamResult.error));
+						console.log('\n');
+					})
+				);
+			} catch (error) {
+				console.error(formatError(error));
 			}
 		}
 
 		activeServer.stop();
-		process.exit(0);
-	});
-
-	if (Result.isError(result)) {
-		console.error(formatError(result.error));
+	} catch (error) {
+		if (server) server.stop();
+		console.error(formatError(error));
 		process.exit(1);
 	}
 }
