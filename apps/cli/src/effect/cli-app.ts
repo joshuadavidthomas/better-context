@@ -3,6 +3,7 @@ import { BunContext } from '@effect/platform-bun';
 import { Cause, Effect, Exit, Option, pipe } from 'effect';
 import { runClearCommand } from '../commands/clear.ts';
 import { runResourcesCommand } from '../commands/resources.ts';
+import { runServeCommand } from '../commands/serve.ts';
 import { runStatusCommand } from '../commands/status.ts';
 import { formatCliCommandError } from './errors.ts';
 
@@ -33,8 +34,18 @@ const resources = Command.make(
 );
 
 const status = Command.make('status', {}, () => Effect.tryPromise(() => runStatusCommand()));
+const serve = Command.make(
+	'serve',
+	{
+		port: Options.integer('port').pipe(Options.withAlias('p'), Options.optional)
+	},
+	({ port }) => Effect.tryPromise(() => runServeCommand({ port: Option.getOrUndefined(port) }))
+);
 
-const root = pipe(Command.make('btca'), Command.withSubcommands([clear, resources, status]));
+const root = pipe(
+	Command.make('btca'),
+	Command.withSubcommands([clear, resources, status, serve])
+);
 
 export const runEffectCli = async (
 	argv: ReadonlyArray<string>,
