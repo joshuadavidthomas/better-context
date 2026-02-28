@@ -1,12 +1,12 @@
-import { Effect, Layer } from 'effect';
+import { Layer, ServiceMap } from 'effect';
 
-export class CliProcess extends Effect.Tag('CliProcess')<
+export class CliProcess extends ServiceMap.Service<
 	CliProcess,
 	{
 		readonly exit: (code: number) => never;
 	}
->() {}
+>()('CliProcess') {}
 
 export const CliProcessLive = Layer.succeed(CliProcess, {
-	exit: (code) => process.exit(code)
+	exit: (code: number) => process.exit(code)
 });

@@ -67,8 +67,7 @@ export class BtcaError extends Error {
 const parseErrorResponse = (
 	res: Response,
 	fallbackMessage: string
-): Effect.Effect<BtcaError, never> =>
-	Effect.gen(function* () {
+): Effect.Effect<BtcaError, never> => {
 	const normalizeMessage = (message: string) => {
 		if (message.startsWith('Unhandled exception:')) {
 			const stripped = message.slice('Unhandled exception:'.length).trim();
@@ -80,16 +79,20 @@ const parseErrorResponse = (
 		return message;
 	};
 
-	const bodyResult = yield* Effect.either(Effect.tryPromise(() => res.json()));
-	if (bodyResult._tag === 'Left') {
-		return new BtcaError(fallbackMessage);
-	}
-	const parsed = bodyResult.right as { error?: string; hint?: string; tag?: string };
-	return new BtcaError(normalizeMessage(parsed.error ?? fallbackMessage), {
-		hint: parsed.hint,
-		tag: parsed.tag
+	return Effect.match(Effect.tryPromise(() => res.json() as Promise<unknown>), {
+		onFailure: () => new BtcaError(fallbackMessage),
+		onSuccess: (body) => {
+			if (!body || typeof body !== 'object') {
+				return new BtcaError(fallbackMessage);
+			}
+			const parsed = body as { error?: string; hint?: string; tag?: string };
+			return new BtcaError(normalizeMessage(parsed.error ?? fallbackMessage), {
+				hint: parsed.hint,
+				tag: parsed.tag
+			});
+		}
 	});
-	});
+};
 
 const requestJson = <T>(
 	url: string,

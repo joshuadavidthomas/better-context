@@ -1,17 +1,11 @@
-import { Effect, Cause, pipe } from 'effect';
-import * as HttpApp from '@effect/platform/HttpApp';
-import * as HttpRouter from '@effect/platform/HttpRouter';
-import * as HttpServerRequest from '@effect/platform/HttpServerRequest';
-import * as HttpServerResponse from '@effect/platform/HttpServerResponse';
-import * as EffectContext from 'effect/Context';
-import type * as Scope from 'effect/Scope';
+import { Effect, Cause, ServiceMap, pipe } from 'effect';
+import { HttpRouter, HttpServerRequest, HttpServerResponse } from 'effect/unstable/http';
 import { z } from 'zod';
 
 import { Agent } from './agent/service.ts';
 import { Collections } from './collections/service.ts';
 import { Config } from './config/index.ts';
 import { toHttpErrorPayload } from './effect/errors.ts';
-import { createServerRuntime } from './effect/runtime.ts';
 import * as ServerServices from './effect/services.ts';
 import { Metrics } from './metrics/index.ts';
 import { ModelsDevPricing } from './pricing/models-dev.ts';
@@ -178,10 +172,6 @@ const decodeJson = <T>(
 		return parsed.data;
 	});
 
-const getRequest = Effect.contextWith((context) =>
-	EffectContext.get(context, HttpServerRequest.HttpServerRequest)
-);
-
 const createApp = (deps: {
 	config: Config.Service;
 	resources: Resources.Service;
@@ -190,239 +180,281 @@ const createApp = (deps: {
 }) => {
 	const { config, collections, agent } = deps;
 
-	const routes = pipe(
-		HttpRouter.empty,
-		HttpRouter.get(
+	const withServices = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+		pipe(
+			effect,
+			Effect.provideService(ServerServices.ConfigService, config),
+			Effect.provideService(ServerServices.CollectionsService, collections),
+			Effect.provideService(ServerServices.AgentService, agent)
+		);
+
+	const withHttpErrorHandling = <R>(
+		effect: Effect.Effect<HttpServerResponse.HttpServerResponse, unknown, R>
+	): Effect.Effect<HttpServerResponse.HttpServerResponse, never, R> =>
+		Effect.catchCause(effect, (cause) => {
+			const error = Cause.squash(cause);
+			Metrics.error('http.error', { error: Metrics.errorInfo(error) });
+			const payload = toHttpErrorPayload(error);
+			return Effect.succeed(
+				HttpServerResponse.jsonUnsafe(
+					{ error: payload.error, tag: payload.tag, ...(payload.hint && { hint: payload.hint }) },
+					{ status: payload.status }
+				)
+			);
+		});
+
+	return HttpRouter.addAll([
+		HttpRouter.route(
+			'GET',
 			'/',
-			HttpServerResponse.unsafeJson({
+			HttpServerResponse.jsonUnsafe({
 				ok: true,
 				service: 'btca-server',
 				version: '0.0.1'
 			})
 		),
-		HttpRouter.get(
+		HttpRouter.route(
+			'GET',
 			'/config',
-			Effect.map(ServerServices.getConfigSnapshot, (snapshot) =>
-				HttpServerResponse.unsafeJson(snapshot)
+			withHttpErrorHandling(
+				withServices(
+					Effect.map(ServerServices.getConfigSnapshot, (snapshot) =>
+						HttpServerResponse.jsonUnsafe(snapshot)
+					)
+				)
 			)
 		),
-		HttpRouter.get(
+		HttpRouter.route(
+			'GET',
 			'/resources',
-			Effect.map(ServerServices.getResourcesSnapshot, (snapshot) =>
-				HttpServerResponse.unsafeJson(snapshot)
+			withHttpErrorHandling(
+				withServices(
+					Effect.map(ServerServices.getResourcesSnapshot, (snapshot) =>
+						HttpServerResponse.jsonUnsafe(snapshot)
+					)
+				)
 			)
 		),
-		HttpRouter.get(
+		HttpRouter.route(
+			'GET',
 			'/providers',
-			Effect.gen(function* () {
-				const providers = yield* ServerServices.listProviders;
-				return HttpServerResponse.unsafeJson(providers);
-			})
-		),
-		HttpRouter.post(
-			'/reload-config',
-			Effect.gen(function* () {
-				yield* ServerServices.reloadConfig;
-				const resources = yield* ServerServices.getDefaultResourceNames;
-				return HttpServerResponse.unsafeJson({
-					ok: true,
-					resources
-				});
-			})
-		),
-		HttpRouter.post(
-			'/question',
-			Effect.gen(function* () {
-				const request = yield* getRequest;
-				const decoded = yield* decodeJson(request, QuestionRequestSchema);
-				const resourceNames = Array.from(
-					decoded.resources && decoded.resources.length > 0
-						? Array.from(new Set(decoded.resources.map(normalizeQuestionResourceReference)))
-						: yield* ServerServices.getDefaultResourceNames
-				);
-
-				const collectionKey = ServerServices.loadedResourceCollectionKey(resourceNames);
-				Metrics.info('question.received', {
-					stream: false,
-					quiet: decoded.quiet ?? false,
-					questionLength: decoded.question.length,
-					resources: resourceNames,
-					collectionKey
-				});
-
-				const collection = yield* ServerServices.loadCollection({
-					resourceNames,
-					quiet: decoded.quiet
-				});
-				Metrics.info('collection.ready', { collectionKey, path: collection.path });
-
-				const result = yield* ServerServices.askQuestion({
-					collection,
-					question: decoded.question
-				});
-				Metrics.info('question.done', {
-					collectionKey,
-					answerLength: result.answer.length,
-					model: result.model
-				});
-
-				return HttpServerResponse.unsafeJson({
-					answer: result.answer,
-					model: result.model,
-					resources: resourceNames,
-					collection: { key: collectionKey, path: collection.path }
-				});
-			})
-		),
-		HttpRouter.post(
-			'/question/stream',
-			Effect.gen(function* () {
-				const request = yield* getRequest;
-				const requestStartMs = performance.now();
-				const decoded = yield* decodeJson(request, QuestionRequestSchema);
-				const resourceNames = Array.from(
-					decoded.resources && decoded.resources.length > 0
-						? Array.from(new Set(decoded.resources.map(normalizeQuestionResourceReference)))
-						: yield* ServerServices.getDefaultResourceNames
-				);
-
-				const collectionKey = ServerServices.loadedResourceCollectionKey(resourceNames);
-				Metrics.info('question.received', {
-					stream: true,
-					quiet: decoded.quiet ?? false,
-					questionLength: decoded.question.length,
-					resources: resourceNames,
-					collectionKey
-				});
-
-				const collection = yield* ServerServices.loadCollection({
-					resourceNames,
-					quiet: decoded.quiet
-				});
-				Metrics.info('collection.ready', { collectionKey, path: collection.path });
-
-				const { stream: eventStream, model } = yield* ServerServices.askQuestionStream({
-					collection,
-					question: decoded.question
-				});
-
-				const meta = {
-					type: 'meta',
-					model,
-					resources: resourceNames,
-					collection: {
-						key: collectionKey,
-						path: collection.path
-					}
-				} satisfies BtcaStreamMetaEvent;
-
-				Metrics.info('question.stream.start', { collectionKey });
-				modelsDevPricing.prefetch();
-				const stream = StreamService.createSseStream({
-					meta,
-					eventStream,
-					question: decoded.question,
-					requestStartMs,
-					pricing: modelsDevPricing
-				});
-
-				return HttpServerResponse.raw(
-					new Response(stream, {
-						headers: {
-							'content-type': 'text/event-stream',
-							'cache-control': 'no-cache',
-							connection: 'keep-alive'
-						}
+			withHttpErrorHandling(
+				withServices(
+					Effect.gen(function* () {
+						const providers = yield* ServerServices.listProviders;
+						return HttpServerResponse.jsonUnsafe(providers);
 					})
-				);
-			})
+				)
+			)
 		),
-		HttpRouter.put(
-			'/config/model',
-			Effect.gen(function* () {
-				const request = yield* getRequest;
-				const decoded = yield* decodeJson(request, UpdateModelRequestSchema);
-				const result = yield* ServerServices.updateModelConfig({
-					provider: decoded.provider,
-					model: decoded.model,
-					providerOptions: decoded.providerOptions
-				});
-				return HttpServerResponse.unsafeJson(result);
-			})
+		HttpRouter.route(
+			'POST',
+			'/reload-config',
+			withHttpErrorHandling(
+				withServices(
+					Effect.gen(function* () {
+						yield* ServerServices.reloadConfig;
+						const resources = yield* ServerServices.getDefaultResourceNames;
+						return HttpServerResponse.jsonUnsafe({
+							ok: true,
+							resources
+						});
+					})
+				)
+			)
 		),
-		HttpRouter.post(
-			'/config/resources',
-			Effect.gen(function* () {
-				const request = yield* getRequest;
-				const decoded = yield* decodeJson(request, AddResourceRequestSchema);
-				if (decoded.type === 'git') {
-					const normalizedUrl = normalizeGitHubUrl(decoded.url);
-					const resource = {
-						type: 'git' as const,
-						name: decoded.name,
-						url: normalizedUrl,
-						branch: decoded.branch ?? 'main',
-						...(decoded.searchPath && { searchPath: decoded.searchPath }),
-						...(decoded.searchPaths && { searchPaths: decoded.searchPaths }),
-						...(decoded.specialNotes && { specialNotes: decoded.specialNotes })
-					};
-					const added = yield* ServerServices.addConfigResource(resource);
-					return HttpServerResponse.unsafeJson(added, { status: 201 });
-				}
-				if (decoded.type === 'local') {
-					const resource = {
-						type: 'local' as const,
-						name: decoded.name,
-						path: decoded.path,
-						...(decoded.specialNotes && { specialNotes: decoded.specialNotes })
-					};
-					const added = yield* ServerServices.addConfigResource(resource);
-					return HttpServerResponse.unsafeJson(added, { status: 201 });
-				}
-				const resource = {
-					type: 'npm' as const,
-					name: decoded.name,
-					package: decoded.package,
-					...(decoded.version ? { version: decoded.version } : {}),
-					...(decoded.specialNotes ? { specialNotes: decoded.specialNotes } : {})
-				};
-				const added = yield* ServerServices.addConfigResource(resource);
-				return HttpServerResponse.unsafeJson(added, { status: 201 });
-			})
-		),
-		HttpRouter.del(
-			'/config/resources',
-			Effect.gen(function* () {
-				const request = yield* getRequest;
-				const decoded = yield* decodeJson(request, RemoveResourceRequestSchema);
-				yield* ServerServices.removeConfigResource(decoded.name);
-				return HttpServerResponse.unsafeJson({ success: true, name: decoded.name });
-			})
-		),
-		HttpRouter.post(
-			'/clear',
-			Effect.gen(function* () {
-				const result = yield* ServerServices.clearConfigResources;
-				return HttpServerResponse.unsafeJson(result);
-			})
-		)
-	);
+		HttpRouter.route('POST', '/question', (request) =>
+			withHttpErrorHandling(
+				withServices(
+					Effect.gen(function* () {
+						const decoded = yield* decodeJson(request, QuestionRequestSchema);
+						const resourceNames = Array.from(
+							decoded.resources && decoded.resources.length > 0
+								? Array.from(new Set(decoded.resources.map(normalizeQuestionResourceReference)))
+								: yield* ServerServices.getDefaultResourceNames
+						);
 
-	return pipe(
-		routes,
-		HttpRouter.provideService(ServerServices.ConfigService, config),
-		HttpRouter.provideService(ServerServices.CollectionsService, collections),
-		HttpRouter.provideService(ServerServices.AgentService, agent),
-		HttpRouter.catchAllCause((cause) => {
-			const error = Cause.squash(cause);
-			Metrics.error('http.error', { error: Metrics.errorInfo(error) });
-			const payload = toHttpErrorPayload(error);
-			return HttpServerResponse.unsafeJson(
-				{ error: payload.error, tag: payload.tag, ...(payload.hint && { hint: payload.hint }) },
-				{ status: payload.status }
-			);
-		})
-	);
+						const collectionKey = ServerServices.loadedResourceCollectionKey(resourceNames);
+						Metrics.info('question.received', {
+							stream: false,
+							quiet: decoded.quiet ?? false,
+							questionLength: decoded.question.length,
+							resources: resourceNames,
+							collectionKey
+						});
+
+						const collection = yield* ServerServices.loadCollection({
+							resourceNames,
+							quiet: decoded.quiet
+						});
+						Metrics.info('collection.ready', { collectionKey, path: collection.path });
+
+						const result = yield* ServerServices.askQuestion({
+							collection,
+							question: decoded.question
+						});
+						Metrics.info('question.done', {
+							collectionKey,
+							answerLength: result.answer.length,
+							model: result.model
+						});
+
+						return HttpServerResponse.jsonUnsafe({
+							answer: result.answer,
+							model: result.model,
+							resources: resourceNames,
+							collection: { key: collectionKey, path: collection.path }
+						});
+					})
+				)
+			)
+		),
+		HttpRouter.route('POST', '/question/stream', (request) =>
+			withHttpErrorHandling(
+				withServices(
+					Effect.gen(function* () {
+						const requestStartMs = performance.now();
+						const decoded = yield* decodeJson(request, QuestionRequestSchema);
+						const resourceNames = Array.from(
+							decoded.resources && decoded.resources.length > 0
+								? Array.from(new Set(decoded.resources.map(normalizeQuestionResourceReference)))
+								: yield* ServerServices.getDefaultResourceNames
+						);
+
+						const collectionKey = ServerServices.loadedResourceCollectionKey(resourceNames);
+						Metrics.info('question.received', {
+							stream: true,
+							quiet: decoded.quiet ?? false,
+							questionLength: decoded.question.length,
+							resources: resourceNames,
+							collectionKey
+						});
+
+						const collection = yield* ServerServices.loadCollection({
+							resourceNames,
+							quiet: decoded.quiet
+						});
+						Metrics.info('collection.ready', { collectionKey, path: collection.path });
+
+						const { stream: eventStream, model } = yield* ServerServices.askQuestionStream({
+							collection,
+							question: decoded.question
+						});
+
+						const meta = {
+							type: 'meta',
+							model,
+							resources: resourceNames,
+							collection: {
+								key: collectionKey,
+								path: collection.path
+							}
+						} satisfies BtcaStreamMetaEvent;
+
+						Metrics.info('question.stream.start', { collectionKey });
+						modelsDevPricing.prefetch();
+						const stream = StreamService.createSseStream({
+							meta,
+							eventStream,
+							question: decoded.question,
+							requestStartMs,
+							pricing: modelsDevPricing
+						});
+
+						return HttpServerResponse.raw(
+							new Response(stream, {
+								headers: {
+									'content-type': 'text/event-stream',
+									'cache-control': 'no-cache',
+									connection: 'keep-alive'
+								}
+							})
+						);
+					})
+				)
+			)
+		),
+		HttpRouter.route('PUT', '/config/model', (request) =>
+			withHttpErrorHandling(
+				withServices(
+					Effect.gen(function* () {
+						const decoded = yield* decodeJson(request, UpdateModelRequestSchema);
+						const result = yield* ServerServices.updateModelConfig({
+							provider: decoded.provider,
+							model: decoded.model,
+							providerOptions: decoded.providerOptions
+						});
+						return HttpServerResponse.jsonUnsafe(result);
+					})
+				)
+			)
+		),
+		HttpRouter.route('POST', '/config/resources', (request) =>
+			withHttpErrorHandling(
+				withServices(
+					Effect.gen(function* () {
+						const decoded = yield* decodeJson(request, AddResourceRequestSchema);
+						if (decoded.type === 'git') {
+							const normalizedUrl = normalizeGitHubUrl(decoded.url);
+							const resource = {
+								type: 'git' as const,
+								name: decoded.name,
+								url: normalizedUrl,
+								branch: decoded.branch ?? 'main',
+								...(decoded.searchPath && { searchPath: decoded.searchPath }),
+								...(decoded.searchPaths && { searchPaths: decoded.searchPaths }),
+								...(decoded.specialNotes && { specialNotes: decoded.specialNotes })
+							};
+							const added = yield* ServerServices.addConfigResource(resource);
+							return HttpServerResponse.jsonUnsafe(added, { status: 201 });
+						}
+						if (decoded.type === 'local') {
+							const resource = {
+								type: 'local' as const,
+								name: decoded.name,
+								path: decoded.path,
+								...(decoded.specialNotes && { specialNotes: decoded.specialNotes })
+							};
+							const added = yield* ServerServices.addConfigResource(resource);
+							return HttpServerResponse.jsonUnsafe(added, { status: 201 });
+						}
+						const resource = {
+							type: 'npm' as const,
+							name: decoded.name,
+							package: decoded.package,
+							...(decoded.version ? { version: decoded.version } : {}),
+							...(decoded.specialNotes ? { specialNotes: decoded.specialNotes } : {})
+						};
+						const added = yield* ServerServices.addConfigResource(resource);
+						return HttpServerResponse.jsonUnsafe(added, { status: 201 });
+					})
+				)
+			)
+		),
+		HttpRouter.route('DELETE', '/config/resources', (request) =>
+			withHttpErrorHandling(
+				withServices(
+					Effect.gen(function* () {
+						const decoded = yield* decodeJson(request, RemoveResourceRequestSchema);
+						yield* ServerServices.removeConfigResource(decoded.name);
+						return HttpServerResponse.jsonUnsafe({ success: true, name: decoded.name });
+					})
+				)
+			)
+		),
+		HttpRouter.route(
+			'POST',
+			'/clear',
+			withHttpErrorHandling(
+				withServices(
+					Effect.gen(function* () {
+						const result = yield* ServerServices.clearConfigResources;
+						return HttpServerResponse.jsonUnsafe(result);
+					})
+				)
+			)
+		)
+	]);
 };
 
 export type AppType = {
@@ -460,14 +492,12 @@ export const startServer = async (options: StartServerOptions = {}): Promise<Ser
 	const resources = Resources.create(config);
 	const collections = Collections.create({ config, resources });
 	const agent = Agent.create(config);
-	const runtime = createServerRuntime();
-	const router = createApp({ config, resources, collections, agent });
-	const httpApp = await runtime.runPromise(HttpRouter.toHttpApp(router));
-	const handler = HttpApp.toWebHandler(httpApp as HttpApp.Default<unknown, Scope.Scope>);
+	const appLayer = createApp({ config, resources, collections, agent });
+	const { handler, dispose } = HttpRouter.toWebHandler(appLayer);
 
 	const server = Bun.serve({
 		port: requestedPort,
-		fetch: (request) => handler(request),
+		fetch: (request) => handler(request, ServiceMap.empty() as ServiceMap.ServiceMap<any>),
 		idleTimeout: 60
 	});
 
@@ -481,7 +511,7 @@ export const startServer = async (options: StartServerOptions = {}): Promise<Ser
 			VirtualFs.disposeAll();
 			clearAllVirtualCollectionMetadata();
 			server.stop();
-			void runtime.dispose();
+			void dispose();
 		}
 	};
 };

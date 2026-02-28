@@ -1,34 +1,25 @@
-import { Effect } from 'effect';
-import * as Context from 'effect/Context';
+import { Effect, ServiceMap } from 'effect';
 import { Agent } from '../agent/service.ts';
 import { Collections } from '../collections/service.ts';
 import { getCollectionKey } from '../collections/types.ts';
 import { Config } from '../config/index.ts';
 import type { ResourceDefinition } from '../resources/schema.ts';
 
-export class ConfigService extends Context.Tag('btca-server/effect/ConfigService')<
-	ConfigService,
-	Config.Service
->() {}
+export class ConfigService extends ServiceMap.Service<ConfigService, Config.Service>()(
+	'btca-server/effect/ConfigService'
+) {}
 
-export class CollectionsService extends Context.Tag(
+export class CollectionsService extends ServiceMap.Service<CollectionsService, Collections.Service>()(
 	'btca-server/effect/CollectionsService'
-)<CollectionsService, Collections.Service>() {}
+) {}
 
-export class AgentService extends Context.Tag('btca-server/effect/AgentService')<
-	AgentService,
-	Agent.Service
->() {}
+export class AgentService extends ServiceMap.Service<AgentService, Agent.Service>()(
+	'btca-server/effect/AgentService'
+) {}
 
-const configService = Effect.contextWith((context: Context.Context<ConfigService>) =>
-	Context.get(context, ConfigService)
-);
-const collectionsService = Effect.contextWith(
-	(context: Context.Context<CollectionsService>) => Context.get(context, CollectionsService)
-);
-const agentService = Effect.contextWith((context: Context.Context<AgentService>) =>
-	Context.get(context, AgentService)
-);
+const configService = Effect.service(ConfigService);
+const collectionsService = Effect.service(CollectionsService);
+const agentService = Effect.service(AgentService);
 
 export type ConfigSnapshot = {
 	provider: string;

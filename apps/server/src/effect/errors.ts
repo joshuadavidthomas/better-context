@@ -1,4 +1,4 @@
-import * as Data from 'effect/Data';
+import { Data } from 'effect';
 import { getErrorHint, getErrorMessage, getErrorTag } from '../errors.ts';
 
 export class ServerError extends Data.TaggedError('ServerError')<{
