@@ -1,6 +1,7 @@
 import { BunServices } from '@effect/platform-bun';
 import { Cause, Effect, Exit, Option, pipe } from 'effect';
 import { Argument, Command, Flag } from 'effect/unstable/cli';
+import { runAskCommand } from '../commands/ask.ts';
 import { runClearCommand } from '../commands/clear.ts';
 import { runConnectCommand } from '../commands/connect.ts';
 import { runDisconnectCommand } from '../commands/disconnect.ts';
@@ -38,6 +39,29 @@ const clear = Command.make(
 	{ server: serverFlag, port: portFlag },
 	({ server, port }) =>
 		Effect.tryPromise(() => runClearCommand(resolveServerOptions({ server, port })))
+);
+const ask = Command.make(
+	'ask',
+	{
+		question: pipe(Flag.string('question'), Flag.withAlias('q')),
+		resource: pipe(Flag.string('resource'), Flag.withAlias('r'), Flag.atLeast(0)),
+		thinking: pipe(Flag.boolean('thinking'), Flag.optional),
+		tools: pipe(Flag.boolean('tools'), Flag.optional),
+		subAgent: pipe(Flag.boolean('sub-agent'), Flag.optional),
+		server: serverFlag,
+		port: portFlag
+	},
+	({ question, resource, thinking, tools, subAgent, server, port }) =>
+		Effect.tryPromise(() =>
+			runAskCommand({
+				question,
+				resource: [...resource],
+				thinking: Option.getOrUndefined(thinking),
+				tools: Option.getOrUndefined(tools),
+				subAgent: Option.getOrUndefined(subAgent),
+				globalOpts: resolveServerOptions({ server, port })
+			})
+		)
 );
 
 const resources = Command.make(
@@ -139,6 +163,7 @@ const wipe = Command.make(
 const root = pipe(
 	Command.make('btca'),
 	Command.withSubcommands([
+		ask,
 		clear,
 		connect,
 		disconnect,
