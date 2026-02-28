@@ -101,15 +101,3 @@ export const validateSandboxPath = async (
 
 export const getSandboxRelativePath = (basePath: string, resolvedPath: string): string =>
 	posix.relative(basePath, resolvedPath);
-
-export const VirtualSandbox = {
-	PathEscapeError,
-	PathNotFoundError,
-	resolvePath: resolveSandboxPath,
-	resolvePathWithSymlinks: resolveSandboxPathWithSymlinks,
-	exists: sandboxPathExists,
-	isDirectory: sandboxPathIsDirectory,
-	isFile: sandboxPathIsFile,
-	validatePath: validateSandboxPath,
-	getRelativePath: getSandboxRelativePath
-} as const;

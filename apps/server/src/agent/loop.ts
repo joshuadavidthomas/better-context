@@ -6,12 +6,21 @@ import { streamText, tool, stepCountIs, type ModelMessage } from 'ai';
 
 import { getModel } from '../providers/index.ts';
 import type { ProviderOptions } from '../providers/registry.ts';
-import { ReadTool, GrepTool, GlobTool, ListTool } from '../tools/index.ts';
 import type {
 	ReadToolParametersType,
 	GrepToolParametersType,
 	GlobToolParametersType,
 	ListToolParametersType
+} from '../tools/index.ts';
+import {
+	ReadToolParameters,
+	executeReadTool,
+	GrepToolParameters,
+	executeGrepTool,
+	GlobToolParameters,
+	executeGlobTool,
+	ListToolParameters,
+	executeListTool
 } from '../tools/index.ts';
 
 export type AgentEvent =
@@ -81,9 +90,9 @@ const buildSystemPrompt = (agentInstructions: string): string =>
 const createTools = (basePath: string, vfsId?: string) => ({
 	read: tool({
 		description: 'Read the contents of a file. Returns the file contents with line numbers.',
-		inputSchema: ReadTool.Parameters,
+		inputSchema: ReadToolParameters,
 		execute: async (params: ReadToolParametersType) => {
-			const result = await ReadTool.execute(params, { basePath, vfsId });
+			const result = await executeReadTool(params, { basePath, vfsId });
 			return result.output;
 		}
 	}),
@@ -91,9 +100,9 @@ const createTools = (basePath: string, vfsId?: string) => ({
 	grep: tool({
 		description:
 			'Search for a regex pattern in file contents. Returns matching lines with file paths and line numbers.',
-		inputSchema: GrepTool.Parameters,
+		inputSchema: GrepToolParameters,
 		execute: async (params: GrepToolParametersType) => {
-			const result = await GrepTool.execute(params, { basePath, vfsId });
+			const result = await executeGrepTool(params, { basePath, vfsId });
 			return result.output;
 		}
 	}),
@@ -101,25 +110,25 @@ const createTools = (basePath: string, vfsId?: string) => ({
 	glob: tool({
 		description:
 			'Find files matching a glob pattern (e.g. "**/*.ts", "src/**/*.js"). Returns a list of matching file paths sorted by modification time.',
-		inputSchema: GlobTool.Parameters,
+		inputSchema: GlobToolParameters,
 		execute: async (params: GlobToolParametersType) => {
-			const result = await GlobTool.execute(params, { basePath, vfsId });
+			const result = await executeGlobTool(params, { basePath, vfsId });
 			return result.output;
 		}
 	}),
 
 	list: tool({
 		description: 'List the contents of a directory. Returns files and subdirectories with their types.',
-		inputSchema: ListTool.Parameters,
+		inputSchema: ListToolParameters,
 		execute: async (params: ListToolParametersType) => {
-			const result = await ListTool.execute(params, { basePath, vfsId });
+			const result = await executeListTool(params, { basePath, vfsId });
 			return result.output;
 		}
 	})
 });
 
 const getInitialContext = async (collectionPath: string, vfsId?: string) => {
-	const result = await ListTool.execute({ path: '.' }, { basePath: collectionPath, vfsId });
+	const result = await executeListTool({ path: '.' }, { basePath: collectionPath, vfsId });
 	return `Collection contents:\n${result.output}`;
 };
 

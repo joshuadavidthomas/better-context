@@ -7,7 +7,12 @@
 import { getAuthenticatedProviders } from './src/providers/auth.ts';
 import { getSupportedProviders } from './src/providers/registry.ts';
 import { getModel } from './src/providers/model.ts';
-import { ReadTool, GrepTool, GlobTool, ListTool } from './src/tools/index.ts';
+import {
+	executeReadTool,
+	executeGrepTool,
+	executeGlobTool,
+	executeListTool
+} from './src/tools/index.ts';
 import { runAgentLoop } from './src/agent/loop.ts';
 import { VirtualFs } from './src/vfs/virtual-fs.ts';
 import * as fs from 'node:fs/promises';
@@ -54,23 +59,23 @@ async function main() {
 	});
 
 	// Test list
-	const listResult = await ListTool.execute({ path: '.' }, { basePath: '/', vfsId });
+	const listResult = await executeListTool({ path: '.' }, { basePath: '/', vfsId });
 	console.log(`   List result: ${listResult.output.split('\n').length} entries`);
 
 	// Test read
-	const readResult = await ReadTool.execute({ path: 'hello.txt' }, { basePath: '/', vfsId });
+	const readResult = await executeReadTool({ path: 'hello.txt' }, { basePath: '/', vfsId });
 	console.log(
 		`   Read result: ${readResult.output.includes('Hello, World!') ? 'content matches' : 'MISMATCH'}`
 	);
 
 	// Test glob
-	const globResult = await GlobTool.execute({ pattern: '**/*.ts' }, { basePath: '/', vfsId });
+	const globResult = await executeGlobTool({ pattern: '**/*.ts' }, { basePath: '/', vfsId });
 	console.log(
 		`   Glob result: ${globResult.output.includes('nested.ts') ? 'found .ts file' : 'NOT FOUND'}`
 	);
 
 	// Test grep
-	const grepResult = await GrepTool.execute({ pattern: 'foo' }, { basePath: '/', vfsId });
+	const grepResult = await executeGrepTool({ pattern: 'foo' }, { basePath: '/', vfsId });
 	console.log(
 		`   Grep result: ${grepResult.output.includes('nested.ts') ? 'found match' : 'NOT FOUND'}`
 	);

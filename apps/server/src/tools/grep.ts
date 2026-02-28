@@ -6,7 +6,7 @@ import * as path from 'node:path';
 import { z } from 'zod';
 
 import type { ToolContext } from './context.ts';
-import { VirtualSandbox } from './virtual-sandbox.ts';
+import { resolveSandboxPath } from './virtual-sandbox.ts';
 import { VirtualFs } from '../vfs/virtual-fs.ts';
 
 const MAX_RESULTS = 100;
@@ -64,7 +64,7 @@ export const executeGrepTool = async (
 	context: ToolContext
 ): Promise<GrepToolResult> => {
 	const { basePath, vfsId } = context;
-	const searchPath = params.path ? VirtualSandbox.resolvePath(basePath, params.path) : basePath;
+	const searchPath = params.path ? resolveSandboxPath(basePath, params.path) : basePath;
 	const stats = await safeStat(searchPath, vfsId);
 	if (!stats) {
 		return {
@@ -232,8 +232,3 @@ const buildIncludeMatcher = (pattern: string): ((relativePath: string) => boolea
 	}
 	return (relativePath) => regex.test(relativePath);
 };
-
-export const GrepTool = {
-	Parameters: GrepToolParameters,
-	execute: executeGrepTool
-} as const;

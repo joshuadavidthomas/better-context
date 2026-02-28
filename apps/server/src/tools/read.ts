@@ -6,7 +6,7 @@ import * as path from 'node:path';
 import { z } from 'zod';
 
 import type { ToolContext } from './context.ts';
-import { VirtualSandbox } from './virtual-sandbox.ts';
+import { resolveSandboxPathWithSymlinks } from './virtual-sandbox.ts';
 import { VirtualFs } from '../vfs/virtual-fs.ts';
 
 const MAX_LINES = 2000;
@@ -68,7 +68,7 @@ export const executeReadTool = async (
 	context: ToolContext
 ): Promise<ReadToolResult> => {
 	const { basePath, vfsId } = context;
-	const resolvedPath = await VirtualSandbox.resolvePathWithSymlinks(basePath, params.path, vfsId);
+	const resolvedPath = await resolveSandboxPathWithSymlinks(basePath, params.path, vfsId);
 	const exists = await VirtualFs.exists(resolvedPath, vfsId);
 	if (!exists) {
 		const dir = path.dirname(resolvedPath);
@@ -239,8 +239,3 @@ const getImageMime = (ext: string): string => {
 			return 'application/octet-stream';
 	}
 };
-
-export const ReadTool = {
-	Parameters: ReadToolParameters,
-	execute: executeReadTool
-} as const;

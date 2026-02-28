@@ -6,7 +6,7 @@ import * as path from 'node:path';
 import { z } from 'zod';
 
 import type { ToolContext } from './context.ts';
-import { VirtualSandbox } from './virtual-sandbox.ts';
+import { resolveSandboxPath } from './virtual-sandbox.ts';
 import { VirtualFs } from '../vfs/virtual-fs.ts';
 
 const MAX_RESULTS = 100;
@@ -45,7 +45,7 @@ export const executeGlobTool = async (
 	context: ToolContext
 ): Promise<GlobToolResult> => {
 	const { basePath, vfsId } = context;
-	const searchPath = params.path ? VirtualSandbox.resolvePath(basePath, params.path) : basePath;
+	const searchPath = params.path ? resolveSandboxPath(basePath, params.path) : basePath;
 	const stats = await safeStat(searchPath, vfsId);
 	if (!stats) {
 		return {
@@ -150,8 +150,3 @@ const globToRegExp = (pattern: string): RegExp => {
 		regex += value;
 	}
 };
-
-export const GlobTool = {
-	Parameters: GlobToolParameters,
-	execute: executeGlobTool
-} as const;

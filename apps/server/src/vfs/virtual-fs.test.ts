@@ -4,10 +4,10 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { GlobTool } from '../tools/glob.ts';
-import { GrepTool } from '../tools/grep.ts';
-import { ListTool } from '../tools/list.ts';
-import { ReadTool } from '../tools/read.ts';
+import { executeGlobTool } from '../tools/glob.ts';
+import { executeGrepTool } from '../tools/grep.ts';
+import { executeListTool } from '../tools/list.ts';
+import { executeReadTool } from '../tools/read.ts';
 import { VirtualFs } from './virtual-fs.ts';
 
 const posix = path.posix;
@@ -87,16 +87,16 @@ describe('VirtualFs (just-bash)', () => {
 
 			const context = { basePath: collectionPath, vfsId };
 
-			const listResult = await ListTool.execute({ path: '.' }, context);
+			const listResult = await executeListTool({ path: '.' }, context);
 			expect(listResult.metadata.entries.some((entry) => entry.name === resourceName)).toBe(true);
 
-			const readResult = await ReadTool.execute({ path: `${resourceName}/README.md` }, context);
+			const readResult = await executeReadTool({ path: `${resourceName}/README.md` }, context);
 			expect(readResult.output).toContain('needle');
 
-			const globResult = await GlobTool.execute({ pattern: '**/*.ts' }, context);
+			const globResult = await executeGlobTool({ pattern: '**/*.ts' }, context);
 			expect(globResult.output.split('\n')).toContain(`${resourceName}/src/index.ts`);
 
-			const grepResult = await GrepTool.execute({ pattern: 'needle' }, context);
+			const grepResult = await executeGrepTool({ pattern: 'needle' }, context);
 			expect(grepResult.output).toContain(`${resourceName}/README.md`);
 		} finally {
 			await cleanupVirtual(root, vfsId);

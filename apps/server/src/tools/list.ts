@@ -6,7 +6,7 @@ import * as path from 'node:path';
 import { z } from 'zod';
 
 import type { ToolContext } from './context.ts';
-import { VirtualSandbox } from './virtual-sandbox.ts';
+import { resolveSandboxPath } from './virtual-sandbox.ts';
 import { VirtualFs } from '../vfs/virtual-fs.ts';
 
 export const ListToolParameters = z.object({
@@ -44,7 +44,7 @@ export const executeListTool = async (
 	context: ToolContext
 ): Promise<ListToolResult> => {
 	const { basePath, vfsId } = context;
-	const resolvedPath = VirtualSandbox.resolvePath(basePath, params.path);
+	const resolvedPath = resolveSandboxPath(basePath, params.path);
 	const stats = await safeStat(resolvedPath, vfsId);
 	if (!stats) {
 		return {
@@ -137,8 +137,3 @@ const formatSize = (bytes: number): string => {
 
 	return `${size.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
 };
-
-export const ListTool = {
-	Parameters: ListToolParameters,
-	execute: executeListTool
-} as const;
