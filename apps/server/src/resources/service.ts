@@ -205,9 +205,3 @@ export const createResourcesService = (config: ConfigServiceShape): ResourcesSer
 		loadEffect
 	};
 };
-
-export const Resources = {
-	create: createResourcesService,
-	createAnonymousResource,
-	resolveResourceDefinition
-} as const;

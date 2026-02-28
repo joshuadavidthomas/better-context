@@ -6,7 +6,7 @@ import type { ConfigService as ConfigServiceShape } from '../config/index.ts';
 import { runTransaction } from '../context/transaction.ts';
 import { CommonHints, getErrorHint, getErrorMessage } from '../errors.ts';
 import { Metrics } from '../metrics/index.ts';
-import { Resources, type ResourcesService } from '../resources/service.ts';
+import type { ResourcesService } from '../resources/service.ts';
 import { isGitResource, isNpmResource } from '../resources/schema.ts';
 import { FS_RESOURCE_SYSTEM_NOTE, type BtcaFsResource } from '../resources/types.ts';
 import { parseNpmReference } from '../validation/index.ts';
@@ -385,7 +385,3 @@ export const createCollectionsService = (args: {
 			loadEffect
 		};
 	};
-
-export const Collections = {
-	create: createCollectionsService
-} as const;

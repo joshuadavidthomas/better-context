@@ -2,15 +2,15 @@ import { Effect, Cause } from 'effect';
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from 'effect/unstable/http';
 import { z } from 'zod';
 
-import { Agent } from './agent/service.ts';
-import { Collections } from './collections/service.ts';
+import { createAgentService } from './agent/service.ts';
+import { createCollectionsService } from './collections/service.ts';
 import { Config } from './config/index.ts';
 import { toHttpErrorPayload } from './effect/errors.ts';
 import { createServerRuntime } from './effect/runtime.ts';
 import * as ServerServices from './effect/services.ts';
 import { Metrics } from './metrics/index.ts';
 import { createModelsDevPricing } from './pricing/models-dev.ts';
-import { Resources } from './resources/service.ts';
+import { createResourcesService } from './resources/service.ts';
 import { GitResourceSchema, LocalResourceSchema, NpmResourceSchema } from './resources/schema.ts';
 import { createSseStream } from './stream/service.ts';
 import type { BtcaStreamMetaEvent } from './stream/types.ts';
@@ -455,9 +455,9 @@ export const startServer = async (options: StartServerOptions = {}): Promise<Ser
 		resourcesDirectory: config.resourcesDirectory
 	});
 
-	const resources = Resources.create(config);
-	const collections = Collections.create({ config, resources });
-	const agent = Agent.create(config);
+	const resources = createResourcesService(config);
+	const collections = createCollectionsService({ config, resources });
+	const agent = createAgentService(config);
 	const runtime = createServerRuntime({ config, collections, agent });
 	const appLayer = createApp();
 	const { handler, dispose } = HttpRouter.toWebHandler(appLayer, {

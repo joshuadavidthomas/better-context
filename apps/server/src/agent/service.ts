@@ -286,11 +286,3 @@ export const createAgentService = (config: ConfigServiceShape): AgentService => 
 			listProvidersEffect
 		};
 	};
-
-export const Agent = {
-	create: createAgentService,
-	AgentError,
-	InvalidProviderError,
-	InvalidModelError,
-	ProviderNotConnectedError
-} as const;

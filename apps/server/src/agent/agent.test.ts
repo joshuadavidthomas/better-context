@@ -3,7 +3,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 
-import { Agent } from './service.ts';
+import { createAgentService } from './service.ts';
 import { Config } from '../config/index.ts';
 import type { CollectionResult } from '../collections/types.ts';
 import {
@@ -34,7 +34,7 @@ describe('Agent', () => {
 		it('creates an agent service with ask and askStream methods', async () => {
 			process.chdir(testDir);
 			const config = await Config.load();
-			const agent = Agent.create(config);
+			const agent = createAgentService(config);
 
 			expect(agent).toBeDefined();
 			expect(typeof agent.ask).toBe('function');
@@ -48,7 +48,7 @@ describe('Agent', () => {
 		it('asks a question and receives an answer', async () => {
 			process.chdir(testDir);
 			const config = await Config.load();
-			const agent = Agent.create(config);
+			const agent = createAgentService(config);
 
 			const vfsId = VirtualFs.create();
 			await VirtualFs.mkdir('/', { recursive: true }, vfsId);
@@ -83,7 +83,7 @@ describe('Agent', () => {
 		it('handles askStream and receives events', async () => {
 			process.chdir(testDir);
 			const config = await Config.load();
-			const agent = Agent.create(config);
+			const agent = createAgentService(config);
 
 			const vfsId = VirtualFs.create();
 			await VirtualFs.mkdir('/', { recursive: true }, vfsId);
@@ -118,7 +118,7 @@ describe('Agent', () => {
 		it('cleans up virtual collections after ask', async () => {
 			process.chdir(testDir);
 			const config = await Config.load();
-			const agent = Agent.create(config);
+			const agent = createAgentService(config);
 
 			const vfsId = VirtualFs.create();
 			await VirtualFs.mkdir('/', { recursive: true }, vfsId);
@@ -160,7 +160,7 @@ describe('Agent', () => {
 		it('cleans up virtual collections after askStream', async () => {
 			process.chdir(testDir);
 			const config = await Config.load();
-			const agent = Agent.create(config);
+			const agent = createAgentService(config);
 
 			const vfsId = VirtualFs.create();
 			await VirtualFs.mkdir('/', { recursive: true }, vfsId);
