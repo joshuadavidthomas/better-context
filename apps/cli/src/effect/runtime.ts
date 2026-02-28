@@ -16,3 +16,8 @@ export const createCliRuntime = (): CliRuntime => {
 		dispose: () => runtime.dispose()
 	};
 };
+
+const defaultCliRuntime = createCliRuntime();
+
+export const runCliEffect = <A, E>(effect: Effect.Effect<A, E>) =>
+	defaultCliRuntime.runPromise(effect);

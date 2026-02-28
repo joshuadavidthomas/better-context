@@ -14,6 +14,7 @@ import {
 	type ResourceInput
 } from '../client/index.ts';
 import { parseSSEStream } from '../client/stream.ts';
+import { runCliEffect } from '../effect/runtime.ts';
 import type { Repo, BtcaChunk } from './types.ts';
 import { trackTelemetryEvent } from '../lib/telemetry.ts';
 
@@ -26,8 +27,6 @@ const getServerUrl = (): string => {
 
 // Current request abort controller for cancellation
 let currentAbortController: AbortController | null = null;
-
-const runTuiEffect = <A>(effect: Effect.Effect<A, unknown>) => Effect.runPromise(effect);
 
 export type ChunkUpdate =
 	| { type: 'add'; chunk: BtcaChunk }
@@ -43,7 +42,7 @@ export const services = {
 	 * Get all configured resources for @mention autocomplete
 	 */
 	getRepos: async (): Promise<Repo[]> => {
-		return runTuiEffect(
+		return runCliEffect(
 			Effect.gen(function* () {
 				const client = createClient(getServerUrl());
 				const { resources } = yield* Effect.tryPromise(() => getResources(client));
@@ -69,7 +68,7 @@ export const services = {
 	 * Get current model config
 	 */
 	getModel: async (): Promise<{ provider: string; model: string }> => {
-		return runTuiEffect(
+		return runCliEffect(
 			Effect.gen(function* () {
 				const client = createClient(getServerUrl());
 				const config = yield* Effect.tryPromise(() => getConfig(client));
@@ -82,7 +81,7 @@ export const services = {
 	 * Get provider connection status
 	 */
 	getProviders: async () => {
-		return runTuiEffect(
+		return runCliEffect(
 			Effect.gen(function* () {
 				const client = createClient(getServerUrl());
 				return yield* Effect.tryPromise(() => getProvidersClient(client));
@@ -101,7 +100,7 @@ export const services = {
 		chunks: BtcaChunk[];
 		doneEvent?: Extract<BtcaStreamEvent, { type: 'done' }>;
 	}> =>
-		runTuiEffect(
+		runCliEffect(
 			Effect.gen(function* () {
 				const serverUrl = getServerUrl();
 				currentAbortController = new AbortController();
@@ -150,7 +149,7 @@ export const services = {
 	 * Cancel the current request
 	 */
 	cancelCurrentRequest: async (): Promise<void> => {
-		await runTuiEffect(
+		await runCliEffect(
 			Effect.gen(function* () {
 				if (!currentAbortController) return;
 				currentAbortController.abort();
@@ -173,7 +172,7 @@ export const services = {
 		model: string,
 		providerOptions?: ProviderOptionsInput
 	): Promise<ModelUpdateResult> => {
-		return runTuiEffect(
+		return runCliEffect(
 			Effect.tryPromise(() =>
 				updateModelClient(getServerUrl(), provider, model, providerOptions)
 			)
@@ -184,14 +183,14 @@ export const services = {
 	 * Add a new resource
 	 */
 	addResource: async (resource: ResourceInput): Promise<ResourceInput> => {
-		return runTuiEffect(Effect.tryPromise(() => addResourceClient(getServerUrl(), resource)));
+		return runCliEffect(Effect.tryPromise(() => addResourceClient(getServerUrl(), resource)));
 	},
 
 	/**
 	 * Remove a resource
 	 */
 	removeResource: async (name: string): Promise<void> => {
-		await runTuiEffect(Effect.tryPromise(() => removeResourceClient(getServerUrl(), name)));
+		await runCliEffect(Effect.tryPromise(() => removeResourceClient(getServerUrl(), name)));
 	}
 };
 

@@ -3,6 +3,7 @@ import { useKeyboard } from '@opentui/react';
 import { Effect } from 'effect';
 
 import { usePaste } from '../opentui-hooks.ts';
+import { runCliEffect } from '../../effect/runtime.ts';
 import { useConfigContext } from '../context/config-context.tsx';
 import { useMessagesContext } from '../context/messages-context.tsx';
 import { formatError } from '../lib/format-error.ts';
@@ -124,10 +125,6 @@ interface WizardValues {
 	searchPath: string;
 	path: string;
 	notes: string;
-}
-
-function runWizardEffect<A>(effect: Effect.Effect<A, unknown>) {
-	return Effect.runPromise(effect);
 }
 
 export const AddResourceWizard = (props: AddResourceWizardProps) => {
@@ -259,7 +256,7 @@ export const AddResourceWizard = (props: AddResourceWizardProps) => {
 		const vals = values;
 
 		try {
-			await runWizardEffect(
+			await runCliEffect(
 				Effect.tryPromise(async () => {
 					if (vals.type === 'git') {
 						const resource = {
