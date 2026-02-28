@@ -7,7 +7,6 @@
  * - Command injection via branch names
  * - DoS via unbounded input sizes
  */
-import { Result } from 'better-result';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Regex Patterns
@@ -73,7 +72,13 @@ const ok = (): ValidationResult => ({ valid: true });
 const okWithValue = <T>(value: T): ValidationResultWithValue<T> => ({ valid: true, value });
 const fail = (error: string): ValidationResult => ({ valid: false, error });
 const failWithValue = <T>(error: string): ValidationResultWithValue<T> => ({ valid: false, error });
-const parseUrl = (value: string) => Result.try(() => new URL(value));
+const parseUrl = (value: string) => {
+	try {
+		return new URL(value);
+	} catch {
+		return null;
+	}
+};
 const isWsl = () =>
 	process.platform === 'linux' &&
 	(Boolean(process.env.WSL_DISTRO_NAME) ||
@@ -173,10 +178,7 @@ export const validateBranchName = (branch: string): ValidationResult => {
  * Non-GitHub URLs are returned unchanged.
  */
 export const normalizeGitHubUrl = (url: string): string => {
-	const parsed = parseUrl(url).match({
-		ok: (value) => value,
-		err: () => null
-	});
+	const parsed = parseUrl(url);
 	if (!parsed) return url;
 
 	const hostname = parsed.hostname.toLowerCase();
@@ -221,10 +223,7 @@ export const validateGitUrl = (url: string): ValidationResultWithValue<string> =
 		return failWithValue('Git URL cannot be empty');
 	}
 
-	const parsed = parseUrl(url).match({
-		ok: (value) => value,
-		err: () => null
-	});
+	const parsed = parseUrl(url);
 	if (!parsed) return failWithValue(`Invalid URL format: "${url}"`);
 
 	// Only allow HTTPS protocol
@@ -321,10 +320,13 @@ const toNpmReference = (parsed: { packageName: string; version?: string }): Pars
 };
 
 const safeDecodeUriComponent = (value: string): string | null =>
-	Result.try(() => decodeURIComponent(value)).match({
-		ok: (decoded) => decoded,
-		err: () => null
-	});
+	(() => {
+		try {
+			return decodeURIComponent(value);
+		} catch {
+			return null;
+		}
+	})();
 
 const parseNpmSpecReference = (reference: string): ParsedNpmReference | null => {
 	if (!reference.startsWith('npm:')) return null;
@@ -339,10 +341,7 @@ const parseNpmSpecReference = (reference: string): ParsedNpmReference | null => 
 };
 
 const parseNpmUrlReference = (reference: string): ParsedNpmReference | null => {
-	const parsedUrl = parseUrl(reference).match({
-		ok: (value) => value,
-		err: () => null
-	});
+	const parsedUrl = parseUrl(reference);
 	if (!parsedUrl) return null;
 	if (parsedUrl.protocol !== 'https:') return null;
 
@@ -375,10 +374,7 @@ export const parseNpmReference = (reference: string): ParsedNpmReference | null 
 	parseNpmSpecReference(reference) ?? parseNpmUrlReference(reference);
 
 const isNpmPackageUrl = (reference: string): boolean => {
-	const parsedUrl = parseUrl(reference).match({
-		ok: (value) => value,
-		err: () => null
-	});
+	const parsedUrl = parseUrl(reference);
 	if (!parsedUrl || parsedUrl.protocol !== 'https:') return false;
 	const hostname = parsedUrl.hostname.toLowerCase();
 	if (hostname !== 'npmjs.com' && hostname !== 'www.npmjs.com') return false;
