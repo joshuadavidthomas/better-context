@@ -217,59 +217,55 @@ const printResourceList = (label: string, resources: string[] | null) => {
 	}
 };
 
+export const runStatusCommand = async () => {
+	const server = await ensureServer({ quiet: true });
+	const client = createClient(server.url);
+	const projectPath = path.resolve(process.cwd(), PROJECT_CONFIG_FILENAME);
+
+	try {
+		const [config, providers, globalConfig, projectConfig] = await Promise.all([
+			getConfig(client),
+			getProviders(client),
+			readConfigFromPath(GLOBAL_CONFIG_PATH),
+			readConfigFromPath(projectPath)
+		]);
+
+		const connected = Array.isArray(providers.connected) ? providers.connected : [];
+		const isAuthenticated = connected.includes(config.provider);
+		const latestVersion = await getLatestVersion();
+		const hasUpdate = latestVersion && compareVersions(VERSION, latestVersion) < 0;
+
+		console.log('\n--- btca status ---\n');
+		const modelSource = getConfigOrigin('model', projectConfig, globalConfig);
+		const providerSource = getConfigOrigin('provider', projectConfig, globalConfig);
+		console.log(`Selected model: ${config.model} (${modelSource})`);
+		console.log(`Selected provider: ${config.provider} (${providerSource})`);
+		console.log(`Selected provider authed: ${isAuthenticated ? 'yes' : 'no'}`);
+		console.log('');
+
+		printResourceList('Global resources', globalConfig ? listResourceNames(globalConfig) : null);
+		printResourceList('Project resources', projectConfig ? listResourceNames(projectConfig) : null);
+
+		console.log(`\nbtca version: ${VERSION}`);
+		if (latestVersion) {
+			console.log(`Latest version: ${latestVersion}`);
+			if (hasUpdate) {
+				console.log('Update available: run "bun add -g btca@latest"');
+			} else {
+				console.log('btca is up to date');
+			}
+		} else {
+			console.log('Latest version: unavailable');
+		}
+	} finally {
+		server.stop();
+	}
+};
+
 export const statusCommand = new Command('status')
 	.description('Show selected provider/model and config status')
 	.action(async () => {
-		const result = await Result.tryPromise(async () => {
-			const server = await ensureServer({ quiet: true });
-			const client = createClient(server.url);
-			const projectPath = path.resolve(process.cwd(), PROJECT_CONFIG_FILENAME);
-
-			try {
-				const [config, providers, globalConfig, projectConfig] = await Promise.all([
-					getConfig(client),
-					getProviders(client),
-					readConfigFromPath(GLOBAL_CONFIG_PATH),
-					readConfigFromPath(projectPath)
-				]);
-
-				const connected = Array.isArray(providers.connected) ? providers.connected : [];
-				const isAuthenticated = connected.includes(config.provider);
-				const latestVersion = await getLatestVersion();
-				const hasUpdate = latestVersion && compareVersions(VERSION, latestVersion) < 0;
-
-				console.log('\n--- btca status ---\n');
-				const modelSource = getConfigOrigin('model', projectConfig, globalConfig);
-				const providerSource = getConfigOrigin('provider', projectConfig, globalConfig);
-				console.log(`Selected model: ${config.model} (${modelSource})`);
-				console.log(`Selected provider: ${config.provider} (${providerSource})`);
-				console.log(`Selected provider authed: ${isAuthenticated ? 'yes' : 'no'}`);
-				console.log('');
-
-				printResourceList(
-					'Global resources',
-					globalConfig ? listResourceNames(globalConfig) : null
-				);
-				printResourceList(
-					'Project resources',
-					projectConfig ? listResourceNames(projectConfig) : null
-				);
-
-				console.log(`\nbtca version: ${VERSION}`);
-				if (latestVersion) {
-					console.log(`Latest version: ${latestVersion}`);
-					if (hasUpdate) {
-						console.log('Update available: run "bun add -g btca@latest"');
-					} else {
-						console.log('btca is up to date');
-					}
-				} else {
-					console.log('Latest version: unavailable');
-				}
-			} finally {
-				server.stop();
-			}
-		});
+		const result = await Result.tryPromise(() => runStatusCommand());
 
 		if (Result.isError(result)) {
 			console.error(formatCliCommandError(result.error));
