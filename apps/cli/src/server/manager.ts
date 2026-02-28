@@ -62,10 +62,11 @@ export async function ensureServer(options: EnsureServerOptions = {}): Promise<S
 	// Start the server in-process
 	// Use port 0 by default: OS assigns an available ephemeral port (avoids collisions).
 	const port = options.port ?? 0;
+	const quiet = options.quiet ?? true;
 
 	let server: ServerInstance;
 	try {
-		server = await startServer({ port, quiet: options.quiet });
+		server = await startServer({ port, quiet });
 	} catch (error) {
 		throw new Error(`Failed to start server: ${error}`);
 	}
