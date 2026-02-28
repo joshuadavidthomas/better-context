@@ -3,7 +3,7 @@ import path from 'node:path';
 import { Effect } from 'effect';
 
 import type { ConfigService as ConfigServiceShape } from '../config/index.ts';
-import { Transaction } from '../context/transaction.ts';
+import { runTransaction } from '../context/transaction.ts';
 import { CommonHints, getErrorHint, getErrorMessage } from '../errors.ts';
 import { Metrics } from '../metrics/index.ts';
 import { Resources, type ResourcesService } from '../resources/service.ts';
@@ -270,7 +270,7 @@ export const createCollectionsService = (args: {
 		resources: ResourcesService;
 	}): CollectionsService => {
 		const load: CollectionsService['load'] = ({ resourceNames, quiet = false }) =>
-			Transaction.run('collections.load', async () => {
+			runTransaction('collections.load', async () => {
 				const uniqueNames = Array.from(new Set(resourceNames));
 				if (uniqueNames.length === 0)
 					throw new CollectionError({

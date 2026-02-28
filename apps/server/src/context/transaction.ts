@@ -1,8 +1,8 @@
 import { Metrics } from '../metrics/index.ts';
-import { Context } from './index.ts';
+import { requireContext } from './index.ts';
 
 export const runTransaction = async <T>(name: string, fn: () => Promise<T>): Promise<T> => {
-	const store = Context.require();
+	const store = requireContext();
 	const depth = store.txDepth;
 	store.txDepth = depth + 1;
 
@@ -24,7 +24,3 @@ export const runTransaction = async <T>(name: string, fn: () => Promise<T>): Pro
 		store.txDepth = depth;
 	}
 };
-
-export const Transaction = {
-	run: runTransaction
-} as const;

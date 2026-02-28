@@ -1,4 +1,4 @@
-import { Context } from '../context/index.ts';
+import { requestId } from '../context/index.ts';
 import { getErrorMessage, getErrorTag } from '../errors.ts';
 
 type LogLevel = 'info' | 'error';
@@ -25,7 +25,7 @@ const emitMetrics = (level: LogLevel, event: string, fields?: MetricsFields) => 
 		ts: new Date().toISOString(),
 		level,
 		event,
-		requestId: Context.requestId(),
+		requestId: requestId(),
 		...fields
 	};
 	const line = JSON.stringify(payload);

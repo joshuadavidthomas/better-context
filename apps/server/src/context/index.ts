@@ -16,10 +16,3 @@ export const requireContext = (): ContextStore =>
 	storage.getStore() ?? { requestId: 'unknown', txDepth: 0 };
 
 export const requestId = (): string => storage.getStore()?.requestId ?? 'unknown';
-
-export const Context = {
-	run: runContext,
-	get: getContext,
-	require: requireContext,
-	requestId
-} as const;
