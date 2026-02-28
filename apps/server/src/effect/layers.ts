@@ -1,5 +1,5 @@
 import { Layer, ServiceMap, pipe } from 'effect';
-import type { Agent } from '../agent/service.ts';
+import type { AgentService as AgentServiceShape } from '../agent/service.ts';
 import type { CollectionsService as CollectionsServiceShape } from '../collections/service.ts';
 import type { Config } from '../config/index.ts';
 import { AgentService, CollectionsService, ConfigService } from './services.ts';
@@ -7,7 +7,7 @@ import { AgentService, CollectionsService, ConfigService } from './services.ts';
 export type ServerLayerDependencies = {
 	config: Config.Service;
 	collections: CollectionsServiceShape;
-	agent: Agent.Service;
+	agent: AgentServiceShape;
 };
 
 export const makeServerLayer = (dependencies: ServerLayerDependencies) =>

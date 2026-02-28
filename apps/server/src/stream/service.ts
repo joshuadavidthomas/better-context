@@ -35,8 +35,7 @@ const hasAnyDefined = (record: Record<string, unknown> | undefined) =>
 const costFor = (tokens: number | undefined, usdPerMTokens: number | undefined) =>
 	tokens == null || usdPerMTokens == null ? undefined : (tokens / 1_000_000) * usdPerMTokens;
 
-export namespace StreamService {
-	export const createSseStream = (args: {
+export const createSseStream = (args: {
 		meta: BtcaStreamMetaEvent;
 		eventStream: AsyncIterable<AgentEvent>;
 		question?: string; // Original question - used to filter echoed user message
@@ -344,4 +343,7 @@ export namespace StreamService {
 			}
 		});
 	};
-}
+
+export const StreamService = {
+	createSseStream
+} as const;
