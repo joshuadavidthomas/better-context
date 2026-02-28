@@ -493,7 +493,9 @@ export const startServer = async (options: StartServerOptions = {}): Promise<Ser
 	const collections = Collections.create({ config, resources });
 	const agent = Agent.create(config);
 	const appLayer = createApp({ config, resources, collections, agent });
-	const { handler, dispose } = HttpRouter.toWebHandler(appLayer);
+	const { handler, dispose } = HttpRouter.toWebHandler(appLayer, {
+		disableLogger: options.quiet === true
+	});
 	const requestContext = ServiceMap.makeUnsafe<unknown>(new Map());
 
 	const server = Bun.serve({
