@@ -20,3 +20,5 @@ export const formatCliError = (error: unknown) => {
 	}
 	return String(error);
 };
+
+export const formatCliCommandError = (error: unknown) => `Error: ${formatCliError(error)}`;

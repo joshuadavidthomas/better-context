@@ -2,25 +2,10 @@ import { Result } from 'better-result';
 import { Command } from 'commander';
 import { startServer } from 'btca-server';
 import { createClient, getConfig } from '../client/index.ts';
+import { formatCliCommandError } from '../effect/errors.ts';
 import { setTelemetryContext, trackTelemetryEvent } from '../lib/telemetry.ts';
 
 const DEFAULT_PORT = 8080;
-
-/**
- * Format an error for display.
- * Server errors may have hints attached.
- */
-function formatError(error: unknown): string {
-	if (error && typeof error === 'object' && 'hint' in error) {
-		const e = error as { message?: string; hint?: string };
-		let output = `Error: ${e.message ?? String(error)}`;
-		if (e.hint) {
-			output += `\n\nHint: ${e.hint}`;
-		}
-		return output;
-	}
-	return `Error: ${error instanceof Error ? error.message : String(error)}`;
-}
 
 export const serveCommand = new Command('serve')
 	.description('Start the btca server and listen for requests')
@@ -75,7 +60,7 @@ export const serveCommand = new Command('serve')
 				event: 'cli_server_failed',
 				properties: { command: commandName, mode: 'serve', durationMs, errorName, exitCode: 1 }
 			});
-			console.error(formatError(result.error));
+			console.error(formatCliCommandError(result.error));
 			process.exit(1);
 		}
 	});

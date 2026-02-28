@@ -3,7 +3,8 @@ import { Command } from 'commander';
 import os from 'node:os';
 import path from 'node:path';
 import { ensureServer } from '../server/manager.ts';
-import { createClient, getConfig, getProviders, BtcaError } from '../client/index.ts';
+import { createClient, getConfig, getProviders } from '../client/index.ts';
+import { formatCliCommandError } from '../effect/errors.ts';
 import packageJson from '../../package.json';
 
 declare const __VERSION__: string;
@@ -29,17 +30,6 @@ type StoredConfig = {
 	provider?: unknown;
 	resources?: unknown;
 };
-
-function formatError(error: unknown): string {
-	if (error instanceof BtcaError) {
-		let output = `Error: ${error.message}`;
-		if (error.hint) {
-			output += `\n\nHint: ${error.hint}`;
-		}
-		return output;
-	}
-	return `Error: ${error instanceof Error ? error.message : String(error)}`;
-}
 
 const stripJsonc = (content: string): string => {
 	let out = '';
@@ -282,7 +272,7 @@ export const statusCommand = new Command('status')
 		});
 
 		if (Result.isError(result)) {
-			console.error(formatError(result.error));
+			console.error(formatCliCommandError(result.error));
 			process.exit(1);
 		}
 	});

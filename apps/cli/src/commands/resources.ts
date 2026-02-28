@@ -1,21 +1,8 @@
 import { Result } from 'better-result';
 import { Command } from 'commander';
 import { ensureServer } from '../server/manager.ts';
-import { createClient, getResources, BtcaError } from '../client/index.ts';
-
-/**
- * Format an error for display, including hint if available.
- */
-function formatError(error: unknown): string {
-	if (error instanceof BtcaError) {
-		let output = `Error: ${error.message}`;
-		if (error.hint) {
-			output += `\n\nHint: ${error.hint}`;
-		}
-		return output;
-	}
-	return `Error: ${error instanceof Error ? error.message : String(error)}`;
-}
+import { createClient, getResources } from '../client/index.ts';
+import { formatCliCommandError } from '../effect/errors.ts';
 
 export const resourcesCommand = new Command('resources')
 	.description('List all configured resources')
@@ -65,7 +52,7 @@ export const resourcesCommand = new Command('resources')
 		});
 
 		if (Result.isError(result)) {
-			console.error(formatError(result.error));
+			console.error(formatCliCommandError(result.error));
 			process.exit(1);
 		}
 	});

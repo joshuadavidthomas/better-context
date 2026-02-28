@@ -2,7 +2,8 @@ import { Result } from 'better-result';
 import { Command } from 'commander';
 import * as readline from 'readline';
 import { ensureServer } from '../server/manager.ts';
-import { createClient, getResources, removeResource, BtcaError } from '../client/index.ts';
+import { createClient, getResources, removeResource } from '../client/index.ts';
+import { formatCliCommandError } from '../effect/errors.ts';
 import { dim } from '../lib/utils/colors.ts';
 
 /**
@@ -70,20 +71,6 @@ async function selectSingleResource(resources: ResourceDefinition[]): Promise<st
 	});
 }
 
-/**
- * Format an error for display, including hint if available.
- */
-function formatError(error: unknown): string {
-	if (error instanceof BtcaError) {
-		let output = `Error: ${error.message}`;
-		if (error.hint) {
-			output += `\n\nHint: ${error.hint}`;
-		}
-		return output;
-	}
-	return `Error: ${error instanceof Error ? error.message : String(error)}`;
-}
-
 export const removeCommand = new Command('remove')
 	.description('Remove a resource from the configuration')
 	.argument('[name]', 'Resource name to remove')
@@ -139,7 +126,7 @@ export const removeCommand = new Command('remove')
 				console.error('\nError: Invalid selection. Please try again.');
 				process.exit(1);
 			}
-			console.error(formatError(error));
+			console.error(formatCliCommandError(error));
 			process.exit(1);
 		}
 	});
