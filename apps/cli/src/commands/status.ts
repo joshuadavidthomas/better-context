@@ -2,7 +2,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { parseJsonc } from '@btca/shared';
 import { Effect } from 'effect';
-import { ensureServer } from '../server/manager.ts';
+import { withServerEffect } from '../server/manager.ts';
 import { createClient, getConfig, getProviders } from '../client/index.ts';
 import packageJson from '../../package.json';
 
@@ -118,15 +118,14 @@ const printResourceList = (label: string, resources: string[] | null) => {
 };
 
 export const runStatusCommand = async () => {
-	const server = await ensureServer({ quiet: true });
-	const client = createClient(server.url);
 	const projectPath = path.resolve(process.cwd(), PROJECT_CONFIG_FILENAME);
 
 	return Effect.runPromise(
-		Effect.acquireUseRelease(
-			Effect.succeed(server),
-			() =>
+		withServerEffect(
+			{ quiet: true },
+			(server) =>
 				Effect.gen(function* () {
+					const client = createClient(server.url);
 					const [config, providers, globalConfig, projectConfig] = yield* Effect.tryPromise(() =>
 						Promise.all([
 							getConfig(client),
@@ -171,8 +170,7 @@ export const runStatusCommand = async () => {
 							console.log('Latest version: unavailable');
 						}
 					});
-				}),
-			(serverManager) => Effect.sync(() => serverManager.stop())
+				})
 		)
 	);
 };

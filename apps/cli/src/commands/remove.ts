@@ -1,6 +1,6 @@
 import * as readline from 'readline';
 import { Effect } from 'effect';
-import { ensureServer } from '../server/manager.ts';
+import { withServerEffect } from '../server/manager.ts';
 import { createClient, getResources, removeResource } from '../client/index.ts';
 import { dim } from '../lib/utils/colors.ts';
 
@@ -74,18 +74,16 @@ export const runRemoveCommand = async (args: {
 	global?: boolean;
 	globalOpts?: { server?: string; port?: number };
 }) => {
-	const server = await ensureServer({
-		serverUrl: args.globalOpts?.server,
-		port: args.globalOpts?.port,
-		quiet: true
-	});
-
 	return Effect.runPromise(
-		Effect.acquireUseRelease(
-			Effect.succeed(server),
-			(serverManager) =>
+		withServerEffect(
+			{
+				serverUrl: args.globalOpts?.server,
+				port: args.globalOpts?.port,
+				quiet: true
+			},
+			(server) =>
 				Effect.gen(function* () {
-					const client = createClient(serverManager.url);
+					const client = createClient(server.url);
 					const { resources } = yield* Effect.tryPromise(() => getResources(client));
 
 					if (resources.length === 0) {
@@ -106,10 +104,9 @@ export const runRemoveCommand = async (args: {
 						);
 					}
 
-					yield* Effect.tryPromise(() => removeResource(serverManager.url, resourceName));
+					yield* Effect.tryPromise(() => removeResource(server.url, resourceName));
 					yield* Effect.sync(() => console.log(`Removed resource: ${resourceName}`));
-				}),
-			(serverManager) => Effect.sync(() => serverManager.stop())
+				})
 		)
 	);
 };

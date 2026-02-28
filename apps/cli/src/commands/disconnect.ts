@@ -1,7 +1,7 @@
 import select from '@inquirer/select';
 import * as readline from 'readline';
 import { Effect } from 'effect';
-import { ensureServer } from '../server/manager.ts';
+import { withServerEffect } from '../server/manager.ts';
 import { createClient, getProviders } from '../client/index.ts';
 import { removeProviderAuth } from '../lib/opencode-oauth.ts';
 
@@ -55,17 +55,16 @@ export const runDisconnectCommand = async (args: {
 	provider?: string;
 	globalOpts?: { server?: string; port?: number };
 }) => {
-	const server = await ensureServer({
-		serverUrl: args.globalOpts?.server,
-		port: args.globalOpts?.port,
-		quiet: true
-	});
 	return Effect.runPromise(
-		Effect.acquireUseRelease(
-			Effect.succeed(server),
-			(serverManager) =>
+		withServerEffect(
+			{
+				serverUrl: args.globalOpts?.server,
+				port: args.globalOpts?.port,
+				quiet: true
+			},
+			(server) =>
 				Effect.gen(function* () {
-					const client = createClient(serverManager.url);
+					const client = createClient(server.url);
 					const providers = yield* Effect.tryPromise(() => getProviders(client));
 
 					if (providers.connected.length === 0) {
@@ -98,8 +97,7 @@ export const runDisconnectCommand = async (args: {
 							console.log(`Disconnected "${provider}" and removed saved credentials.`)
 						);
 					}
-				}),
-			(serverManager) => Effect.sync(() => serverManager.stop())
+				})
 		)
 	);
 };
