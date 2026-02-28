@@ -1,4 +1,3 @@
-import { Result } from 'better-result';
 import { startServer } from 'btca-server';
 import { createClient, getConfig } from '../client/index.ts';
 import { setTelemetryContext, trackTelemetryEvent } from '../lib/telemetry.ts';
@@ -10,7 +9,7 @@ export const runServeCommand = async (options: { port?: number } = {}) => {
 	const startedAt = Date.now();
 	const port = options.port ?? DEFAULT_PORT;
 
-	const result = await Result.tryPromise(async () => {
+	try {
 		console.log(`Starting btca server on port ${port}...`);
 		const server = await startServer({ port });
 		try {
@@ -43,16 +42,13 @@ export const runServeCommand = async (options: { port?: number } = {}) => {
 		await new Promise(() => {
 			// Never resolves - keeps the server running
 		});
-	});
-
-	if (Result.isError(result)) {
+	} catch (error) {
 		const durationMs = Date.now() - startedAt;
-		const error = result.error;
 		const errorName = error instanceof Error ? error.name : 'UnknownError';
 		await trackTelemetryEvent({
 			event: 'cli_server_failed',
 			properties: { command: commandName, mode: 'serve', durationMs, errorName, exitCode: 1 }
 		});
-		throw result.error;
+		throw error;
 	}
 };

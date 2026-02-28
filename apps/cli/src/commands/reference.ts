@@ -1,4 +1,3 @@
-import { Result } from 'better-result';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
@@ -113,13 +112,14 @@ export const runReferenceCommand = async (repo: string) => {
 	await fs.mkdir(referencesDir, { recursive: true });
 	const excludeStatus = await ensureReferencesExclude(cwd, referencesDir);
 	console.log(`Cloning ${repo} into ${destination}...`);
-	const cloneResult = await Result.tryPromise(() => cloneReference(repo, destination));
-	if (Result.isError(cloneResult)) {
+	try {
+		await cloneReference(repo, destination);
+	} catch (error) {
 		const referencesEntries = await fs.readdir(referencesDir).catch(() => []);
 		if (referencesEntries.length === 0) {
 			await fs.rmdir(referencesDir).catch(() => undefined);
 		}
-		throw cloneResult.error;
+		throw error;
 	}
 
 	console.log(`\nReference cloned: ${destination}`);

@@ -1,4 +1,3 @@
-import { Result } from 'better-result';
 import { McpServer } from 'tmcp';
 import { StdioTransport } from '@tmcp/transport-stdio';
 import { ZodJsonSchemaAdapter } from '@tmcp/adapter-zod';
@@ -345,9 +344,12 @@ export const runMcpServerCommand = async (args: {
 			description: 'List all available local resources.'
 		},
 		async () => {
-			const resourcesResult = await Result.tryPromise(() => getResources(client));
-			if (Result.isError(resourcesResult)) return errorResult(resourcesResult.error);
-			return jsonResult(resourcesResult.value.resources);
+			try {
+				const resourcesResult = await getResources(client);
+				return jsonResult(resourcesResult.resources);
+			} catch (error) {
+				return errorResult(error);
+			}
 		}
 	);
 
@@ -360,15 +362,16 @@ export const runMcpServerCommand = async (args: {
 		},
 		async (args: AskInput) => {
 			const { question, resources } = args;
-			const answerResult = await Result.tryPromise(() =>
-				askQuestion(client, {
+			try {
+				const answerResult = await askQuestion(client, {
 					question,
 					resources,
 					quiet: true
-				})
-			);
-			if (Result.isError(answerResult)) return errorResult(answerResult.error);
-			return textResult(answerResult.value.answer);
+				});
+				return textResult(answerResult.answer);
+			} catch (error) {
+				return errorResult(error);
+			}
 		}
 	);
 
@@ -377,17 +380,15 @@ export const runMcpServerCommand = async (args: {
 };
 
 export const runMcpConfigureLocalCommand = async () => {
-	const result = await Result.tryPromise(async () => {
+	try {
 		const editor = await promptEditor();
 		const filePath = await configureEditor(editor);
 		console.log(`\nLocal MCP configured for ${editor} in: ${filePath}\n`);
-	});
-
-	if (Result.isError(result)) {
-		if (result.error instanceof Error && result.error.message === 'Invalid selection') {
+	} catch (error) {
+		if (error instanceof Error && error.message === 'Invalid selection') {
 			console.error('\nError: Invalid selection. Please try again.');
 		} else {
-			console.error(formatError(result.error));
+			console.error(formatError(error));
 		}
 		process.exit(1);
 	}

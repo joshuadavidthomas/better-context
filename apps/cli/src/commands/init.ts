@@ -1,4 +1,3 @@
-import { Result } from 'better-result';
 import select from '@inquirer/select';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
@@ -56,9 +55,13 @@ async function promptSelect<T extends string>(
 
 async function isPatternInGitignore(dir: string, pattern: string): Promise<boolean> {
 	const gitignorePath = path.join(dir, '.gitignore');
-	const result = await Result.tryPromise(() => fs.readFile(gitignorePath, 'utf-8'));
-	if (Result.isError(result)) return false;
-	const lines = result.value.split('\n').map((line) => line.trim());
+	let content: string;
+	try {
+		content = await fs.readFile(gitignorePath, 'utf-8');
+	} catch {
+		return false;
+	}
+	const lines = content.split('\n').map((line) => line.trim());
 	const basePattern = pattern.replace(/\/$/, '');
 	const patterns = [basePattern, `${basePattern}/`, `${basePattern}/*`];
 
@@ -70,8 +73,12 @@ async function isPatternInGitignore(dir: string, pattern: string): Promise<boole
 
 async function addToGitignore(dir: string, pattern: string, comment?: string): Promise<void> {
 	const gitignorePath = path.join(dir, '.gitignore');
-	const contentResult = await Result.tryPromise(() => fs.readFile(gitignorePath, 'utf-8'));
-	let content = Result.isOk(contentResult) ? contentResult.value : '';
+	let content = '';
+	try {
+		content = await fs.readFile(gitignorePath, 'utf-8');
+	} catch {
+		content = '';
+	}
 	if (content && !content.endsWith('\n')) {
 		content += '\n';
 	}
@@ -85,13 +92,21 @@ async function addToGitignore(dir: string, pattern: string, comment?: string): P
 }
 
 async function isGitRepo(dir: string): Promise<boolean> {
-	const result = await Result.tryPromise(() => fs.access(path.join(dir, '.git')));
-	return Result.isOk(result);
+	try {
+		await fs.access(path.join(dir, '.git'));
+		return true;
+	} catch {
+		return false;
+	}
 }
 
 async function fileExists(filePath: string): Promise<boolean> {
-	const result = await Result.tryPromise(() => fs.access(filePath));
-	return Result.isOk(result);
+	try {
+		await fs.access(filePath);
+		return true;
+	} catch {
+		return false;
+	}
 }
 
 async function handleCliSetup(cwd: string, configPath: string, force?: boolean): Promise<void> {
