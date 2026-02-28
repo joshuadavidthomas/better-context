@@ -1,6 +1,5 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { Result } from 'better-result';
 import * as readline from 'readline';
 
 import { addResource, BtcaError } from '../client/index.ts';
@@ -85,16 +84,21 @@ const splitNpmSpec = (spec: string): NpmReferenceParts | null => {
 };
 
 const safeDecodeUriComponent = (value: string) =>
-	Result.try(() => decodeURIComponent(value)).match({
-		ok: (decoded) => decoded,
-		err: () => null
-	});
+	(() => {
+		try {
+			return decodeURIComponent(value);
+		} catch {
+			return null;
+		}
+	})();
 
 const parseNpmFromUrl = (reference: string): NpmReferenceParts | null => {
-	const parsed = Result.try(() => new URL(reference)).match({
-		ok: (value) => value,
-		err: () => null
-	});
+	let parsed: URL;
+	try {
+		parsed = new URL(reference);
+	} catch {
+		return null;
+	}
 	if (!parsed) return null;
 
 	const hostname = parsed.hostname.toLowerCase();
@@ -148,18 +152,23 @@ const isLikelyPath = (value: string) =>
 	/^[a-zA-Z]:\\/.test(value);
 
 const isLikelyGitUrl = (value: string) =>
-	Result.try(() => new URL(value)).match({
-		ok: (parsed) => parsed.protocol === 'https:',
-		err: () => false
-	});
+	(() => {
+		try {
+			const parsed = new URL(value);
+			return parsed.protocol === 'https:';
+		} catch {
+			return false;
+		}
+	})();
 
 const isDirectory = async (value: string) => {
 	const resolved = path.isAbsolute(value) ? value : path.resolve(process.cwd(), value);
-	const result = await Result.tryPromise(() => fs.stat(resolved));
-	return result.match({
-		ok: (stat) => stat.isDirectory(),
-		err: () => false
-	});
+	try {
+		const stat = await fs.stat(resolved);
+		return stat.isDirectory();
+	} catch {
+		return false;
+	}
 };
 
 /**
@@ -282,7 +291,7 @@ async function addGitResourceWizard(
 
 	const rl = createRl();
 
-	const result = await Result.tryPromise(async () => {
+	try {
 		const finalUrl = await promptInput(rl, 'URL', normalizedUrl);
 		const name = await promptInput(rl, 'Name', urlParts.repo);
 		const branch = await promptInput(rl, 'Branch', 'main');
@@ -338,11 +347,9 @@ async function addGitResourceWizard(
 		}
 		console.log('\nYou can now use this resource:');
 		console.log(`  btca ask -r ${name} -q "your question"`);
-	});
-
-	rl.close();
-
-	if (Result.isError(result)) throw result.error;
+	} finally {
+		rl.close();
+	}
 }
 
 /**
@@ -362,7 +369,7 @@ async function addLocalResourceWizard(
 
 	const rl = createRl();
 
-	const result = await Result.tryPromise(async () => {
+	try {
 		const finalPath = await promptInput(rl, 'Path', resolvedPath);
 		const name = await promptInput(rl, 'Name', path.basename(finalPath));
 		const notes = await promptInput(rl, 'Notes (optional)');
@@ -404,11 +411,9 @@ async function addLocalResourceWizard(
 		console.log(`\nAdded resource: ${name}`);
 		console.log('\nYou can now use this resource:');
 		console.log(`  btca ask -r ${name} -q "your question"`);
-	});
-
-	rl.close();
-
-	if (Result.isError(result)) throw result.error;
+	} finally {
+		rl.close();
+	}
 }
 
 /**
@@ -431,7 +436,7 @@ async function addNpmResourceWizard(
 
 	const rl = createRl();
 
-	const result = await Result.tryPromise(async () => {
+	try {
 		const packageName = await promptInput(rl, 'Package', parsed.packageName);
 		const versionInput = await promptInput(rl, 'Version/tag (optional)', parsed.version ?? '');
 		const name = await promptInput(rl, 'Name', packageName);
@@ -476,11 +481,9 @@ async function addNpmResourceWizard(
 		console.log(`\nAdded resource: ${name}`);
 		console.log('\nYou can now use this resource:');
 		console.log(`  btca ask -r ${name} -q "your question"`);
-	});
-
-	rl.close();
-
-	if (Result.isError(result)) throw result.error;
+	} finally {
+		rl.close();
+	}
 }
 
 const inferResourceType = async (value: string): Promise<'git' | 'local' | 'npm'> => {
@@ -502,7 +505,7 @@ export const runAddCommand = async (args: {
 	type?: string;
 	globalOpts?: { server?: string; port?: number };
 }) => {
-	const result = await Result.tryPromise(async () => {
+	try {
 		if (!args.reference) {
 			const resourceType = await promptSelect<'git' | 'local' | 'npm'>(
 				'What type of resource do you want to add?',
@@ -643,10 +646,7 @@ export const runAddCommand = async (args: {
 		} else {
 			await addLocalResourceWizard(args.reference, args, args.globalOpts);
 		}
-	});
-
-	if (Result.isError(result)) {
-		const error = result.error;
+	} catch (error) {
 		if (error instanceof Error && error.message === 'Invalid selection') {
 			console.error('\nError: Invalid selection. Please try again.');
 			process.exit(1);

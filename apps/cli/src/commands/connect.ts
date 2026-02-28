@@ -1,4 +1,3 @@
-import { Result } from 'better-result';
 import select from '@inquirer/select';
 import * as readline from 'readline';
 import { spawn } from 'bun';
@@ -121,7 +120,7 @@ async function runOpencodeAuth(providerId: string): Promise<boolean> {
 	console.log(`\nOpening browser for ${providerId} authentication...`);
 	console.log('(This requires OpenCode CLI to be installed)\n');
 
-	const result = await Result.tryPromise(async () => {
+	try {
 		const proc = spawn(['opencode', 'auth', '--provider', providerId], {
 			stdin: 'inherit',
 			stdout: 'inherit',
@@ -130,16 +129,14 @@ async function runOpencodeAuth(providerId: string): Promise<boolean> {
 
 		const exitCode = await proc.exited;
 		return exitCode === 0;
-	});
-
-	if (Result.isOk(result)) return result.value;
-
-	console.error(
-		'Failed to run opencode auth:',
-		result.error instanceof Error ? result.error.message : String(result.error)
-	);
-	console.error('\nMake sure OpenCode CLI is installed: bun add -g opencode-ai');
-	return false;
+	} catch (error) {
+		console.error(
+			'Failed to run opencode auth:',
+			error instanceof Error ? error.message : String(error)
+		);
+		console.error('\nMake sure OpenCode CLI is installed: bun add -g opencode-ai');
+		return false;
+	}
 }
 
 async function runBtcaAuth(providerId: string): Promise<boolean> {
@@ -211,7 +208,7 @@ export const runConnectCommand = async (args: {
 	model?: string;
 	globalOpts?: { server?: string; port?: number };
 }) => {
-	const result = await Result.tryPromise(async () => {
+	try {
 		const server = await ensureServer({
 			serverUrl: args.globalOpts?.server,
 			port: args.globalOpts?.port,
@@ -349,10 +346,7 @@ export const runConnectCommand = async (args: {
 		} finally {
 			server.stop();
 		}
-	});
-
-	if (Result.isError(result)) {
-		const error = result.error;
+	} catch (error) {
 		if (error instanceof Error && error.message === 'Invalid selection') {
 			console.error('\nError: Invalid selection. Please try again.');
 			process.exit(1);

@@ -1,4 +1,3 @@
-import { Result } from 'better-result';
 import type { BtcaStreamEvent } from 'btca-server/stream/types';
 import { ensureServer } from '../server/manager.ts';
 import {
@@ -270,7 +269,7 @@ export const runAskCommand = async (args: {
 		process.exit(1);
 	}
 
-	const result = await Result.tryPromise(async () => {
+	try {
 		const server = await ensureServer({
 			serverUrl: args.globalOpts?.server,
 			port: args.globalOpts?.port,
@@ -412,11 +411,20 @@ export const runAskCommand = async (args: {
 		} finally {
 			teardownSignalCleanup();
 		}
-	});
-
-	const durationMs = Date.now() - startedAt;
-	if (Result.isError(result)) {
-		const error = result.error;
+		const durationMs = Date.now() - startedAt;
+		await trackTelemetryEvent({
+			event: 'cli_ask_completed',
+			properties: {
+				command: commandName,
+				mode: 'ask',
+				durationMs,
+				outputChars,
+				exitCode: 0
+			}
+		});
+		process.exit(0);
+	} catch (error) {
+		const durationMs = Date.now() - startedAt;
 		const errorName = error instanceof Error ? error.name : 'UnknownError';
 		await trackTelemetryEvent({
 			event: 'cli_ask_failed',
@@ -428,20 +436,9 @@ export const runAskCommand = async (args: {
 				exitCode: 1
 			}
 		});
-		console.error(formatError(result.error));
+		console.error(formatError(error));
 		process.exit(1);
 	}
-	await trackTelemetryEvent({
-		event: 'cli_ask_completed',
-		properties: {
-			command: commandName,
-			mode: 'ask',
-			durationMs,
-			outputChars,
-			exitCode: 0
-		}
-	});
-	process.exit(0);
 };
 
 interface StreamHandlers {
