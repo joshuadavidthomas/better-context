@@ -1,22 +1,6 @@
-import { Command } from 'commander';
 import { Effect } from 'effect';
-import { addCommand } from './commands/add.ts';
-import { askCommand } from './commands/ask.ts';
-import { clearCommand } from './commands/clear.ts';
-import { connectCommand } from './commands/connect.ts';
-import { disconnectCommand } from './commands/disconnect.ts';
-import { initCommand } from './commands/init.ts';
-import { statusCommand } from './commands/status.ts';
-import { mcpCommand } from './commands/mcp.ts';
-import { removeCommand } from './commands/remove.ts';
-import { referenceCommand } from './commands/reference.ts';
-import { resourcesCommand } from './commands/resources.ts';
-import { serveCommand } from './commands/serve.ts';
-import { skillCommand } from './commands/skill.ts';
-import { telemetryCommand } from './commands/telemetry.ts';
-import { launchTui } from './commands/tui.ts';
 import { launchRepl } from './commands/repl.ts';
-import { wipeCommand } from './commands/wipe.ts';
+import { launchTui } from './commands/tui.ts';
 import { runEffectCli } from './effect/cli-app.ts';
 import { formatCliError } from './effect/errors.ts';
 import { createCliRuntime } from './effect/runtime.ts';
@@ -30,48 +14,23 @@ declare const __VERSION__: string;
 const VERSION = typeof __VERSION__ !== 'undefined' ? __VERSION__ : (packageJson.version ?? '0.0.0');
 setTelemetryContext({ cliVersion: VERSION });
 
-const program = new Command()
-	.name('btca')
-	.description('CLI for asking questions about technologies using btca server')
-	.version(VERSION, '-v, --version', 'output the version number')
-	.enablePositionalOptions()
-	.option('--server <url>', 'Use an existing btca server URL')
-	.option('--port <port>', 'Port for auto-started server (default: 0, OS-assigned)', parseInt)
-	.option(
-		'--no-tui',
-		'Use simple REPL mode instead of TUI (useful for Windows or minimal terminals)'
-	)
-	.option('--no-thinking', 'Hide reasoning output in REPL mode')
-	.option('--no-tools', 'Hide tool-call traces in REPL mode')
-	.option('--sub-agent', 'Emit clean output (no reasoning/tool traces) in REPL mode');
-
-// Resource management commands
-program.addCommand(addCommand);
-program.addCommand(removeCommand);
-program.addCommand(referenceCommand);
-program.addCommand(resourcesCommand);
-
-// Query commands
-program.addCommand(askCommand);
-
-// Configuration commands
-program.addCommand(connectCommand);
-program.addCommand(disconnectCommand);
-program.addCommand(initCommand);
-program.addCommand(statusCommand);
-program.addCommand(skillCommand);
-
-// Utility commands
-program.addCommand(clearCommand);
-program.addCommand(wipeCommand);
-program.addCommand(mcpCommand);
-program.addCommand(serveCommand);
-
-program.addCommand(telemetryCommand);
-
-const knownCommands = new Set(
-	program.commands.flatMap((command) => [command.name(), ...command.aliases()])
-);
+const knownCommands = new Set([
+	'add',
+	'ask',
+	'clear',
+	'connect',
+	'disconnect',
+	'init',
+	'mcp',
+	'reference',
+	'remove',
+	'resources',
+	'serve',
+	'skill',
+	'status',
+	'telemetry',
+	'wipe'
+]);
 
 const distance = (left: string, right: string): number => {
 	const matrix = Array.from({ length: left.length + 1 }, () =>
@@ -117,9 +76,19 @@ const suggestCommand = (token: string) => {
 };
 
 const firstOperand = (): string | null => {
-	const parsed = program.parseOptions(process.argv.slice(2));
-	const [operand] = parsed.operands;
-	return typeof operand === 'string' && operand.length > 0 ? operand : null;
+	const args = process.argv.slice(2);
+	const flagsWithValue = new Set(['--server', '--port']);
+
+	for (let i = 0; i < args.length; i += 1) {
+		const token = args[i]!;
+		if (token === '--') return null;
+		if (!token.startsWith('-')) return token;
+		if (flagsWithValue.has(token)) {
+			i += 1;
+		}
+	}
+
+	return null;
 };
 
 const unknownTopLevelCommand = () => {
@@ -127,27 +96,6 @@ const unknownTopLevelCommand = () => {
 	if (token === null) return null;
 	return knownCommands.has(token) ? null : token;
 };
-
-const commandLike = (value: unknown): value is Command => {
-	return Boolean(
-		value &&
-		typeof value === 'object' &&
-		'name' in value &&
-		typeof (value as { name?: unknown }).name === 'function'
-	);
-};
-
-const rootOptionsLike = (value: unknown) =>
-	Boolean(
-		value &&
-		typeof value === 'object' &&
-		('server' in value ||
-			'port' in value ||
-			'tui' in value ||
-			'thinking' in value ||
-			'tools' in value ||
-			'subAgent' in value)
-	);
 
 const handleUnknownTopLevelCommand = (token: string) => {
 	const suggestion = suggestCommand(token);
@@ -162,55 +110,82 @@ if (token !== null) {
 	handleUnknownTopLevelCommand(token);
 }
 
-const migratedCommands = new Set([
-	'clear',
-	'connect',
-	'disconnect',
-	'init',
-	'ask',
-	'add',
-	'mcp',
-	'reference',
-	'resources',
-	'skill',
-	'status',
-	'serve',
-	'telemetry',
-	'remove',
-	'wipe'
+const rootArgs = process.argv.slice(2);
+const rootRuntimeFlags = new Set([
+	'--server',
+	'--port',
+	'--no-tui',
+	'--tui',
+	'--no-thinking',
+	'--thinking',
+	'--no-tools',
+	'--tools',
+	'--sub-agent'
 ]);
-const directCommand = process.argv[2];
-if (typeof directCommand === 'string' && migratedCommands.has(directCommand)) {
-	await runEffectCli(process.argv, VERSION);
-	process.exit(0);
-}
 
-// Default action (no subcommand) → launch TUI or REPL
-program.action(async (...actionArgs: unknown[]) => {
-	const command = actionArgs[actionArgs.length - 1];
-	const options = actionArgs.length > 1 ? actionArgs[actionArgs.length - 2] : actionArgs[0];
-
-	if (!commandLike(command) || !rootOptionsLike(options)) {
-		console.error('error: invalid command invocation');
-		process.exit(1);
+const shouldDelegateRoot = () => {
+	for (let i = 0; i < rootArgs.length; i += 1) {
+		const token = rootArgs[i]!;
+		if (!token.startsWith('-')) return false;
+		if (token === '--server' || token === '--port') {
+			i += 1;
+			continue;
+		}
+		if (rootRuntimeFlags.has(token)) continue;
+		return true;
 	}
+	return false;
+};
 
-	const typedOptions = options as {
+const parseRootLaunchOptions = () => {
+	const options: {
 		server?: string;
 		port?: number;
-		tui?: boolean;
-		thinking?: boolean;
-		tools?: boolean;
-		subAgent?: boolean;
+		tui: boolean;
+		thinking: boolean;
+		tools: boolean;
+		subAgent: boolean;
+	} = {
+		tui: true,
+		thinking: true,
+		tools: true,
+		subAgent: false
 	};
 
+	for (let i = 0; i < rootArgs.length; i += 1) {
+		const token = rootArgs[i]!;
+		if (token === '--server') {
+			options.server = rootArgs[i + 1];
+			i += 1;
+			continue;
+		}
+		if (token === '--port') {
+			const value = rootArgs[i + 1];
+			if (value) options.port = Number.parseInt(value, 10);
+			i += 1;
+			continue;
+		}
+		if (token === '--no-tui') options.tui = false;
+		if (token === '--tui') options.tui = true;
+		if (token === '--no-thinking') options.thinking = false;
+		if (token === '--thinking') options.thinking = true;
+		if (token === '--no-tools') options.tools = false;
+		if (token === '--tools') options.tools = true;
+		if (token === '--sub-agent') options.subAgent = true;
+	}
+
+	return options;
+};
+
+if (firstOperand() === null && !shouldDelegateRoot()) {
 	const runtime = createCliRuntime();
+	const launchOptions = parseRootLaunchOptions();
 	const launchEffect = Effect.tryPromise(async () => {
-		if (typedOptions.tui === false) {
-			await launchRepl(typedOptions);
+		if (launchOptions.tui === false) {
+			await launchRepl(launchOptions);
 			return;
 		}
-		await launchTui(typedOptions);
+		await launchTui(launchOptions);
 	});
 
 	try {
@@ -221,6 +196,6 @@ program.action(async (...actionArgs: unknown[]) => {
 	} finally {
 		await runtime.dispose();
 	}
-});
-
-program.parse();
+} else {
+	await runEffectCli(process.argv, VERSION);
+}
