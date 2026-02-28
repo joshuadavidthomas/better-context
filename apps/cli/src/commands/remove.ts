@@ -1,4 +1,5 @@
 import * as readline from 'readline';
+import { Effect } from 'effect';
 import { ensureServer } from '../server/manager.ts';
 import { createClient, getResources, removeResource } from '../client/index.ts';
 import { dim } from '../lib/utils/colors.ts';
@@ -79,27 +80,36 @@ export const runRemoveCommand = async (args: {
 		quiet: true
 	});
 
-	try {
-		const client = createClient(server.url);
-		const { resources } = await getResources(client);
+	return Effect.runPromise(
+		Effect.acquireUseRelease(
+			Effect.succeed(server),
+			(serverManager) =>
+				Effect.gen(function* () {
+					const client = createClient(serverManager.url);
+					const { resources } = yield* Effect.tryPromise(() => getResources(client));
 
-		if (resources.length === 0) {
-			console.log('No resources configured.');
-			return;
-		}
+					if (resources.length === 0) {
+						yield* Effect.sync(() => console.log('No resources configured.'));
+						return;
+					}
 
-		const names = resources.map((r) => r.name);
-		const resourceName = args.name
-			? args.name
-			: await selectSingleResource(resources as ResourceDefinition[]);
+					const names = resources.map((r) => r.name);
+					const resourceName = args.name
+						? args.name
+						: yield* Effect.tryPromise(() =>
+								selectSingleResource(resources as ResourceDefinition[])
+							);
 
-		if (!names.includes(resourceName)) {
-			throw new Error(`Resource "${resourceName}" not found. Available resources: ${names.join(', ')}`);
-		}
+					if (!names.includes(resourceName)) {
+						yield* Effect.fail(
+							new Error(`Resource "${resourceName}" not found. Available resources: ${names.join(', ')}`)
+						);
+					}
 
-		await removeResource(server.url, resourceName);
-		console.log(`Removed resource: ${resourceName}`);
-	} finally {
-		server.stop();
-	}
+					yield* Effect.tryPromise(() => removeResource(serverManager.url, resourceName));
+					yield* Effect.sync(() => console.log(`Removed resource: ${resourceName}`));
+				}),
+			(serverManager) => Effect.sync(() => serverManager.stop())
+		)
+	);
 };

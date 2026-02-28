@@ -1,4 +1,5 @@
 import { startServer, type ServerInstance } from 'btca-server';
+import { Effect } from 'effect';
 
 export interface ServerManager {
 	url: string;
@@ -76,3 +77,16 @@ export async function ensureServer(options: EnsureServerOptions = {}): Promise<S
 		stop: () => server.stop()
 	};
 }
+
+export const ensureServerEffect = (options: EnsureServerOptions = {}) =>
+	Effect.tryPromise(() => ensureServer(options));
+
+export const withServerEffect = <A>(
+	options: EnsureServerOptions,
+	use: (server: ServerManager) => Effect.Effect<A, unknown>
+): Effect.Effect<A, unknown> =>
+	Effect.acquireUseRelease(
+		ensureServerEffect(options),
+		use,
+		(server) => Effect.sync(() => server.stop())
+	);
