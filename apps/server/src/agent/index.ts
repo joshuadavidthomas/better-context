@@ -5,5 +5,5 @@ export {
 	InvalidModelError,
 	ProviderNotConnectedError
 } from './service.ts';
-export { AgentLoop } from './loop.ts';
+export { runAgentLoop, streamAgentLoop } from './loop.ts';
 export type { AgentResult } from './types.ts';

@@ -303,7 +303,3 @@ export async function* streamAgentLoop(options: AgentLoopOptions): AsyncGenerato
 	}
 }
 
-export const AgentLoop = {
-	run: runAgentLoop,
-	stream: streamAgentLoop
-} as const;

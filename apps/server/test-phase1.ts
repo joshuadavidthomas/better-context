@@ -8,7 +8,7 @@ import { getAuthenticatedProviders } from './src/providers/auth.ts';
 import { getSupportedProviders } from './src/providers/registry.ts';
 import { getModel } from './src/providers/model.ts';
 import { ReadTool, GrepTool, GlobTool, ListTool } from './src/tools/index.ts';
-import { AgentLoop } from './src/agent/loop.ts';
+import { runAgentLoop } from './src/agent/loop.ts';
 import { VirtualFs } from './src/vfs/virtual-fs.ts';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
@@ -116,7 +116,7 @@ async function main() {
 		// For opencode, use big-pickle (free) - uses openai-compatible endpoint
 		const agentModelId = firstProvider === 'opencode' ? 'big-pickle' : 'claude-sonnet-4-20250514';
 		try {
-			const result = await AgentLoop.run({
+			const result = await runAgentLoop({
 				providerId: firstProvider,
 				modelId: agentModelId,
 				collectionPath: '/',

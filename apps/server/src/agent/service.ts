@@ -17,7 +17,7 @@ import type { CollectionResult } from '../collections/types.ts';
 import { clearVirtualCollectionMetadata } from '../collections/virtual-metadata.ts';
 import { VirtualFs } from '../vfs/virtual-fs.ts';
 import type { AgentResult } from './types.ts';
-import { AgentLoop, type AgentEvent } from './loop.ts';
+import { runAgentLoop, streamAgentLoop, type AgentEvent } from './loop.ts';
 
 export class AgentError extends Error {
 		readonly _tag = 'AgentError';
@@ -162,7 +162,7 @@ export const createAgentService = (config: ConfigServiceShape): AgentService => 
 			// Create a generator that wraps the AgentLoop stream
 			const eventGenerator = (async function* () {
 				try {
-					const stream = AgentLoop.stream({
+					const stream = streamAgentLoop({
 						providerId: config.provider,
 						modelId: config.model,
 						maxSteps: config.maxSteps,
@@ -202,7 +202,7 @@ export const createAgentService = (config: ConfigServiceShape): AgentService => 
 
 					const result = yield* Effect.tryPromise({
 						try: () =>
-							AgentLoop.run({
+							runAgentLoop({
 								providerId: config.provider,
 								modelId: config.model,
 								maxSteps: config.maxSteps,
