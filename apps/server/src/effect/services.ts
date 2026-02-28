@@ -109,9 +109,7 @@ export const loadCollection = (args: {
 	resourceNames: readonly string[];
 	quiet?: boolean;
 }): Effect.Effect<Awaited<ReturnType<Collections.Service['load']>>, unknown, CollectionsService> =>
-	Effect.flatMap(collectionsService, (collections) =>
-		Effect.tryPromise(() => collections.load(args))
-	);
+	Effect.flatMap(collectionsService, (collections) => collections.loadEffect(args));
 
 export const askQuestion = (args: {
 	collection: Awaited<ReturnType<Collections.Service['load']>>;

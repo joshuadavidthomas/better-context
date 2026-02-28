@@ -1,5 +1,6 @@
 import path from 'node:path';
 
+import { Effect } from 'effect';
 import { Result } from 'better-result';
 
 import { Config } from '../config/index.ts';
@@ -24,6 +25,10 @@ export namespace Collections {
 			resourceNames: readonly string[];
 			quiet?: boolean;
 		}) => Promise<CollectionResult>;
+		loadEffect: (args: {
+			resourceNames: readonly string[];
+			quiet?: boolean;
+		}) => Effect.Effect<CollectionResult, CollectionError>;
 	};
 
 	const encodePathSegments = (value: string) => value.split('/').map(encodeURIComponent).join('/');
@@ -279,8 +284,7 @@ export namespace Collections {
 		config: Config.Service;
 		resources: Resources.Service;
 	}): Service => {
-		return {
-			load: ({ resourceNames, quiet = false }) =>
+		const load: Service['load'] = ({ resourceNames, quiet = false }) =>
 				Transaction.run('collections.load', async () => {
 					const uniqueNames = Array.from(new Set(resourceNames));
 					if (uniqueNames.length === 0)
@@ -375,7 +379,24 @@ export namespace Collections {
 						throw result.error;
 					}
 					return result.value;
-				})
+				});
+
+		const loadEffect: Service['loadEffect'] = ({ resourceNames, quiet }) =>
+			Effect.tryPromise({
+				try: () => load({ resourceNames, quiet }),
+				catch: (cause) =>
+					cause instanceof CollectionError
+						? cause
+						: new CollectionError({
+								message: 'Failed to load resource collection',
+								hint: CommonHints.CLEAR_CACHE,
+								cause
+							})
+			});
+
+		return {
+			load,
+			loadEffect
 		};
 	};
 }

@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
 
+import { Effect } from 'effect';
+
 import { Config } from '../config/index.ts';
 import { parseNpmReference, validateGitUrl } from '../validation/index.ts';
 import { CommonHints } from '../errors.ts';
@@ -41,6 +43,12 @@ export namespace Resources {
 				quiet?: boolean;
 			}
 		) => Promise<BtcaFsResource>;
+		loadEffect: (
+			name: string,
+			options?: {
+				quiet?: boolean;
+			}
+		) => Effect.Effect<BtcaFsResource, ResourceError>;
 	};
 
 	const normalizeSearchPaths = (definition: GitResource): string[] => {
@@ -147,21 +155,56 @@ export namespace Resources {
 	};
 
 	export const create = (config: Config.Service): Service => {
-		return {
-			load: async (name, options) => {
+		const loadEffect: Service['loadEffect'] = (name, options) =>
+			Effect.gen(function* () {
 				const quiet = options?.quiet ?? false;
-				const definition = resolveResourceDefinition(name, config.getResource);
+				const definition = yield* Effect.try({
+					try: () => resolveResourceDefinition(name, config.getResource),
+					catch: (cause) =>
+						cause instanceof ResourceError
+							? cause
+							: new ResourceError({
+									message: `Failed to resolve resource "${name}"`,
+									hint: `${CommonHints.LIST_RESOURCES} ${CommonHints.ADD_RESOURCE}`,
+									cause
+								})
+				});
 
 				if (isGitResource(definition)) {
-					return loadGitResource(definitionToGitArgs(definition, config.resourcesDirectory, quiet));
+					return yield* Effect.tryPromise({
+						try: () =>
+							loadGitResource(definitionToGitArgs(definition, config.resourcesDirectory, quiet)),
+						catch: (cause) =>
+							cause instanceof ResourceError
+								? cause
+								: new ResourceError({
+										message: `Failed to load git resource "${name}"`,
+										hint: CommonHints.CLEAR_CACHE,
+										cause
+									})
+					});
 				}
 
 				if (isNpmResource(definition)) {
-					return loadNpmResource(definitionToNpmArgs(definition, config.resourcesDirectory));
+					return yield* Effect.tryPromise({
+						try: () => loadNpmResource(definitionToNpmArgs(definition, config.resourcesDirectory)),
+						catch: (cause) =>
+							cause instanceof ResourceError
+								? cause
+								: new ResourceError({
+										message: `Failed to load npm resource "${name}"`,
+										hint: CommonHints.CLEAR_CACHE,
+										cause
+									})
+					});
 				}
 
 				return loadLocalResource(definitionToLocalArgs(definition));
-			}
+			});
+
+		return {
+			load: (name, options) => Effect.runPromise(loadEffect(name, options)),
+			loadEffect
 		};
 	};
 }
