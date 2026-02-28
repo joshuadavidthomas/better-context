@@ -7,6 +7,5 @@ export class CliProcess extends ServiceMap.Service<
 	}
 >()('CliProcess') {}
 
-export const CliProcessLive = Layer.succeed(CliProcess, {
-	exit: (code: number) => process.exit(code)
-});
+export const makeCliProcessLayer = (exit: (code: number) => never) =>
+	Layer.succeed(CliProcess, { exit });

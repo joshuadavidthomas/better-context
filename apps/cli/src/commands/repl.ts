@@ -9,6 +9,7 @@ import {
 	BtcaError
 } from '../client/index.ts';
 import { parseSSEStream } from '../client/stream.ts';
+import { runCliEffect } from '../effect/runtime.ts';
 import { setTelemetryContext, trackTelemetryEvent } from '../lib/telemetry.ts';
 
 type ResourceInfo = { name: string; type: string; url?: string };
@@ -86,7 +87,7 @@ interface StreamHandlers {
 }
 
 function runReplEffect<A>(effect: Effect.Effect<A, unknown>) {
-	return Effect.runPromise(effect);
+	return runCliEffect(effect);
 }
 
 function handleStreamEvent(event: BtcaStreamEvent, handlers: StreamHandlers): void {
