@@ -5,10 +5,10 @@ import {
 	createClient,
 	getConfig,
 	getResources,
-	askQuestionStream,
-	BtcaError
+	askQuestionStream
 } from '../client/index.ts';
 import { parseSSEStream } from '../client/stream.ts';
+import { formatCliCommandError } from '../effect/errors.ts';
 import { runCliEffect } from '../effect/runtime.ts';
 import { setTelemetryContext, trackTelemetryEvent } from '../lib/telemetry.ts';
 
@@ -20,20 +20,6 @@ export interface ReplOptions {
 	thinking?: boolean;
 	tools?: boolean;
 	subAgent?: boolean;
-}
-
-/**
- * Format an error for display, including hint if available.
- */
-function formatError(error: unknown): string {
-	if (error instanceof BtcaError) {
-		let output = `Error: ${error.message}`;
-		if (error.hint) {
-			output += `\n\nHint: ${error.hint}`;
-		}
-		return output;
-	}
-	return `Error: ${error instanceof Error ? error.message : String(error)}`;
 }
 
 /**
@@ -297,7 +283,7 @@ Examples:
 								})
 							);
 						} catch (error) {
-							console.error(formatError(error));
+							console.error(formatCliCommandError(error));
 						}
 					}
 				})
