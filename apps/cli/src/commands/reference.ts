@@ -105,41 +105,7 @@ export const referenceCommand = new Command('reference')
 	.description('Clone a reference repository into ./references and keep it untracked locally')
 	.argument('<repo>', 'Repository URL or git clone target')
 	.action(async (repo: string) => {
-		const result = await Result.tryPromise(async () => {
-			const cwd = process.cwd();
-			const repoName = extractRepoName(repo);
-			const referencesDir = path.join(cwd, REFERENCES_DIR);
-			const destination = path.join(referencesDir, repoName);
-
-			if (await Bun.file(destination).exists()) {
-				throw new Error(`Reference destination already exists: ${destination}`);
-			}
-
-			await fs.mkdir(referencesDir, { recursive: true });
-			const excludeStatus = await ensureReferencesExclude(cwd, referencesDir);
-			console.log(`Cloning ${repo} into ${destination}...`);
-			const cloneResult = await Result.tryPromise(() => cloneReference(repo, destination));
-			if (Result.isError(cloneResult)) {
-				const referencesEntries = await fs.readdir(referencesDir).catch(() => []);
-				if (referencesEntries.length === 0) {
-					await fs.rmdir(referencesDir).catch(() => undefined);
-				}
-				throw cloneResult.error;
-			}
-
-			console.log(`\nReference cloned: ${destination}`);
-			if (excludeStatus.kind === 'added-exclude') {
-				console.log(`Added '${excludeStatus.pattern}' to .git/info/exclude`);
-			} else if (excludeStatus.kind === 'already-excluded') {
-				console.log(`'${excludeStatus.pattern}' is already present in .git/info/exclude`);
-			} else {
-				console.log(
-					"Warning: current directory is not a git repository, so '.git/info/exclude' was not updated."
-				);
-			}
-
-			printAgentSnippets();
-		});
+		const result = await Result.tryPromise(() => runReferenceCommand(repo));
 
 		if (Result.isError(result)) {
 			console.error(
@@ -148,3 +114,39 @@ export const referenceCommand = new Command('reference')
 			process.exit(1);
 		}
 	});
+
+export const runReferenceCommand = async (repo: string) => {
+	const cwd = process.cwd();
+	const repoName = extractRepoName(repo);
+	const referencesDir = path.join(cwd, REFERENCES_DIR);
+	const destination = path.join(referencesDir, repoName);
+
+	if (await Bun.file(destination).exists()) {
+		throw new Error(`Reference destination already exists: ${destination}`);
+	}
+
+	await fs.mkdir(referencesDir, { recursive: true });
+	const excludeStatus = await ensureReferencesExclude(cwd, referencesDir);
+	console.log(`Cloning ${repo} into ${destination}...`);
+	const cloneResult = await Result.tryPromise(() => cloneReference(repo, destination));
+	if (Result.isError(cloneResult)) {
+		const referencesEntries = await fs.readdir(referencesDir).catch(() => []);
+		if (referencesEntries.length === 0) {
+			await fs.rmdir(referencesDir).catch(() => undefined);
+		}
+		throw cloneResult.error;
+	}
+
+	console.log(`\nReference cloned: ${destination}`);
+	if (excludeStatus.kind === 'added-exclude') {
+		console.log(`Added '${excludeStatus.pattern}' to .git/info/exclude`);
+	} else if (excludeStatus.kind === 'already-excluded') {
+		console.log(`'${excludeStatus.pattern}' is already present in .git/info/exclude`);
+	} else {
+		console.log(
+			"Warning: current directory is not a git repository, so '.git/info/exclude' was not updated."
+		);
+	}
+
+	printAgentSnippets();
+};

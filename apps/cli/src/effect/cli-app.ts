@@ -5,10 +5,17 @@ import { runClearCommand } from '../commands/clear.ts';
 import { runConnectCommand } from '../commands/connect.ts';
 import { runDisconnectCommand } from '../commands/disconnect.ts';
 import { runInitCommand } from '../commands/init.ts';
+import { runReferenceCommand } from '../commands/reference.ts';
 import { runRemoveCommand } from '../commands/remove.ts';
 import { runResourcesCommand } from '../commands/resources.ts';
 import { runServeCommand } from '../commands/serve.ts';
 import { runStatusCommand } from '../commands/status.ts';
+import {
+	runTelemetryOffCommand,
+	runTelemetryOnCommand,
+	runTelemetryStatusCommand
+} from '../commands/telemetry.ts';
+import { runWipeCommand } from '../commands/wipe.ts';
 import { formatCliCommandError } from './errors.ts';
 
 const serverFlag = pipe(Flag.string('server'), Flag.optional);
@@ -82,6 +89,13 @@ const disconnect = Command.make(
 			})
 		)
 );
+const reference = Command.make(
+	'reference',
+	{
+		repo: Argument.string('repo')
+	},
+	({ repo }) => Effect.tryPromise(() => runReferenceCommand(repo))
+);
 const serve = Command.make(
 	'serve',
 	{
@@ -106,10 +120,37 @@ const remove = Command.make(
 			})
 		)
 );
+const telemetry = pipe(
+	Command.make('telemetry'),
+	Command.withSubcommands([
+		Command.make('on', {}, () => Effect.tryPromise(() => runTelemetryOnCommand())),
+		Command.make('off', {}, () => Effect.tryPromise(() => runTelemetryOffCommand())),
+		Command.make('status', {}, () => Effect.tryPromise(() => runTelemetryStatusCommand()))
+	])
+);
+const wipe = Command.make(
+	'wipe',
+	{
+		yes: pipe(Flag.boolean('yes'), Flag.withAlias('y'))
+	},
+	({ yes }) => Effect.tryPromise(() => runWipeCommand({ yes }))
+);
 
 const root = pipe(
 	Command.make('btca'),
-	Command.withSubcommands([clear, connect, disconnect, init, resources, status, serve, remove])
+	Command.withSubcommands([
+		clear,
+		connect,
+		disconnect,
+		init,
+		reference,
+		resources,
+		status,
+		serve,
+		telemetry,
+		remove,
+		wipe
+	])
 );
 
 export const runEffectCli = async (

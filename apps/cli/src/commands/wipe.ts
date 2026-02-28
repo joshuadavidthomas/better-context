@@ -125,16 +125,7 @@ export const wipeCommand = new Command('wipe')
 	.description('Delete BTCA config files in the current directory and global config directory')
 	.option('-y, --yes', 'Skip confirmation prompt')
 	.action(async (options: { yes?: boolean }) => {
-		const result = await Result.tryPromise(async () => {
-			const targets = listTargets();
-			if (!options.yes) {
-				await confirmWipe(targets);
-			}
-
-			const wipeResult = await runWipe();
-			printReport(wipeResult);
-			if (wipeResult.failed.length > 0) process.exitCode = 1;
-		});
+		const result = await Result.tryPromise(() => runWipeCommand({ yes: options.yes }));
 
 		if (Result.isError(result)) {
 			console.error(
@@ -143,3 +134,14 @@ export const wipeCommand = new Command('wipe')
 			process.exit(1);
 		}
 	});
+
+export const runWipeCommand = async (args: { yes?: boolean }) => {
+	const targets = listTargets();
+	if (!args.yes) {
+		await confirmWipe(targets);
+	}
+
+	const wipeResult = await runWipe();
+	printReport(wipeResult);
+	if (wipeResult.failed.length > 0) process.exitCode = 1;
+};

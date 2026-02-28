@@ -167,10 +167,13 @@ const migratedCommands = new Set([
 	'connect',
 	'disconnect',
 	'init',
+	'reference',
 	'resources',
 	'status',
 	'serve',
-	'remove'
+	'telemetry',
+	'remove',
+	'wipe'
 ]);
 const directCommand = process.argv[2];
 if (typeof directCommand === 'string' && migratedCommands.has(directCommand)) {
