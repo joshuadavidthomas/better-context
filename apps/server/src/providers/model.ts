@@ -4,7 +4,12 @@
  */
 import type { LanguageModel } from 'ai';
 
-import { Auth } from './auth.ts';
+import {
+	getAuthStatus,
+	getAuthenticatedProviders,
+	getProviderAuthHint,
+	isAuthenticated
+} from './auth.ts';
 import {
 	getProviderFactory,
 	isProviderSupported,
@@ -33,7 +38,7 @@ export class ProviderNotAuthenticatedError extends Error {
 	constructor(providerId: string) {
 		super(`Provider "${providerId}" is not authenticated.`);
 		this.providerId = providerId;
-		this.hint = Auth.getProviderAuthHint(providerId);
+		this.hint = getProviderAuthHint(providerId);
 	}
 }
 
@@ -47,7 +52,7 @@ export class ProviderAuthTypeError extends Error {
 		super(`Provider "${args.providerId}" does not support "${args.authType}" auth.`);
 		this.providerId = args.providerId;
 		this.authType = args.authType;
-		this.hint = Auth.getProviderAuthHint(args.providerId);
+		this.hint = getProviderAuthHint(args.providerId);
 	}
 }
 
@@ -89,7 +94,7 @@ export const getModel = async (
 	let accountId: string | undefined;
 
 	if (!options.skipAuth) {
-		const status = await Auth.getAuthStatus(normalizedProviderId);
+		const status = await getAuthStatus(normalizedProviderId);
 		if (status.status === 'missing') {
 			if (!options.allowMissingAuth) {
 				throw new ProviderNotAuthenticatedError(providerId);
@@ -139,16 +144,10 @@ export const canUseModel = async (providerId: string): Promise<boolean> => {
 		return false;
 	}
 
-	return Auth.isAuthenticated(normalizedProviderId);
+	return isAuthenticated(normalizedProviderId);
 };
 
 export const getAvailableProviders = async (): Promise<string[]> => {
-	const authenticatedProviders = await Auth.getAuthenticatedProviders();
+	const authenticatedProviders = await getAuthenticatedProviders();
 	return authenticatedProviders.filter((provider) => isProviderSupported(provider));
 };
-
-export const Model = {
-	getModel,
-	canUseModel,
-	getAvailableProviders
-} as const;

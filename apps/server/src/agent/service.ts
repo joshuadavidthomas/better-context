@@ -7,7 +7,12 @@ import { Effect } from 'effect';
 import type { ConfigService as ConfigServiceShape } from '../config/index.ts';
 import { getErrorHint, getErrorMessage, type TaggedErrorOptions } from '../errors.ts';
 import { Metrics } from '../metrics/index.ts';
-import { Auth, getSupportedProviders } from '../providers/index.ts';
+import {
+	getAuthenticatedProviders,
+	getProviderAuthHint,
+	getSupportedProviders,
+	isAuthenticated
+} from '../providers/index.ts';
 import type { CollectionResult } from '../collections/types.ts';
 import { clearVirtualCollectionMetadata } from '../collections/virtual-metadata.ts';
 import { VirtualFs } from '../vfs/virtual-fs.ts';
@@ -72,7 +77,7 @@ export class ProviderNotConnectedError extends Error {
 			super(`Provider "${args.providerId}" is not connected`);
 			this.providerId = args.providerId;
 			this.connectedProviders = args.connectedProviders;
-			const baseHint = Auth.getProviderAuthHint(args.providerId);
+			const baseHint = getProviderAuthHint(args.providerId);
 			if (args.connectedProviders.length > 0) {
 				this.hint = `${baseHint} Connected providers: ${args.connectedProviders.join(', ')}.`;
 			} else {
@@ -125,10 +130,10 @@ export const createAgentService = (config: ConfigServiceShape): AgentService => 
 			});
 
 		const ensureProviderConnected = Effect.fn(function* () {
-			const isAuthed = yield* Effect.tryPromise(() => Auth.isAuthenticated(config.provider));
+			const isAuthed = yield* Effect.tryPromise(() => isAuthenticated(config.provider));
 			const requiresAuth = config.provider !== 'opencode' && config.provider !== 'openai-compat';
 			if (isAuthed || !requiresAuth) return;
-			const authenticated = yield* Effect.tryPromise(() => Auth.getAuthenticatedProviders());
+			const authenticated = yield* Effect.tryPromise(() => getAuthenticatedProviders());
 			yield* Effect.fail(
 				new ProviderNotConnectedError({
 					providerId: config.provider,
@@ -246,7 +251,7 @@ export const createAgentService = (config: ConfigServiceShape): AgentService => 
 				Effect.gen(function* () {
 					const supportedProviders = getSupportedProviders();
 					const authenticatedProviders = yield* Effect.tryPromise(() =>
-						Auth.getAuthenticatedProviders()
+						getAuthenticatedProviders()
 					);
 					const all = supportedProviders.map((id) => ({
 						id,

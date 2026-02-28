@@ -187,14 +187,3 @@ export const getAuthenticatedProviders = async (): Promise<string[]> => {
 	const statuses = await Promise.all(providers.map((provider) => getAuthStatus(provider)));
 	return providers.filter((_, index) => statuses[index]?.status === 'ok');
 };
-
-export const Auth = {
-	getCredentials,
-	getAuthStatus,
-	getProviderAuthHint,
-	isAuthenticated,
-	getApiKey,
-	getAllCredentials,
-	setCredentials,
-	getAuthenticatedProviders
-} as const;

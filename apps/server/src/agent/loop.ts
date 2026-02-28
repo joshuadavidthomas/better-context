@@ -4,7 +4,7 @@
  */
 import { streamText, tool, stepCountIs, type ModelMessage } from 'ai';
 
-import { Model } from '../providers/index.ts';
+import { getModel } from '../providers/index.ts';
 import type { ProviderOptions } from '../providers/registry.ts';
 import { ReadTool, GrepTool, GlobTool, ListTool } from '../tools/index.ts';
 import type {
@@ -142,7 +142,7 @@ export const runAgentLoop = async (options: AgentLoopOptions): Promise<AgentLoop
 			? { ...options.providerOptions, instructions: systemPrompt, sessionId }
 			: options.providerOptions;
 
-	const model = await Model.getModel(providerId, modelId, {
+	const model = await getModel(providerId, modelId, {
 		providerOptions: mergedProviderOptions,
 		allowMissingAuth: providerId === 'openai-compat'
 	});
@@ -237,7 +237,7 @@ export async function* streamAgentLoop(options: AgentLoopOptions): AsyncGenerato
 			? { ...options.providerOptions, instructions: systemPrompt, sessionId }
 			: options.providerOptions;
 
-	const model = await Model.getModel(providerId, modelId, {
+	const model = await getModel(providerId, modelId, {
 		providerOptions: mergedProviderOptions,
 		allowMissingAuth: providerId === 'openai-compat'
 	});

@@ -4,9 +4,9 @@
  * Run with: bun apps/server/test-phase1.ts
  */
 
-import { Auth } from './src/providers/auth.ts';
+import { getAuthenticatedProviders } from './src/providers/auth.ts';
 import { getSupportedProviders } from './src/providers/registry.ts';
-import { Model } from './src/providers/model.ts';
+import { getModel } from './src/providers/model.ts';
 import { ReadTool, GrepTool, GlobTool, ListTool } from './src/tools/index.ts';
 import { AgentLoop } from './src/agent/loop.ts';
 import { VirtualFs } from './src/vfs/virtual-fs.ts';
@@ -19,7 +19,7 @@ async function main() {
 
 	// 1. Test Auth
 	console.log('1. Testing Auth...');
-	const providers = await Auth.getAuthenticatedProviders();
+	const providers = await getAuthenticatedProviders();
 	console.log(`   Authenticated providers: ${providers.join(', ') || 'none'}`);
 
 	if (providers.length === 0) {
@@ -88,7 +88,7 @@ async function main() {
 	const testModelId = firstProvider === 'opencode' ? 'big-pickle' : 'claude-sonnet-4-20250514';
 	try {
 		// Just test that we can create a model - don't actually call it
-		const model = await Model.getModel(firstProvider, testModelId);
+		const model = await getModel(firstProvider, testModelId);
 		console.log(`   Created model for ${firstProvider}/${testModelId}`);
 		console.log('   ✅ Model creation working\n');
 	} catch (e) {
