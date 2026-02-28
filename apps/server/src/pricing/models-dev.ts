@@ -167,6 +167,3 @@ export const createModelsDevPricing = (
 	return { prefetch, lookup };
 };
 
-export const ModelsDevPricing = {
-	create: createModelsDevPricing
-} as const;

@@ -344,6 +344,3 @@ export const createSseStream = (args: {
 		});
 	};
 
-export const StreamService = {
-	createSseStream
-} as const;

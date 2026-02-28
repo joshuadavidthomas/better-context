@@ -9,10 +9,10 @@ import { toHttpErrorPayload } from './effect/errors.ts';
 import { createServerRuntime } from './effect/runtime.ts';
 import * as ServerServices from './effect/services.ts';
 import { Metrics } from './metrics/index.ts';
-import { ModelsDevPricing } from './pricing/models-dev.ts';
+import { createModelsDevPricing } from './pricing/models-dev.ts';
 import { Resources } from './resources/service.ts';
 import { GitResourceSchema, LocalResourceSchema, NpmResourceSchema } from './resources/schema.ts';
-import { StreamService } from './stream/service.ts';
+import { createSseStream } from './stream/service.ts';
 import type { BtcaStreamMetaEvent } from './stream/types.ts';
 import {
 	LIMITS,
@@ -26,7 +26,7 @@ import { VirtualFs } from './vfs/virtual-fs.ts';
 
 const DEFAULT_PORT = 8080;
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : DEFAULT_PORT;
-const modelsDevPricing = ModelsDevPricing.create();
+const modelsDevPricing = createModelsDevPricing();
 
 const RESOURCE_NAME_REGEX = /^@?[a-zA-Z0-9][a-zA-Z0-9._-]*(\/[a-zA-Z0-9][a-zA-Z0-9._-]*)*$/;
 const SAFE_NAME_REGEX = /^[a-zA-Z0-9._+\-/:]+$/;
@@ -328,7 +328,7 @@ const createApp = () => {
 
 					Metrics.info('question.stream.start', { collectionKey });
 					modelsDevPricing.prefetch();
-					const stream = StreamService.createSseStream({
+					const stream = createSseStream({
 						meta,
 						eventStream,
 						question: decoded.question,
