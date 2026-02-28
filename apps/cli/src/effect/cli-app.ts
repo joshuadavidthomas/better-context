@@ -2,6 +2,9 @@ import { BunServices } from '@effect/platform-bun';
 import { Cause, Effect, Exit, Option, pipe } from 'effect';
 import { Argument, Command, Flag } from 'effect/unstable/cli';
 import { runClearCommand } from '../commands/clear.ts';
+import { runConnectCommand } from '../commands/connect.ts';
+import { runDisconnectCommand } from '../commands/disconnect.ts';
+import { runInitCommand } from '../commands/init.ts';
 import { runRemoveCommand } from '../commands/remove.ts';
 import { runResourcesCommand } from '../commands/resources.ts';
 import { runServeCommand } from '../commands/serve.ts';
@@ -38,6 +41,47 @@ const resources = Command.make(
 );
 
 const status = Command.make('status', {}, () => Effect.tryPromise(() => runStatusCommand()));
+const init = Command.make(
+	'init',
+	{
+		force: pipe(Flag.boolean('force'), Flag.withAlias('f'))
+	},
+	({ force }) => Effect.tryPromise(() => runInitCommand({ force }))
+);
+const connect = Command.make(
+	'connect',
+	{
+		global: pipe(Flag.boolean('global'), Flag.withAlias('g')),
+		provider: pipe(Flag.string('provider'), Flag.withAlias('p'), Flag.optional),
+		model: pipe(Flag.string('model'), Flag.withAlias('m'), Flag.optional),
+		server: serverFlag,
+		port: portFlag
+	},
+	({ global, provider, model, server, port }) =>
+		Effect.tryPromise(() =>
+			runConnectCommand({
+				global,
+				provider: Option.getOrUndefined(provider),
+				model: Option.getOrUndefined(model),
+				globalOpts: resolveServerOptions({ server, port })
+			})
+		)
+);
+const disconnect = Command.make(
+	'disconnect',
+	{
+		provider: pipe(Flag.string('provider'), Flag.withAlias('p'), Flag.optional),
+		server: serverFlag,
+		port: portFlag
+	},
+	({ provider, server, port }) =>
+		Effect.tryPromise(() =>
+			runDisconnectCommand({
+				provider: Option.getOrUndefined(provider),
+				globalOpts: resolveServerOptions({ server, port })
+			})
+		)
+);
 const serve = Command.make(
 	'serve',
 	{
@@ -65,7 +109,7 @@ const remove = Command.make(
 
 const root = pipe(
 	Command.make('btca'),
-	Command.withSubcommands([clear, resources, status, serve, remove])
+	Command.withSubcommands([clear, connect, disconnect, init, resources, status, serve, remove])
 );
 
 export const runEffectCli = async (

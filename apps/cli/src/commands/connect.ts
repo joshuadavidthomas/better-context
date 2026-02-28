@@ -206,71 +206,57 @@ const promptOpenAICompatSetup = async (options: { includeModel?: boolean } = {})
 	}
 };
 
-export const connectCommand = new Command('connect')
-	.description('Configure the AI provider and model')
-	.option('-g, --global', 'Save to global config instead of project config')
-	.option(
-		'-p, --provider <id>',
-		'Provider ID (opencode, openrouter, openai, openai-compat, google, anthropic, github-copilot, minimax)'
-	)
-	.option('-m, --model <id>', 'Model ID (e.g., "claude-haiku-4-5")')
-	.action(async (options: { global?: boolean; provider?: string; model?: string }, command) => {
-		const globalOpts = command.parent?.opts() as { server?: string; port?: number } | undefined;
-
-		const result = await Result.tryPromise(async () => {
-			const server = await ensureServer({
-				serverUrl: globalOpts?.server,
-				port: globalOpts?.port,
-				quiet: true
-			});
-
+export const runConnectCommand = async (args: {
+	global?: boolean;
+	provider?: string;
+	model?: string;
+	globalOpts?: { server?: string; port?: number };
+}) => {
+	const result = await Result.tryPromise(async () => {
+		const server = await ensureServer({
+			serverUrl: args.globalOpts?.server,
+			port: args.globalOpts?.port,
+			quiet: true
+		});
+		try {
 			const client = createClient(server.url);
 			const providers = await getProviders(client);
 
-			// If both provider and model specified via flags, just set them
-			if (options.provider && options.model) {
-				if (options.provider === 'openai-compat') {
+			if (args.provider && args.model) {
+				if (args.provider === 'openai-compat') {
 					const { baseURL, name, apiKey } = await promptOpenAICompatSetup({
 						includeModel: false
 					});
 					if (!baseURL || !name) {
 						console.error('Error: Base URL and provider name are required.');
-						server.stop();
 						process.exit(1);
 					}
 					if (apiKey) {
-						await saveProviderApiKey(options.provider, apiKey);
-						console.log(`${options.provider} API key saved.`);
+						await saveProviderApiKey(args.provider, apiKey);
+						console.log(`${args.provider} API key saved.`);
 					}
-					const result = await updateModel(server.url, options.provider, options.model, {
+					const updated = await updateModel(server.url, args.provider, args.model, {
 						baseURL,
 						name
 					});
-					console.log(`Model updated: ${result.provider}/${result.model}`);
-					server.stop();
+					console.log(`Model updated: ${updated.provider}/${updated.model}`);
 					return;
 				}
 
-				const result = await updateModel(server.url, options.provider, options.model);
-				console.log(`Model updated: ${result.provider}/${result.model}`);
+				const updated = await updateModel(server.url, args.provider, args.model);
+				console.log(`Model updated: ${updated.provider}/${updated.model}`);
 
-				// Warn if provider not connected
-				const info = PROVIDER_INFO[options.provider];
-				if (info?.requiresAuth && !providers.connected.includes(options.provider)) {
-					console.warn(`\nWarning: Provider "${options.provider}" is not connected.`);
+				const info = PROVIDER_INFO[args.provider];
+				if (info?.requiresAuth && !providers.connected.includes(args.provider)) {
+					console.warn(`\nWarning: Provider "${args.provider}" is not connected.`);
 					console.warn('Run "opencode auth" to configure credentials.');
 				}
-
-				server.stop();
 				return;
 			}
 
-			// Interactive mode
 			console.log('\n--- Configure AI Provider ---\n');
-
 			const providerOptions: { label: string; value: string }[] = [];
 
-			// Add connected providers first
 			for (const connectedId of providers.connected) {
 				const info = PROVIDER_INFO[connectedId];
 				const label = info
@@ -279,18 +265,15 @@ export const connectCommand = new Command('connect')
 				providerOptions.push({ label, value: connectedId });
 			}
 
-			// Add unconnected providers
-			for (const p of providers.all) {
-				if (!providers.connected.includes(p.id)) {
-					const info = PROVIDER_INFO[p.id];
-					const label = info ? info.label : p.id;
-					providerOptions.push({ label, value: p.id });
+			for (const provider of providers.all) {
+				if (!providers.connected.includes(provider.id)) {
+					const info = PROVIDER_INFO[provider.id];
+					const label = info ? info.label : provider.id;
+					providerOptions.push({ label, value: provider.id });
 				}
 			}
 
 			const provider = await promptSelect('Select a provider:', providerOptions);
-
-			// Authenticate if required and not already connected
 			const isConnected = providers.connected.includes(provider);
 			const info = PROVIDER_INFO[provider];
 
@@ -303,7 +286,6 @@ export const connectCommand = new Command('connect')
 				const success = await runBtcaAuth(provider);
 				if (!success) {
 					console.warn('\nAuthentication may have failed. Try again later with: opencode auth');
-					server.stop();
 					process.exit(1);
 				}
 			}
@@ -315,36 +297,31 @@ export const connectCommand = new Command('connect')
 				}
 
 				const { baseURL, name, modelId, apiKey } = await promptOpenAICompatSetup();
-
 				if (!baseURL || !name || !modelId) {
 					console.error('Error: Base URL, provider name, and model ID are required.');
-					server.stop();
 					process.exit(1);
 				}
-
 				if (apiKey) {
 					await saveProviderApiKey(provider, apiKey);
 					console.log(`${provider} API key saved.`);
 				}
 
-				const result = await updateModel(server.url, provider, modelId, { baseURL, name });
-				console.log(`\nModel configured: ${result.provider}/${result.model}`);
-				console.log(`\nSaved to: ${result.savedTo} config`);
-				server.stop();
+				const updated = await updateModel(server.url, provider, modelId, { baseURL, name });
+				console.log(`\nModel configured: ${updated.provider}/${updated.model}`);
+				console.log(`\nSaved to: ${updated.savedTo} config`);
 				return;
 			}
 
 			let model: string;
 			const curated = CURATED_MODELS[provider] ?? [];
 			const modelDocs = PROVIDER_MODEL_DOCS[provider];
-
 			if (modelDocs) {
 				console.log(`\n${modelDocs.label}: ${modelDocs.url}`);
 			}
 
 			if (curated.length > 0) {
 				const options = [
-					...curated.map((m) => ({ label: m.label, value: m.id })),
+					...curated.map((modelItem) => ({ label: modelItem.label, value: modelItem.id })),
 					{ label: 'Custom model ID...', value: '__custom__' }
 				];
 				const selection = await promptSelect('Select a model:', options);
@@ -364,31 +341,46 @@ export const connectCommand = new Command('connect')
 
 			if (!model) {
 				console.error('Error: Model ID is required.');
-				server.stop();
 				process.exit(1);
 			}
 
-			// Update the model
-			const result = await updateModel(server.url, provider, model);
-			console.log(`\nModel configured: ${result.provider}/${result.model}`);
-
-			// Show where it was saved
-			console.log(`\nSaved to: ${result.savedTo} config`);
-
+			const updated = await updateModel(server.url, provider, model);
+			console.log(`\nModel configured: ${updated.provider}/${updated.model}`);
+			console.log(`\nSaved to: ${updated.savedTo} config`);
+		} finally {
 			server.stop();
-		});
+		}
+	});
 
-		if (Result.isError(result)) {
-			const error = result.error;
-			if (error instanceof Error && error.message === 'Invalid selection') {
-				console.error('\nError: Invalid selection. Please try again.');
-				process.exit(1);
-			}
-			if (isPromptCancelled(error)) {
-				console.log('\nSelection cancelled.');
-				process.exit(0);
-			}
-			console.error(formatError(error));
+	if (Result.isError(result)) {
+		const error = result.error;
+		if (error instanceof Error && error.message === 'Invalid selection') {
+			console.error('\nError: Invalid selection. Please try again.');
 			process.exit(1);
 		}
+		if (isPromptCancelled(error)) {
+			console.log('\nSelection cancelled.');
+			process.exit(0);
+		}
+		console.error(formatError(error));
+		process.exit(1);
+	}
+};
+
+export const connectCommand = new Command('connect')
+	.description('Configure the AI provider and model')
+	.option('-g, --global', 'Save to global config instead of project config')
+	.option(
+		'-p, --provider <id>',
+		'Provider ID (opencode, openrouter, openai, openai-compat, google, anthropic, github-copilot, minimax)'
+	)
+	.option('-m, --model <id>', 'Model ID (e.g., "claude-haiku-4-5")')
+	.action(async (options: { global?: boolean; provider?: string; model?: string }, command) => {
+		const globalOpts = command.parent?.opts() as { server?: string; port?: number } | undefined;
+		await runConnectCommand({
+			global: options.global,
+			provider: options.provider,
+			model: options.model,
+			globalOpts
+		});
 	});

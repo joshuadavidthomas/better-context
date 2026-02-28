@@ -162,7 +162,16 @@ if (token !== null) {
 	handleUnknownTopLevelCommand(token);
 }
 
-const migratedCommands = new Set(['clear', 'resources', 'status', 'serve', 'remove']);
+const migratedCommands = new Set([
+	'clear',
+	'connect',
+	'disconnect',
+	'init',
+	'resources',
+	'status',
+	'serve',
+	'remove'
+]);
 const directCommand = process.argv[2];
 if (typeof directCommand === 'string' && migratedCommands.has(directCommand)) {
 	await runEffectCli(process.argv, VERSION);

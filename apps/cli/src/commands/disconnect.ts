@@ -77,48 +77,9 @@ export const disconnectCommand = new Command('disconnect')
 	.option('-p, --provider <id>', 'Provider ID to disconnect')
 	.action(async (options: { provider?: string }, command) => {
 		const globalOpts = command.parent?.opts() as { server?: string; port?: number } | undefined;
-
-		const result = await Result.tryPromise(async () => {
-			const server = await ensureServer({
-				serverUrl: globalOpts?.server,
-				port: globalOpts?.port,
-				quiet: true
-			});
-
-			const client = createClient(server.url);
-			const providers = await getProviders(client);
-
-			if (providers.connected.length === 0) {
-				console.log('No providers are currently connected.');
-				server.stop();
-				return;
-			}
-
-			const provider =
-				options.provider ??
-				(await promptSelect(
-					'Select a connected provider to disconnect:',
-					providers.connected.map((id) => ({ label: id, value: id }))
-				));
-
-			if (!providers.connected.includes(provider)) {
-				console.error(`Provider "${provider}" is not connected.`);
-				server.stop();
-				process.exit(1);
-			}
-
-			const removed = await removeProviderAuth(provider);
-			if (!removed) {
-				console.warn(
-					`No saved credentials found for "${provider}". If it's still connected, check env vars.`
-				);
-			} else {
-				console.log(`Disconnected "${provider}" and removed saved credentials.`);
-			}
-
-			server.stop();
-		});
-
+		const result = await Result.tryPromise(() =>
+			runDisconnectCommand({ provider: options.provider, globalOpts })
+		);
 		if (Result.isError(result)) {
 			const error = result.error;
 			if (error instanceof Error && error.message === 'Invalid selection') {
@@ -133,3 +94,46 @@ export const disconnectCommand = new Command('disconnect')
 			process.exit(1);
 		}
 	});
+
+export const runDisconnectCommand = async (args: {
+	provider?: string;
+	globalOpts?: { server?: string; port?: number };
+}) => {
+	const server = await ensureServer({
+		serverUrl: args.globalOpts?.server,
+		port: args.globalOpts?.port,
+		quiet: true
+	});
+	try {
+		const client = createClient(server.url);
+		const providers = await getProviders(client);
+
+		if (providers.connected.length === 0) {
+			console.log('No providers are currently connected.');
+			return;
+		}
+
+		const provider =
+			args.provider ??
+			(await promptSelect(
+				'Select a connected provider to disconnect:',
+				providers.connected.map((id) => ({ label: id, value: id }))
+			));
+
+		if (!providers.connected.includes(provider)) {
+			console.error(`Provider "${provider}" is not connected.`);
+			process.exit(1);
+		}
+
+		const removed = await removeProviderAuth(provider);
+		if (!removed) {
+			console.warn(
+				`No saved credentials found for "${provider}". If it's still connected, check env vars.`
+			);
+		} else {
+			console.log(`Disconnected "${provider}" and removed saved credentials.`);
+		}
+	} finally {
+		server.stop();
+	}
+};

@@ -160,12 +160,7 @@ export const initCommand = new Command('init')
 	.description('Initialize btca for this project')
 	.option('-f, --force', 'Overwrite existing configuration')
 	.action(async (options: { force?: boolean }) => {
-		const cwd = process.cwd();
-		const configPath = path.join(cwd, PROJECT_CONFIG_FILENAME);
-
-		const result = await Result.tryPromise(async () => {
-			await handleCliSetup(cwd, configPath, options.force);
-		});
+		const result = await Result.tryPromise(() => runInitCommand({ force: options.force }));
 
 		if (Result.isError(result)) {
 			const error = result.error;
@@ -177,3 +172,9 @@ export const initCommand = new Command('init')
 			process.exit(1);
 		}
 	});
+
+export const runInitCommand = async (args: { force?: boolean }) => {
+	const cwd = process.cwd();
+	const configPath = path.join(cwd, PROJECT_CONFIG_FILENAME);
+	await handleCliSetup(cwd, configPath, args.force);
+};
