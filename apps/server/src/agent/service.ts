@@ -3,6 +3,7 @@
  * Refactored to use custom AI SDK loop instead of spawning OpenCode instances
  */
 import { Result } from 'better-result';
+import { Effect } from 'effect';
 
 import { Config } from '../config/index.ts';
 import { getErrorHint, getErrorMessage, type TaggedErrorOptions } from '../errors.ts';
@@ -95,13 +96,26 @@ export namespace Agent {
 			stream: AsyncIterable<AgentLoop.AgentEvent>;
 			model: { provider: string; model: string };
 		}>;
+		askStreamEffect: (
+			args: { collection: CollectionResult; question: string }
+		) => Effect.Effect<{
+			stream: AsyncIterable<AgentLoop.AgentEvent>;
+			model: { provider: string; model: string };
+		}, unknown>;
 
 		ask: (args: { collection: CollectionResult; question: string }) => Promise<AgentResult>;
+		askEffect: (
+			args: { collection: CollectionResult; question: string }
+		) => Effect.Effect<AgentResult, unknown>;
 
 		listProviders: () => Promise<{
 			all: { id: string; models: Record<string, unknown> }[];
 			connected: string[];
 		}>;
+		listProvidersEffect: () => Effect.Effect<{
+			all: { id: string; models: Record<string, unknown> }[];
+			connected: string[];
+		}, unknown>;
 	};
 
 	// ─────────────────────────────────────────────────────────────────────────────
@@ -268,10 +282,19 @@ export namespace Agent {
 			};
 		};
 
+		const askStreamEffect: Service['askStreamEffect'] = (args) =>
+			Effect.tryPromise(() => askStream(args));
+		const askEffect: Service['askEffect'] = (args) => Effect.tryPromise(() => ask(args));
+		const listProvidersEffect: Service['listProvidersEffect'] = () =>
+			Effect.tryPromise(() => listProviders());
+
 		return {
 			askStream,
 			ask,
-			listProviders
+			listProviders,
+			askStreamEffect,
+			askEffect,
+			listProvidersEffect
 		};
 	};
 }

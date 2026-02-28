@@ -112,7 +112,7 @@ export const listProviders: Effect.Effect<
 	Awaited<ReturnType<Agent.Service['listProviders']>>,
 	unknown,
 	AgentService
-> = Effect.flatMap(agentService, (agent) => Effect.tryPromise(() => agent.listProviders()));
+> = Effect.flatMap(agentService, (agent) => agent.listProvidersEffect());
 
 export const loadCollection = (args: {
 	resourceNames: readonly string[];
@@ -126,13 +126,13 @@ export const askQuestion = (args: {
 	collection: Awaited<ReturnType<Collections.Service['load']>>;
 	question: string;
 }): Effect.Effect<Awaited<ReturnType<Agent.Service['ask']>>, unknown, AgentService> =>
-	Effect.flatMap(agentService, (agent) => Effect.tryPromise(() => agent.ask(args)));
+	Effect.flatMap(agentService, (agent) => agent.askEffect(args));
 
 export const askQuestionStream = (args: {
 	collection: Awaited<ReturnType<Collections.Service['load']>>;
 	question: string;
 }): Effect.Effect<Awaited<ReturnType<Agent.Service['askStream']>>, unknown, AgentService> =>
-	Effect.flatMap(agentService, (agent) => Effect.tryPromise(() => agent.askStream(args)));
+	Effect.flatMap(agentService, (agent) => agent.askStreamEffect(args));
 
 export const updateModelConfig = (args: {
 	provider: string;
