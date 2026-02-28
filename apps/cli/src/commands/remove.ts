@@ -71,6 +71,42 @@ async function selectSingleResource(resources: ResourceDefinition[]): Promise<st
 	});
 }
 
+export const runRemoveCommand = async (args: {
+	name?: string;
+	global?: boolean;
+	globalOpts?: { server?: string; port?: number };
+}) => {
+	const server = await ensureServer({
+		serverUrl: args.globalOpts?.server,
+		port: args.globalOpts?.port,
+		quiet: true
+	});
+
+	try {
+		const client = createClient(server.url);
+		const { resources } = await getResources(client);
+
+		if (resources.length === 0) {
+			console.log('No resources configured.');
+			return;
+		}
+
+		const names = resources.map((r) => r.name);
+		const resourceName = args.name
+			? args.name
+			: await selectSingleResource(resources as ResourceDefinition[]);
+
+		if (!names.includes(resourceName)) {
+			throw new Error(`Resource "${resourceName}" not found. Available resources: ${names.join(', ')}`);
+		}
+
+		await removeResource(server.url, resourceName);
+		console.log(`Removed resource: ${resourceName}`);
+	} finally {
+		server.stop();
+	}
+};
+
 export const removeCommand = new Command('remove')
 	.description('Remove a resource from the configuration')
 	.argument('[name]', 'Resource name to remove')
@@ -80,45 +116,9 @@ export const removeCommand = new Command('remove')
 	)
 	.action(async (name: string | undefined, options: { global?: boolean }, command) => {
 		const globalOpts = command.parent?.opts() as { server?: string; port?: number } | undefined;
-
-		const result = await Result.tryPromise(async () => {
-			const server = await ensureServer({
-				serverUrl: globalOpts?.server,
-				port: globalOpts?.port,
-				quiet: true
-			});
-
-			const client = createClient(server.url);
-			const { resources } = await getResources(client);
-
-			if (resources.length === 0) {
-				console.log('No resources configured.');
-				server.stop();
-				return;
-			}
-
-			const names = resources.map((r) => r.name);
-
-			// Use provided name or show interactive picker
-			let resourceName: string;
-			if (name) {
-				resourceName = name;
-			} else {
-				resourceName = await selectSingleResource(resources as ResourceDefinition[]);
-			}
-
-			if (!names.includes(resourceName)) {
-				console.error(`Error: Resource "${resourceName}" not found.`);
-				console.error(`\nAvailable resources: ${names.join(', ')}`);
-				server.stop();
-				process.exit(1);
-			}
-
-			await removeResource(server.url, resourceName);
-			console.log(`Removed resource: ${resourceName}`);
-
-			server.stop();
-		});
+		const result = await Result.tryPromise(() =>
+			runRemoveCommand({ name, global: options.global, globalOpts })
+		);
 
 		if (Result.isError(result)) {
 			const error = result.error;
