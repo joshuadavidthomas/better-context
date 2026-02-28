@@ -1,8 +1,50 @@
 import { Result } from 'better-result';
-import { hc } from 'hono/client';
-import type { AppType } from 'btca-server';
 
-export type Client = ReturnType<typeof hc<AppType>>;
+export type Client = {
+	baseUrl: string;
+};
+
+export type ConfigResponse = {
+	provider: string;
+	model: string;
+	providerTimeoutMs: number | null;
+	maxSteps: number;
+	resourcesDirectory: string;
+	resourceCount: number;
+};
+
+export type ResourceRecord =
+	| {
+			type: 'git';
+			name: string;
+			url: string;
+			branch: string;
+			searchPath?: string | null;
+			searchPaths?: string[] | null;
+			specialNotes?: string | null;
+	  }
+	| {
+			type: 'local';
+			name: string;
+			path: string;
+			specialNotes?: string | null;
+	  }
+	| {
+			type: 'npm';
+			name: string;
+			package: string;
+			version?: string | null;
+			specialNotes?: string | null;
+	  };
+
+export type ResourcesResponse = {
+	resources: ResourceRecord[];
+};
+
+export type ProvidersResponse = {
+	all: Array<{ id: string; models: Record<string, unknown> }>;
+	connected: string[];
+};
 
 /**
  * Custom error class that carries hints from the server.
@@ -23,7 +65,7 @@ export class BtcaError extends Error {
  * Parse error response from server and create a BtcaError.
  */
 async function parseErrorResponse(
-	res: { json: () => Promise<unknown> },
+	res: Response,
 	fallbackMessage: string
 ): Promise<BtcaError> {
 	const normalizeMessage = (message: string) => {
@@ -51,40 +93,40 @@ async function parseErrorResponse(
 }
 
 /**
- * Create a typed Hono RPC client for the btca server
+ * Create an HTTP client descriptor for the btca server
  */
 export function createClient(baseUrl: string): Client {
-	return hc<AppType>(baseUrl);
+	return { baseUrl };
 }
 
 /**
  * Get server configuration
  */
-export async function getConfig(client: Client) {
-	const res = await client.config.$get();
+export async function getConfig(client: Client): Promise<ConfigResponse> {
+	const res = await fetch(`${client.baseUrl}/config`);
 	if (!res.ok) {
 		throw await parseErrorResponse(res, `Failed to get config: ${res.status}`);
 	}
-	return res.json();
+	return res.json() as Promise<ConfigResponse>;
 }
 
 /**
  * Get available resources
  */
-export async function getResources(client: Client) {
-	const res = await client.resources.$get();
+export async function getResources(client: Client): Promise<ResourcesResponse> {
+	const res = await fetch(`${client.baseUrl}/resources`);
 	if (!res.ok) {
 		throw await parseErrorResponse(res, `Failed to get resources: ${res.status}`);
 	}
-	return res.json();
+	return res.json() as Promise<ResourcesResponse>;
 }
 
-export async function getProviders(client: Client) {
-	const res = await client.providers.$get();
+export async function getProviders(client: Client): Promise<ProvidersResponse> {
+	const res = await fetch(`${client.baseUrl}/providers`);
 	if (!res.ok) {
 		throw await parseErrorResponse(res, `Failed to get providers: ${res.status}`);
 	}
-	return res.json();
+	return res.json() as Promise<ProvidersResponse>;
 }
 
 /**
@@ -97,20 +139,24 @@ export async function askQuestion(
 		resources?: string[];
 		quiet?: boolean;
 	}
-) {
-	const res = await client.question.$post({
-		json: {
+): Promise<{ answer: string; model: { provider: string; model: string } }> {
+	const res = await fetch(`${client.baseUrl}/question`, {
+		method: 'POST',
+		headers: {
+			'Content-Type': 'application/json'
+		},
+		body: JSON.stringify({
 			question: options.question,
 			resources: options.resources,
 			quiet: options.quiet
-		}
+		})
 	});
 
 	if (!res.ok) {
 		throw await parseErrorResponse(res, `Failed to ask question: ${res.status}`);
 	}
 
-	return res.json();
+	return res.json() as Promise<{ answer: string; model: { provider: string; model: string } }>;
 }
 
 /**

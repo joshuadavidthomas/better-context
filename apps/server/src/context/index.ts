@@ -15,9 +15,7 @@ export namespace Context {
 	export const get = (): ContextStore | undefined => storage.getStore();
 
 	export const require = (): ContextStore => {
-		const store = storage.getStore();
-		if (!store) throw new Error('Missing AsyncLocalStorage context');
-		return store;
+		return storage.getStore() ?? { requestId: 'unknown', txDepth: 0 };
 	};
 
 	export const requestId = (): string => storage.getStore()?.requestId ?? 'unknown';

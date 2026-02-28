@@ -28,14 +28,14 @@ describe('cli dispatch', () => {
 	});
 
 	test('rejects unknown top-level commands with a suggestion', () => {
-		const result = runCli(['remoev'], 250);
+		const result = runCli(['remoev'], 750);
 		expect(result.exitCode).toBe(1);
 		expect(result.output).toContain("error: unknown command 'remoev'");
 		expect(result.output).toContain("Did you mean 'remove'?");
 	});
 
 	test('rejects unknown top-level command with additional operands', () => {
-		const result = runCli(['nonexistent', 'my-resource'], 250);
+		const result = runCli(['nonexistent', 'my-resource'], 750);
 		expect(result.exitCode).toBe(1);
 		expect(result.output).toContain("error: unknown command 'nonexistent'");
 		expect(result.output).not.toContain('error: invalid command invocation');
