@@ -4,13 +4,15 @@ import path from 'node:path';
 import os from 'node:os';
 
 import { createAgentService } from './service.ts';
-import { Config } from '../config/index.ts';
+import { load as loadConfig } from '../config/index.ts';
 import type { CollectionResult } from '../collections/types.ts';
 import {
 	getVirtualCollectionMetadata,
 	setVirtualCollectionMetadata
 } from '../collections/virtual-metadata.ts';
 import { VirtualFs } from '../vfs/virtual-fs.ts';
+
+const Config = { load: loadConfig } as const;
 
 describe('Agent', () => {
 	let testDir: string;

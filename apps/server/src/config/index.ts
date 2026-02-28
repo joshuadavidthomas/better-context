@@ -817,8 +817,3 @@ export const load = async (): Promise<ConfigService> => {
 		);
 		return makeService(globalConfig, null, `${resolvedGlobalDataDir}/resources`, globalConfigPath);
 	};
-
-export const Config = {
-	load,
-	ConfigError
-} as const;

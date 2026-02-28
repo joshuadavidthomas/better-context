@@ -4,7 +4,7 @@ import { z } from 'zod';
 
 import { createAgentService } from './agent/service.ts';
 import { createCollectionsService } from './collections/service.ts';
-import { Config } from './config/index.ts';
+import { load as loadConfig } from './config/index.ts';
 import { toHttpErrorPayload } from './effect/errors.ts';
 import { createServerRuntime } from './effect/runtime.ts';
 import * as ServerServices from './effect/services.ts';
@@ -446,7 +446,7 @@ export const startServer = async (options: StartServerOptions = {}): Promise<Ser
 	const requestedPort = options.port ?? PORT;
 	Metrics.info('server.starting', { port: requestedPort });
 
-	const config = await Config.load();
+	const config = await loadConfig();
 	Metrics.info('config.ready', {
 		provider: config.provider,
 		model: config.model,
