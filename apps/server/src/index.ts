@@ -1,4 +1,4 @@
-import { Effect, Cause, ServiceMap, pipe } from 'effect';
+import { Effect, Cause } from 'effect';
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from 'effect/unstable/http';
 import { z } from 'zod';
 
@@ -6,6 +6,7 @@ import { Agent } from './agent/service.ts';
 import { Collections } from './collections/service.ts';
 import { Config } from './config/index.ts';
 import { toHttpErrorPayload } from './effect/errors.ts';
+import { createServerRuntime } from './effect/runtime.ts';
 import * as ServerServices from './effect/services.ts';
 import { Metrics } from './metrics/index.ts';
 import { ModelsDevPricing } from './pricing/models-dev.ts';
@@ -172,22 +173,7 @@ const decodeJson = <T>(
 		return parsed.data;
 	});
 
-const createApp = (deps: {
-	config: Config.Service;
-	resources: Resources.Service;
-	collections: Collections.Service;
-	agent: Agent.Service;
-}) => {
-	const { config, collections, agent } = deps;
-
-	const withServices = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-		pipe(
-			effect,
-			Effect.provideService(ServerServices.ConfigService, config),
-			Effect.provideService(ServerServices.CollectionsService, collections),
-			Effect.provideService(ServerServices.AgentService, agent)
-		);
-
+const createApp = () => {
 	const withHttpErrorHandling = <R>(
 		effect: Effect.Effect<HttpServerResponse.HttpServerResponse, unknown, R>
 	): Effect.Effect<HttpServerResponse.HttpServerResponse, never, R> =>
@@ -217,10 +203,8 @@ const createApp = (deps: {
 			'GET',
 			'/config',
 			withHttpErrorHandling(
-				withServices(
-					Effect.map(ServerServices.getConfigSnapshot, (snapshot) =>
-						HttpServerResponse.jsonUnsafe(snapshot)
-					)
+				Effect.map(ServerServices.getConfigSnapshot, (snapshot) =>
+					HttpServerResponse.jsonUnsafe(snapshot)
 				)
 			)
 		),
@@ -228,10 +212,8 @@ const createApp = (deps: {
 			'GET',
 			'/resources',
 			withHttpErrorHandling(
-				withServices(
-					Effect.map(ServerServices.getResourcesSnapshot, (snapshot) =>
-						HttpServerResponse.jsonUnsafe(snapshot)
-					)
+				Effect.map(ServerServices.getResourcesSnapshot, (snapshot) =>
+					HttpServerResponse.jsonUnsafe(snapshot)
 				)
 			)
 		),
@@ -239,219 +221,203 @@ const createApp = (deps: {
 			'GET',
 			'/providers',
 			withHttpErrorHandling(
-				withServices(
-					Effect.gen(function* () {
-						const providers = yield* ServerServices.listProviders;
-						return HttpServerResponse.jsonUnsafe(providers);
-					})
-				)
+				Effect.gen(function* () {
+					const providers = yield* ServerServices.listProviders;
+					return HttpServerResponse.jsonUnsafe(providers);
+				})
 			)
 		),
 		HttpRouter.route(
 			'POST',
 			'/reload-config',
 			withHttpErrorHandling(
-				withServices(
-					Effect.gen(function* () {
-						yield* ServerServices.reloadConfig;
-						const resources = yield* ServerServices.getDefaultResourceNames;
-						return HttpServerResponse.jsonUnsafe({
-							ok: true,
-							resources
-						});
-					})
-				)
+				Effect.gen(function* () {
+					yield* ServerServices.reloadConfig;
+					const resources = yield* ServerServices.getDefaultResourceNames;
+					return HttpServerResponse.jsonUnsafe({
+						ok: true,
+						resources
+					});
+				})
 			)
 		),
 		HttpRouter.route('POST', '/question', (request) =>
 			withHttpErrorHandling(
-				withServices(
-					Effect.gen(function* () {
-						const decoded = yield* decodeJson(request, QuestionRequestSchema);
-						const resourceNames = Array.from(
-							decoded.resources && decoded.resources.length > 0
-								? Array.from(new Set(decoded.resources.map(normalizeQuestionResourceReference)))
-								: yield* ServerServices.getDefaultResourceNames
-						);
+				Effect.gen(function* () {
+					const decoded = yield* decodeJson(request, QuestionRequestSchema);
+					const resourceNames = Array.from(
+						decoded.resources && decoded.resources.length > 0
+							? Array.from(new Set(decoded.resources.map(normalizeQuestionResourceReference)))
+							: yield* ServerServices.getDefaultResourceNames
+					);
 
-						const collectionKey = ServerServices.loadedResourceCollectionKey(resourceNames);
-						Metrics.info('question.received', {
-							stream: false,
-							quiet: decoded.quiet ?? false,
-							questionLength: decoded.question.length,
-							resources: resourceNames,
-							collectionKey
-						});
+					const collectionKey = ServerServices.loadedResourceCollectionKey(resourceNames);
+					Metrics.info('question.received', {
+						stream: false,
+						quiet: decoded.quiet ?? false,
+						questionLength: decoded.question.length,
+						resources: resourceNames,
+						collectionKey
+					});
 
-						const collection = yield* ServerServices.loadCollection({
-							resourceNames,
-							quiet: decoded.quiet
-						});
-						Metrics.info('collection.ready', { collectionKey, path: collection.path });
+					const collection = yield* ServerServices.loadCollection({
+						resourceNames,
+						quiet: decoded.quiet
+					});
+					Metrics.info('collection.ready', { collectionKey, path: collection.path });
 
-						const result = yield* ServerServices.askQuestion({
-							collection,
-							question: decoded.question
-						});
-						Metrics.info('question.done', {
-							collectionKey,
-							answerLength: result.answer.length,
-							model: result.model
-						});
+					const result = yield* ServerServices.askQuestion({
+						collection,
+						question: decoded.question
+					});
+					Metrics.info('question.done', {
+						collectionKey,
+						answerLength: result.answer.length,
+						model: result.model
+					});
 
-						return HttpServerResponse.jsonUnsafe({
-							answer: result.answer,
-							model: result.model,
-							resources: resourceNames,
-							collection: { key: collectionKey, path: collection.path }
-						});
-					})
-				)
+					return HttpServerResponse.jsonUnsafe({
+						answer: result.answer,
+						model: result.model,
+						resources: resourceNames,
+						collection: { key: collectionKey, path: collection.path }
+					});
+				})
 			)
 		),
 		HttpRouter.route('POST', '/question/stream', (request) =>
 			withHttpErrorHandling(
-				withServices(
-					Effect.gen(function* () {
-						const requestStartMs = performance.now();
-						const decoded = yield* decodeJson(request, QuestionRequestSchema);
-						const resourceNames = Array.from(
-							decoded.resources && decoded.resources.length > 0
-								? Array.from(new Set(decoded.resources.map(normalizeQuestionResourceReference)))
-								: yield* ServerServices.getDefaultResourceNames
-						);
+				Effect.gen(function* () {
+					const requestStartMs = performance.now();
+					const decoded = yield* decodeJson(request, QuestionRequestSchema);
+					const resourceNames = Array.from(
+						decoded.resources && decoded.resources.length > 0
+							? Array.from(new Set(decoded.resources.map(normalizeQuestionResourceReference)))
+							: yield* ServerServices.getDefaultResourceNames
+					);
 
-						const collectionKey = ServerServices.loadedResourceCollectionKey(resourceNames);
-						Metrics.info('question.received', {
-							stream: true,
-							quiet: decoded.quiet ?? false,
-							questionLength: decoded.question.length,
-							resources: resourceNames,
-							collectionKey
-						});
+					const collectionKey = ServerServices.loadedResourceCollectionKey(resourceNames);
+					Metrics.info('question.received', {
+						stream: true,
+						quiet: decoded.quiet ?? false,
+						questionLength: decoded.question.length,
+						resources: resourceNames,
+						collectionKey
+					});
 
-						const collection = yield* ServerServices.loadCollection({
-							resourceNames,
-							quiet: decoded.quiet
-						});
-						Metrics.info('collection.ready', { collectionKey, path: collection.path });
+					const collection = yield* ServerServices.loadCollection({
+						resourceNames,
+						quiet: decoded.quiet
+					});
+					Metrics.info('collection.ready', { collectionKey, path: collection.path });
 
-						const { stream: eventStream, model } = yield* ServerServices.askQuestionStream({
-							collection,
-							question: decoded.question
-						});
+					const { stream: eventStream, model } = yield* ServerServices.askQuestionStream({
+						collection,
+						question: decoded.question
+					});
 
-						const meta = {
-							type: 'meta',
-							model,
-							resources: resourceNames,
-							collection: {
-								key: collectionKey,
-								path: collection.path
+					const meta = {
+						type: 'meta',
+						model,
+						resources: resourceNames,
+						collection: {
+							key: collectionKey,
+							path: collection.path
+						}
+					} satisfies BtcaStreamMetaEvent;
+
+					Metrics.info('question.stream.start', { collectionKey });
+					modelsDevPricing.prefetch();
+					const stream = StreamService.createSseStream({
+						meta,
+						eventStream,
+						question: decoded.question,
+						requestStartMs,
+						pricing: modelsDevPricing
+					});
+
+					return HttpServerResponse.raw(
+						new Response(stream, {
+							headers: {
+								'content-type': 'text/event-stream',
+								'cache-control': 'no-cache',
+								connection: 'keep-alive'
 							}
-						} satisfies BtcaStreamMetaEvent;
-
-						Metrics.info('question.stream.start', { collectionKey });
-						modelsDevPricing.prefetch();
-						const stream = StreamService.createSseStream({
-							meta,
-							eventStream,
-							question: decoded.question,
-							requestStartMs,
-							pricing: modelsDevPricing
-						});
-
-						return HttpServerResponse.raw(
-							new Response(stream, {
-								headers: {
-									'content-type': 'text/event-stream',
-									'cache-control': 'no-cache',
-									connection: 'keep-alive'
-								}
-							})
-						);
-					})
-				)
+						})
+					);
+				})
 			)
 		),
 		HttpRouter.route('PUT', '/config/model', (request) =>
 			withHttpErrorHandling(
-				withServices(
-					Effect.gen(function* () {
-						const decoded = yield* decodeJson(request, UpdateModelRequestSchema);
-						const result = yield* ServerServices.updateModelConfig({
-							provider: decoded.provider,
-							model: decoded.model,
-							providerOptions: decoded.providerOptions
-						});
-						return HttpServerResponse.jsonUnsafe(result);
-					})
-				)
+				Effect.gen(function* () {
+					const decoded = yield* decodeJson(request, UpdateModelRequestSchema);
+					const result = yield* ServerServices.updateModelConfig({
+						provider: decoded.provider,
+						model: decoded.model,
+						providerOptions: decoded.providerOptions
+					});
+					return HttpServerResponse.jsonUnsafe(result);
+				})
 			)
 		),
 		HttpRouter.route('POST', '/config/resources', (request) =>
 			withHttpErrorHandling(
-				withServices(
-					Effect.gen(function* () {
-						const decoded = yield* decodeJson(request, AddResourceRequestSchema);
-						if (decoded.type === 'git') {
-							const normalizedUrl = normalizeGitHubUrl(decoded.url);
-							const resource = {
-								type: 'git' as const,
-								name: decoded.name,
-								url: normalizedUrl,
-								branch: decoded.branch ?? 'main',
-								...(decoded.searchPath && { searchPath: decoded.searchPath }),
-								...(decoded.searchPaths && { searchPaths: decoded.searchPaths }),
-								...(decoded.specialNotes && { specialNotes: decoded.specialNotes })
-							};
-							const added = yield* ServerServices.addConfigResource(resource);
-							return HttpServerResponse.jsonUnsafe(added, { status: 201 });
-						}
-						if (decoded.type === 'local') {
-							const resource = {
-								type: 'local' as const,
-								name: decoded.name,
-								path: decoded.path,
-								...(decoded.specialNotes && { specialNotes: decoded.specialNotes })
-							};
-							const added = yield* ServerServices.addConfigResource(resource);
-							return HttpServerResponse.jsonUnsafe(added, { status: 201 });
-						}
+				Effect.gen(function* () {
+					const decoded = yield* decodeJson(request, AddResourceRequestSchema);
+					if (decoded.type === 'git') {
+						const normalizedUrl = normalizeGitHubUrl(decoded.url);
 						const resource = {
-							type: 'npm' as const,
+							type: 'git' as const,
 							name: decoded.name,
-							package: decoded.package,
-							...(decoded.version ? { version: decoded.version } : {}),
-							...(decoded.specialNotes ? { specialNotes: decoded.specialNotes } : {})
+							url: normalizedUrl,
+							branch: decoded.branch ?? 'main',
+							...(decoded.searchPath && { searchPath: decoded.searchPath }),
+							...(decoded.searchPaths && { searchPaths: decoded.searchPaths }),
+							...(decoded.specialNotes && { specialNotes: decoded.specialNotes })
 						};
 						const added = yield* ServerServices.addConfigResource(resource);
 						return HttpServerResponse.jsonUnsafe(added, { status: 201 });
-					})
-				)
+					}
+					if (decoded.type === 'local') {
+						const resource = {
+							type: 'local' as const,
+							name: decoded.name,
+							path: decoded.path,
+							...(decoded.specialNotes && { specialNotes: decoded.specialNotes })
+						};
+						const added = yield* ServerServices.addConfigResource(resource);
+						return HttpServerResponse.jsonUnsafe(added, { status: 201 });
+					}
+					const resource = {
+						type: 'npm' as const,
+						name: decoded.name,
+						package: decoded.package,
+						...(decoded.version ? { version: decoded.version } : {}),
+						...(decoded.specialNotes ? { specialNotes: decoded.specialNotes } : {})
+					};
+					const added = yield* ServerServices.addConfigResource(resource);
+					return HttpServerResponse.jsonUnsafe(added, { status: 201 });
+				})
 			)
 		),
 		HttpRouter.route('DELETE', '/config/resources', (request) =>
 			withHttpErrorHandling(
-				withServices(
-					Effect.gen(function* () {
-						const decoded = yield* decodeJson(request, RemoveResourceRequestSchema);
-						yield* ServerServices.removeConfigResource(decoded.name);
-						return HttpServerResponse.jsonUnsafe({ success: true, name: decoded.name });
-					})
-				)
+				Effect.gen(function* () {
+					const decoded = yield* decodeJson(request, RemoveResourceRequestSchema);
+					yield* ServerServices.removeConfigResource(decoded.name);
+					return HttpServerResponse.jsonUnsafe({ success: true, name: decoded.name });
+				})
 			)
 		),
 		HttpRouter.route(
 			'POST',
 			'/clear',
 			withHttpErrorHandling(
-				withServices(
-					Effect.gen(function* () {
-						const result = yield* ServerServices.clearConfigResources;
-						return HttpServerResponse.jsonUnsafe(result);
-					})
-				)
+				Effect.gen(function* () {
+					const result = yield* ServerServices.clearConfigResources;
+					return HttpServerResponse.jsonUnsafe(result);
+				})
 			)
 		)
 	]);
@@ -492,11 +458,12 @@ export const startServer = async (options: StartServerOptions = {}): Promise<Ser
 	const resources = Resources.create(config);
 	const collections = Collections.create({ config, resources });
 	const agent = Agent.create(config);
-	const appLayer = createApp({ config, resources, collections, agent });
+	const runtime = createServerRuntime({ config, collections, agent });
+	const appLayer = createApp();
 	const { handler, dispose } = HttpRouter.toWebHandler(appLayer, {
 		disableLogger: options.quiet === true
 	});
-	const requestContext = ServiceMap.makeUnsafe<unknown>(new Map());
+	const requestContext = await runtime.services();
 
 	const server = Bun.serve({
 		port: requestedPort,
@@ -515,6 +482,7 @@ export const startServer = async (options: StartServerOptions = {}): Promise<Ser
 			clearAllVirtualCollectionMetadata();
 			server.stop();
 			void dispose();
+			void runtime.dispose();
 		}
 	};
 };
