@@ -2,7 +2,6 @@
  * Agent Service
  * Refactored to use custom AI SDK loop instead of spawning OpenCode instances
  */
-import { Result } from 'better-result';
 import { Effect } from 'effect';
 
 import { Config } from '../config/index.ts';
@@ -123,6 +122,32 @@ export namespace Agent {
 	// ─────────────────────────────────────────────────────────────────────────────
 
 	export const create = (config: Config.Service): Service => {
+		const cleanupCollection = (collection: CollectionResult) =>
+			Effect.promise(async () => {
+				if (collection.vfsId) {
+					VirtualFs.dispose(collection.vfsId);
+					clearVirtualCollectionMetadata(collection.vfsId);
+				}
+				try {
+					await collection.cleanup?.();
+				} catch {
+					return;
+				}
+			});
+
+		const ensureProviderConnected = Effect.fn(function* () {
+			const isAuthed = yield* Effect.tryPromise(() => Auth.isAuthenticated(config.provider));
+			const requiresAuth = config.provider !== 'opencode' && config.provider !== 'openai-compat';
+			if (isAuthed || !requiresAuth) return;
+			const authenticated = yield* Effect.tryPromise(() => Auth.getAuthenticatedProviders());
+			yield* Effect.fail(
+				new ProviderNotConnectedError({
+					providerId: config.provider,
+					connectedProviders: authenticated
+				})
+			);
+		});
+
 		/**
 		 * Ask a question and stream the response using the new AI SDK loop
 		 */
@@ -133,28 +158,11 @@ export namespace Agent {
 				questionLength: question.length
 			});
 
-			const cleanup = async () => {
-				if (collection.vfsId) {
-					VirtualFs.dispose(collection.vfsId);
-					clearVirtualCollectionMetadata(collection.vfsId);
-				}
-				try {
-					await collection.cleanup?.();
-				} catch {
-					// cleanup should never fail user-visible operations
-				}
-			};
-
-			// Validate provider is authenticated
-			const isAuthed = await Auth.isAuthenticated(config.provider);
-			const requiresAuth = config.provider !== 'opencode' && config.provider !== 'openai-compat';
-			if (!isAuthed && requiresAuth) {
-				const authenticated = await Auth.getAuthenticatedProviders();
-				await cleanup();
-				throw new ProviderNotConnectedError({
-					providerId: config.provider,
-					connectedProviders: authenticated
-				});
+			try {
+				await Effect.runPromise(ensureProviderConnected());
+			} catch (error) {
+				await Effect.runPromise(cleanupCollection(collection));
+				throw error;
 			}
 
 			// Create a generator that wraps the AgentLoop stream
@@ -174,7 +182,7 @@ export namespace Agent {
 						yield event;
 					}
 				} finally {
-					await cleanup();
+					await Effect.runPromise(cleanupCollection(collection));
 				}
 			})();
 
@@ -188,98 +196,80 @@ export namespace Agent {
 		 * Ask a question and return the complete response
 		 */
 		const ask: Service['ask'] = async ({ collection, question }) => {
-			Metrics.info('agent.ask.start', {
-				provider: config.provider,
-				model: config.model,
-				questionLength: question.length
-			});
+			return Effect.runPromise(
+				Effect.gen(function* () {
+					Metrics.info('agent.ask.start', {
+						provider: config.provider,
+						model: config.model,
+						questionLength: question.length
+					});
 
-			const cleanup = async () => {
-				if (collection.vfsId) {
-					VirtualFs.dispose(collection.vfsId);
-					clearVirtualCollectionMetadata(collection.vfsId);
-				}
-				try {
-					await collection.cleanup?.();
-				} catch {
-					// cleanup should never fail user-visible operations
-				}
-			};
+					yield* ensureProviderConnected();
 
-			// Validate provider is authenticated
-			const isAuthed = await Auth.isAuthenticated(config.provider);
-			const requiresAuth = config.provider !== 'opencode' && config.provider !== 'openai-compat';
-			if (!isAuthed && requiresAuth) {
-				const authenticated = await Auth.getAuthenticatedProviders();
-				await cleanup();
-				throw new ProviderNotConnectedError({
-					providerId: config.provider,
-					connectedProviders: authenticated
-				});
-			}
+					const result = yield* Effect.tryPromise({
+						try: () =>
+							AgentLoop.run({
+								providerId: config.provider,
+								modelId: config.model,
+								maxSteps: config.maxSteps,
+								collectionPath: collection.path,
+								vfsId: collection.vfsId,
+								agentInstructions: collection.agentInstructions,
+								question,
+								providerOptions: config.getProviderOptions(config.provider)
+							}),
+						catch: (cause) =>
+							new AgentError({
+								message: getErrorMessage(cause),
+								hint:
+									getErrorHint(cause) ??
+									'This may be a temporary issue. Try running the command again.',
+								cause
+							})
+					});
 
-			const runResult = await Result.tryPromise(() =>
-				AgentLoop.run({
-					providerId: config.provider,
-					modelId: config.model,
-					maxSteps: config.maxSteps,
-					collectionPath: collection.path,
-					vfsId: collection.vfsId,
-					agentInstructions: collection.agentInstructions,
-					question,
-					providerOptions: config.getProviderOptions(config.provider)
-				})
+					Metrics.info('agent.ask.complete', {
+						provider: config.provider,
+						model: config.model,
+						answerLength: result.answer.length,
+						eventCount: result.events.length
+					});
+
+					return {
+						answer: result.answer,
+						model: result.model,
+						events: result.events
+					};
+				}).pipe(
+					Effect.tapError((error) =>
+						Effect.sync(() => Metrics.error('agent.ask.error', { error: Metrics.errorInfo(error) }))
+					),
+					Effect.ensuring(cleanupCollection(collection))
+				)
 			);
-
-			await cleanup();
-
-			if (!Result.isOk(runResult)) {
-				const cause = runResult.error;
-				Metrics.error('agent.ask.error', { error: Metrics.errorInfo(cause) });
-				throw new AgentError({
-					message: getErrorMessage(cause),
-					hint:
-						getErrorHint(cause) ?? 'This may be a temporary issue. Try running the command again.',
-					cause
-				});
-			}
-
-			const result = runResult.value;
-			Metrics.info('agent.ask.complete', {
-				provider: config.provider,
-				model: config.model,
-				answerLength: result.answer.length,
-				eventCount: result.events.length
-			});
-
-			return {
-				answer: result.answer,
-				model: result.model,
-				events: result.events
-			};
 		};
 
 		/**
 		 * List available providers using local auth data
 		 */
 		const listProviders: Service['listProviders'] = async () => {
-			// Get all supported providers from registry
-			const supportedProviders = getSupportedProviders();
+			return Effect.runPromise(
+				Effect.gen(function* () {
+					const supportedProviders = getSupportedProviders();
+					const authenticatedProviders = yield* Effect.tryPromise(() =>
+						Auth.getAuthenticatedProviders()
+					);
+					const all = supportedProviders.map((id) => ({
+						id,
+						models: {} as Record<string, unknown>
+					}));
 
-			// Get authenticated providers from OpenCode's auth storage
-			const authenticatedProviders = await Auth.getAuthenticatedProviders();
-
-			// Build the response - we don't have model lists without spawning OpenCode,
-			// so we return empty models for now
-			const all = supportedProviders.map((id) => ({
-				id,
-				models: {} as Record<string, unknown>
-			}));
-
-			return {
-				all,
-				connected: authenticatedProviders
-			};
+					return {
+						all,
+						connected: authenticatedProviders
+					};
+				})
+			);
 		};
 
 		const askStreamEffect: Service['askStreamEffect'] = (args) =>
