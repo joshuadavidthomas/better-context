@@ -4,13 +4,10 @@ import { Effect } from 'effect';
 
 import { useConfigContext } from '../context/config-context.tsx';
 import { useMessagesContext } from '../context/messages-context.tsx';
+import { runCliEffect } from '../../effect/runtime.ts';
 import { formatError } from '../lib/format-error.ts';
 import { services } from '../services.ts';
 import { colors } from '../theme.ts';
-
-function runModelSelectEffect<A>(effect: Effect.Effect<A, unknown>) {
-	return Effect.runPromise(effect);
-}
 
 const BLESSED_MODELS = [
 	{
@@ -61,7 +58,7 @@ export const BlessedModelSelect = (props: BlessedModelSelectProps) => {
 		if (!selectedModel) return;
 
 		try {
-			const result = await runModelSelectEffect(
+			const result = await runCliEffect(
 				Effect.tryPromise(() => services.updateModel(selectedModel.provider, selectedModel.model))
 			);
 			config.setProvider(result.provider);

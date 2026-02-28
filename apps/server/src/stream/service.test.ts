@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'bun:test';
 
-import { StreamService } from './service.ts';
+import { createSseStream } from './service.ts';
 import type { BtcaStreamEvent } from './types.ts';
 
 const readStream = async (stream: ReadableStream<Uint8Array>) => {
@@ -22,7 +22,7 @@ const parseSseEvents = (payload: string) =>
 		.filter((line): line is string => Boolean(line))
 		.map((line) => JSON.parse(line.slice(6)) as BtcaStreamEvent);
 
-describe('StreamService.createSseStream', () => {
+describe('createSseStream', () => {
 	it('streams reasoning deltas and includes final reasoning in done', async () => {
 		const eventStream = (async function* () {
 			yield { type: 'reasoning-delta', text: 'First ' } as const;
@@ -31,7 +31,7 @@ describe('StreamService.createSseStream', () => {
 			yield { type: 'finish', finishReason: 'stop' } as const;
 		})();
 
-		const stream = StreamService.createSseStream({
+		const stream = createSseStream({
 			meta: {
 				type: 'meta',
 				model: { provider: 'test', model: 'test-model' },
@@ -71,7 +71,7 @@ describe('StreamService.createSseStream', () => {
 			} as const;
 		})();
 
-		const stream = StreamService.createSseStream({
+		const stream = createSseStream({
 			meta: {
 				type: 'meta',
 				model: { provider: 'openrouter', model: 'openai/gpt-4o-mini' },
@@ -124,7 +124,7 @@ describe('StreamService.createSseStream', () => {
 			yield { type: 'finish', finishReason: 'stop' } as const;
 		})();
 
-		const stream = StreamService.createSseStream({
+		const stream = createSseStream({
 			meta: {
 				type: 'meta',
 				model: { provider: 'test', model: 'test-model' },

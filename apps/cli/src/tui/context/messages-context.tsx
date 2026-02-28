@@ -13,6 +13,7 @@ import { Effect } from 'effect';
 
 import type { BtcaChunk, CancelState, InputState, Message } from '../types.ts';
 import { services, type ChunkUpdate } from '../services.ts';
+import { runCliEffect } from '../../effect/runtime.ts';
 import { copyToClipboard } from '../clipboard.ts';
 import { formatError } from '../lib/format-error.ts';
 import {
@@ -98,10 +99,6 @@ const formatStreamStats = (done: {
 
 	return parts.length > 0 ? `Generation stats: ${parts.join(' || ')}` : null;
 };
-
-function runMessagesEffect<A>(effect: Effect.Effect<A, unknown>) {
-	return Effect.runPromise(effect);
-}
 
 type MessagesState = {
 	messages: Message[];
@@ -382,7 +379,7 @@ export const MessagesProvider = (props: { children: ReactNode }) => {
 
 			try {
 				const questionWithHistory = formatConversationHistory(threadMessages, question);
-				const response = await runMessagesEffect(
+				const response = await runCliEffect(
 					Effect.tryPromise(() =>
 						services.askQuestion(updatedResources, questionWithHistory, handleChunkUpdate)
 					)
@@ -406,7 +403,7 @@ export const MessagesProvider = (props: { children: ReactNode }) => {
 			setCancelState('none');
 
 			try {
-				await runMessagesEffect(Effect.tryPromise(persistCurrentThread));
+				await runCliEffect(Effect.tryPromise(persistCurrentThread));
 			} catch (error) {
 				addMessage({ role: 'system', content: `Error: ${formatError(error)}` });
 			}
@@ -426,7 +423,7 @@ export const MessagesProvider = (props: { children: ReactNode }) => {
 		setCancelState('none');
 
 		try {
-			await runMessagesEffect(Effect.tryPromise(persistCurrentThread));
+			await runCliEffect(Effect.tryPromise(persistCurrentThread));
 		} catch (error) {
 			addMessage({ role: 'system', content: `Error: ${formatError(error)}` });
 		}
@@ -435,13 +432,13 @@ export const MessagesProvider = (props: { children: ReactNode }) => {
 	const clearMessages = useCallback(() => {
 		void (async () => {
 			try {
-				await runMessagesEffect(Effect.tryPromise(persistCurrentThread));
+				await runCliEffect(Effect.tryPromise(persistCurrentThread));
 			} catch (error) {
 				addMessage({ role: 'system', content: `Error: ${formatError(error)}` });
 				return;
 			}
 			try {
-				await runMessagesEffect(Effect.tryPromise(startNewThread));
+				await runCliEffect(Effect.tryPromise(startNewThread));
 			} catch (error) {
 				addMessage({ role: 'system', content: `Error: ${formatError(error)}` });
 			}
@@ -475,7 +472,7 @@ export const MessagesProvider = (props: { children: ReactNode }) => {
 			getAssistantMessageText(assistantMessage)
 		].join('\n');
 		try {
-			await runMessagesEffect(Effect.tryPromise(() => copyToClipboard(payload)));
+			await runCliEffect(Effect.tryPromise(() => copyToClipboard(payload)));
 		} catch (error) {
 			addMessage({ role: 'system', content: `Error: ${formatError(error)}` });
 			return;
@@ -496,7 +493,7 @@ export const MessagesProvider = (props: { children: ReactNode }) => {
 		}
 
 		try {
-			await runMessagesEffect(Effect.tryPromise(() => copyToClipboard(parts.join('\n\n'))));
+			await runCliEffect(Effect.tryPromise(() => copyToClipboard(parts.join('\n\n'))));
 		} catch (error) {
 			addMessage({ role: 'system', content: `Error: ${formatError(error)}` });
 			return;
@@ -510,7 +507,7 @@ export const MessagesProvider = (props: { children: ReactNode }) => {
 			if (nextThreadId === threadIdRef.current) return;
 
 			try {
-				await runMessagesEffect(Effect.tryPromise(persistCurrentThread));
+				await runCliEffect(Effect.tryPromise(persistCurrentThread));
 			} catch (error) {
 				addMessage({ role: 'system', content: `Error: ${formatError(error)}` });
 				return;
@@ -518,7 +515,7 @@ export const MessagesProvider = (props: { children: ReactNode }) => {
 
 			let thread: Awaited<ReturnType<typeof loadThread>>;
 			try {
-				thread = await runMessagesEffect(Effect.tryPromise(() => loadThread(nextThreadId)));
+				thread = await runCliEffect(Effect.tryPromise(() => loadThread(nextThreadId)));
 			} catch (error) {
 				addMessage({ role: 'system', content: `Error: ${formatError(error)}` });
 				return;
@@ -539,7 +536,7 @@ export const MessagesProvider = (props: { children: ReactNode }) => {
 	);
 
 	useEffect(() => {
-		void runMessagesEffect(Effect.tryPromise(persistCurrentThread)).catch(() => undefined);
+		void runCliEffect(Effect.tryPromise(persistCurrentThread)).catch(() => undefined);
 	}, [persistCurrentThread]);
 
 	const state = useMemo<MessagesState>(

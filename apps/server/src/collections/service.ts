@@ -2,33 +2,38 @@ import path from 'node:path';
 
 import { Effect } from 'effect';
 
-import { Config } from '../config/index.ts';
-import { Transaction } from '../context/transaction.ts';
+import type { ConfigService as ConfigServiceShape } from '../config/index.ts';
+import { runTransaction } from '../context/transaction.ts';
 import { CommonHints, getErrorHint, getErrorMessage } from '../errors.ts';
-import { Metrics } from '../metrics/index.ts';
-import { Resources } from '../resources/service.ts';
+import { metricsInfo } from '../metrics/index.ts';
+import type { ResourcesService } from '../resources/service.ts';
 import { isGitResource, isNpmResource } from '../resources/schema.ts';
 import { FS_RESOURCE_SYSTEM_NOTE, type BtcaFsResource } from '../resources/types.ts';
 import { parseNpmReference } from '../validation/index.ts';
 import { CollectionError, getCollectionKey, type CollectionResult } from './types.ts';
-import { VirtualFs } from '../vfs/virtual-fs.ts';
+import {
+	createVirtualFs,
+	disposeVirtualFs,
+	importDirectoryIntoVirtualFs,
+	mkdirVirtualFs,
+	rmVirtualFs
+} from '../vfs/virtual-fs.ts';
 import {
 	clearVirtualCollectionMetadata,
 	setVirtualCollectionMetadata,
 	type VirtualResourceMetadata
 } from './virtual-metadata.ts';
 
-export namespace Collections {
-	export type Service = {
-		load: (args: {
-			resourceNames: readonly string[];
-			quiet?: boolean;
-		}) => Promise<CollectionResult>;
-		loadEffect: (args: {
-			resourceNames: readonly string[];
-			quiet?: boolean;
-		}) => Effect.Effect<CollectionResult, CollectionError>;
-	};
+export type CollectionsService = {
+	load: (args: {
+		resourceNames: readonly string[];
+		quiet?: boolean;
+	}) => Promise<CollectionResult>;
+	loadEffect: (args: {
+		resourceNames: readonly string[];
+		quiet?: boolean;
+	}) => Effect.Effect<CollectionResult, CollectionError>;
+};
 
 	const encodePathSegments = (value: string) => value.split('/').map(encodeURIComponent).join('/');
 
@@ -92,7 +97,7 @@ export namespace Collections {
 
 	const initVirtualRoot = async (collectionPath: string, vfsId: string) => {
 		try {
-			await VirtualFs.mkdir(collectionPath, { recursive: true }, vfsId);
+			await mkdirVirtualFs(collectionPath, { recursive: true }, vfsId);
 		} catch (cause) {
 			throw new CollectionError({
 				message: `Failed to initialize virtual collection root: "${collectionPath}"`,
@@ -102,7 +107,7 @@ export namespace Collections {
 		}
 	};
 
-	const loadResource = async (resources: Resources.Service, name: string, quiet: boolean) => {
+	const loadResource = async (resources: ResourcesService, name: string, quiet: boolean) => {
 		try {
 			return await resources.load(name, { quiet });
 		} catch (cause) {
@@ -137,7 +142,7 @@ export namespace Collections {
 		vfsId: string;
 	}) => {
 		try {
-			await VirtualFs.importDirectoryFromDisk({
+			await importDirectoryIntoVirtualFs({
 				sourcePath: args.resourcePath,
 				destinationPath: args.virtualResourcePath,
 				vfsId: args.vfsId,
@@ -219,7 +224,7 @@ export namespace Collections {
 		resource: BtcaFsResource;
 		resourcePath: string;
 		loadedAt: string;
-		definition?: ReturnType<Config.Service['getResource']>;
+		definition?: ReturnType<ConfigServiceShape['getResource']>;
 	}) => {
 		const base = {
 			name: args.resource.name,
@@ -266,12 +271,12 @@ export namespace Collections {
 		};
 	};
 
-	export const create = (args: {
-		config: Config.Service;
-		resources: Resources.Service;
-	}): Service => {
-		const load: Service['load'] = ({ resourceNames, quiet = false }) =>
-			Transaction.run('collections.load', async () => {
+export const createCollectionsService = (args: {
+		config: ConfigServiceShape;
+		resources: ResourcesService;
+	}): CollectionsService => {
+		const load: CollectionsService['load'] = ({ resourceNames, quiet = false }) =>
+			runTransaction('collections.load', async () => {
 				const uniqueNames = Array.from(new Set(resourceNames));
 				if (uniqueNames.length === 0)
 					throw new CollectionError({
@@ -279,14 +284,14 @@ export namespace Collections {
 						hint: `${CommonHints.LIST_RESOURCES} ${CommonHints.ADD_RESOURCE}`
 					});
 
-				Metrics.info('collections.load', { resources: uniqueNames, quiet });
+				metricsInfo('collections.load', { resources: uniqueNames, quiet });
 
 				const sortedNames = [...uniqueNames].sort((a, b) => a.localeCompare(b));
 				const key = getCollectionKey(sortedNames);
 				const collectionPath = '/';
-				const vfsId = VirtualFs.create();
+				const vfsId = createVirtualFs();
 				const cleanupVirtual = () => {
-					VirtualFs.dispose(vfsId);
+					disposeVirtualFs(vfsId);
 					clearVirtualCollectionMetadata(vfsId);
 				};
 				const cleanupResources = (resources: BtcaFsResource[]) =>
@@ -314,7 +319,7 @@ export namespace Collections {
 						const virtualResourcePath = path.posix.join('/', resource.fsName);
 
 						await ignoreErrors(() =>
-							VirtualFs.rm(virtualResourcePath, { recursive: true, force: true }, vfsId)
+							rmVirtualFs(virtualResourcePath, { recursive: true, force: true }, vfsId)
 						);
 
 						await virtualizeResource({
@@ -368,7 +373,7 @@ export namespace Collections {
 				}
 			});
 
-		const loadEffect: Service['loadEffect'] = ({ resourceNames, quiet }) =>
+		const loadEffect: CollectionsService['loadEffect'] = ({ resourceNames, quiet }) =>
 			Effect.tryPromise({
 				try: () => load({ resourceNames, quiet }),
 				catch: (cause) =>
@@ -386,4 +391,3 @@ export namespace Collections {
 			loadEffect
 		};
 	};
-}

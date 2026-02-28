@@ -5,6 +5,7 @@ import { Effect } from 'effect';
 
 import { usePaste } from '../opentui-hooks.ts';
 import { colors } from '../theme.ts';
+import { runCliEffect } from '../../effect/runtime.ts';
 import { useMessagesContext } from '../context/messages-context.tsx';
 import { useConfigContext } from '../context/config-context.tsx';
 import { services } from '../services.ts';
@@ -43,10 +44,6 @@ type ModelOption = {
 	label: string;
 	kind: 'curated' | 'custom';
 };
-
-function runWizardEffect<A>(effect: Effect.Effect<A, unknown>) {
-	return Effect.runPromise(effect);
-}
 
 interface ConnectWizardProps {
 	onClose: () => void;
@@ -154,7 +151,7 @@ export const ConnectWizard = (props: ConnectWizardProps) => {
 		setStepSafe('loading');
 		let providersResult: Awaited<ReturnType<typeof services.getProviders>>;
 		try {
-			providersResult = await runWizardEffect(Effect.tryPromise(() => services.getProviders()));
+			providersResult = await runCliEffect(Effect.tryPromise(() => services.getProviders()));
 		} catch (error) {
 			const message = formatError(error);
 			messages.addSystemMessage(`Error: ${message}`);
@@ -203,7 +200,7 @@ export const ConnectWizard = (props: ConnectWizardProps) => {
 		let didAuthSucceed = false;
 		let authError: unknown;
 		try {
-			didAuthSucceed = await runWizardEffect(
+			didAuthSucceed = await runCliEffect(
 				Effect.tryPromise(async () => {
 					const proc = spawn(['opencode', 'auth', '--provider', providerId], {
 						stdin: 'inherit',
@@ -318,7 +315,7 @@ export const ConnectWizard = (props: ConnectWizardProps) => {
 		setBusy(true);
 		let updateResult: Awaited<ReturnType<typeof services.updateModel>>;
 		try {
-			updateResult = await runWizardEffect(
+			updateResult = await runCliEffect(
 				Effect.tryPromise(() => services.updateModel(providerId, modelId, providerOptions))
 			);
 		} catch (error) {
@@ -387,7 +384,7 @@ export const ConnectWizard = (props: ConnectWizardProps) => {
 				setBusy(true);
 				let saveError: unknown;
 				try {
-					await runWizardEffect(Effect.tryPromise(() => saveProviderApiKey(providerId, value)));
+					await runCliEffect(Effect.tryPromise(() => saveProviderApiKey(providerId, value)));
 				} catch (error) {
 					saveError = error;
 				}
@@ -442,7 +439,7 @@ export const ConnectWizard = (props: ConnectWizardProps) => {
 		setBusy(true);
 		let saveError: unknown;
 		try {
-			await runWizardEffect(Effect.tryPromise(() => saveProviderApiKey(providerId, key)));
+			await runCliEffect(Effect.tryPromise(() => saveProviderApiKey(providerId, key)));
 		} catch (error) {
 			saveError = error;
 		}

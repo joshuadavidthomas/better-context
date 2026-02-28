@@ -4,12 +4,14 @@ import path from 'node:path';
 import os from 'node:os';
 
 import {
-	Config,
+	load as loadConfig,
 	DEFAULT_MAX_STEPS,
 	DEFAULT_MODEL,
 	DEFAULT_PROVIDER,
 	DEFAULT_RESOURCES
 } from './index.ts';
+
+const Config = { load: loadConfig } as const;
 
 describe('Config', () => {
 	let testDir: string;

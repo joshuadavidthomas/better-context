@@ -1,5 +1,6 @@
 import * as readline from 'readline';
-import { ensureServer } from '../server/manager.ts';
+import { Effect } from 'effect';
+import { withServerEffect } from '../server/manager.ts';
 import { createClient, getResources, removeResource } from '../client/index.ts';
 import { dim } from '../lib/utils/colors.ts';
 
@@ -73,33 +74,39 @@ export const runRemoveCommand = async (args: {
 	global?: boolean;
 	globalOpts?: { server?: string; port?: number };
 }) => {
-	const server = await ensureServer({
-		serverUrl: args.globalOpts?.server,
-		port: args.globalOpts?.port,
-		quiet: true
-	});
+	return Effect.runPromise(
+		withServerEffect(
+			{
+				serverUrl: args.globalOpts?.server,
+				port: args.globalOpts?.port,
+				quiet: true
+			},
+			(server) =>
+				Effect.gen(function* () {
+					const client = createClient(server.url);
+					const { resources } = yield* Effect.tryPromise(() => getResources(client));
 
-	try {
-		const client = createClient(server.url);
-		const { resources } = await getResources(client);
+					if (resources.length === 0) {
+						yield* Effect.sync(() => console.log('No resources configured.'));
+						return;
+					}
 
-		if (resources.length === 0) {
-			console.log('No resources configured.');
-			return;
-		}
+					const names = resources.map((r) => r.name);
+					const resourceName = args.name
+						? args.name
+						: yield* Effect.tryPromise(() =>
+								selectSingleResource(resources as ResourceDefinition[])
+							);
 
-		const names = resources.map((r) => r.name);
-		const resourceName = args.name
-			? args.name
-			: await selectSingleResource(resources as ResourceDefinition[]);
+					if (!names.includes(resourceName)) {
+						yield* Effect.fail(
+							new Error(`Resource "${resourceName}" not found. Available resources: ${names.join(', ')}`)
+						);
+					}
 
-		if (!names.includes(resourceName)) {
-			throw new Error(`Resource "${resourceName}" not found. Available resources: ${names.join(', ')}`);
-		}
-
-		await removeResource(server.url, resourceName);
-		console.log(`Removed resource: ${resourceName}`);
-	} finally {
-		server.stop();
-	}
+					yield* Effect.tryPromise(() => removeResource(server.url, resourceName));
+					yield* Effect.sync(() => console.log(`Removed resource: ${resourceName}`));
+				})
+		)
+	);
 };

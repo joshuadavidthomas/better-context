@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'bun:test';
 
-import { Resources, createAnonymousDirectoryKey } from './service.ts';
+import {
+	createAnonymousDirectoryKey,
+	createAnonymousResource,
+	resolveResourceDefinition
+} from './service.ts';
 import { resourceNameToKey } from './helpers.ts';
 import { type ResourceDefinition } from './schema.ts';
 
@@ -16,13 +20,13 @@ describe('Resources.resolveResourceDefinition', () => {
 	const getResource = (name: string) => (name === 'svelte' ? configuredResource : undefined);
 
 	it('resolves configured resources by name first', () => {
-		const definition = Resources.resolveResourceDefinition('svelte', getResource);
+		const definition = resolveResourceDefinition('svelte', getResource);
 		expect(definition.type).toBe('git');
 		expect(definition.name).toBe('svelte');
 	});
 
 	it('creates anonymous git resources from valid URLs', () => {
-		const definition = Resources.resolveResourceDefinition(
+		const definition = resolveResourceDefinition(
 			'https://github.com/sveltejs/svelte.dev/tree/main/packages',
 			() => undefined
 		);
@@ -35,7 +39,7 @@ describe('Resources.resolveResourceDefinition', () => {
 	});
 
 	it('creates anonymous npm resources from npm references', () => {
-		const definition = Resources.resolveResourceDefinition(
+		const definition = resolveResourceDefinition(
 			'npm:@types/node@22.10.1',
 			() => undefined
 		);
@@ -48,7 +52,7 @@ describe('Resources.resolveResourceDefinition', () => {
 	});
 
 	it('creates anonymous npm resources from npm package URLs', () => {
-		const definition = Resources.resolveResourceDefinition(
+		const definition = resolveResourceDefinition(
 			'https://www.npmjs.com/package/react/v/19.0.0',
 			() => undefined
 		);
@@ -60,8 +64,8 @@ describe('Resources.resolveResourceDefinition', () => {
 	});
 
 	it('reuses the same cache key for repeated normalized URLs', () => {
-		const first = Resources.createAnonymousResource('https://github.com/sveltejs/svelte.dev');
-		const second = Resources.createAnonymousResource(
+		const first = createAnonymousResource('https://github.com/sveltejs/svelte.dev');
+		const second = createAnonymousResource(
 			'https://github.com/sveltejs/svelte.dev/blob/main/packages'
 		);
 		expect(first).not.toBeNull();
@@ -72,8 +76,8 @@ describe('Resources.resolveResourceDefinition', () => {
 	});
 
 	it('uses short deterministic keys for anonymous repository paths', () => {
-		const main = Resources.createAnonymousResource('https://github.com/sveltejs/svelte.dev');
-		const withPath = Resources.createAnonymousResource(
+		const main = createAnonymousResource('https://github.com/sveltejs/svelte.dev');
+		const withPath = createAnonymousResource(
 			'https://github.com/sveltejs/svelte.dev/tree/main/packages'
 		);
 		expect(main).not.toBeNull();

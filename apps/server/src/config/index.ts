@@ -1,11 +1,12 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
+import { parseJsonc } from '@btca/shared';
 import { Effect } from 'effect';
 import { z } from 'zod';
 
 import { CommonHints, type TaggedErrorOptions } from '../errors.ts';
-import { Metrics } from '../metrics/index.ts';
+import { metricsError, metricsInfo } from '../metrics/index.ts';
 import { getSupportedProviders, isProviderSupported } from '../providers/index.ts';
 import { ResourceDefinitionSchema, type ResourceDefinition } from '../resources/schema.ts';
 
@@ -114,8 +115,7 @@ type LegacyReposConfig = z.infer<typeof LegacyReposConfigSchema>;
 type LegacyResourcesConfig = z.infer<typeof LegacyResourcesConfigSchema>;
 type LegacyRepo = z.infer<typeof LegacyRepoSchema>;
 
-export namespace Config {
-	export class ConfigError extends Error {
+export class ConfigError extends Error {
 		readonly _tag = 'ConfigError';
 		override readonly cause?: unknown;
 		readonly hint?: string;
@@ -127,7 +127,7 @@ export namespace Config {
 		}
 	}
 
-	export type Service = {
+export type ConfigService = {
 		resourcesDirectory: string;
 		resources: readonly ResourceDefinition[];
 		model: string;
@@ -159,6 +159,8 @@ export namespace Config {
 		reloadEffect: () => Effect.Effect<void, unknown>;
 	};
 
+export type Service = ConfigService;
+
 	const expandHome = (path: string): string => {
 		const home = process.env.HOME ?? process.env.USERPROFILE ?? '';
 		if (path.startsWith('~/')) return home + path.slice(1);
@@ -170,109 +172,6 @@ export namespace Config {
 		if (path.isAbsolute(expanded)) return expanded;
 		return path.resolve(baseDir, expanded);
 	};
-
-	const stripJsonc = (content: string): string => {
-		// Remove // and /* */ comments without touching strings.
-		let out = '';
-		let i = 0;
-		let inString = false;
-		let quote: '"' | "'" | null = null;
-		let escaped = false;
-
-		while (i < content.length) {
-			const ch = content[i] ?? '';
-			const next = content[i + 1] ?? '';
-
-			if (inString) {
-				out += ch;
-				if (escaped) escaped = false;
-				else if (ch === '\\') escaped = true;
-				else if (quote && ch === quote) {
-					inString = false;
-					quote = null;
-				}
-				i += 1;
-				continue;
-			}
-
-			if (ch === '/' && next === '/') {
-				i += 2;
-				while (i < content.length && content[i] !== '\n') i += 1;
-				continue;
-			}
-
-			if (ch === '/' && next === '*') {
-				i += 2;
-				while (i < content.length) {
-					if (content[i] === '*' && content[i + 1] === '/') {
-						i += 2;
-						break;
-					}
-					i += 1;
-				}
-				continue;
-			}
-
-			if (ch === '"' || ch === "'") {
-				inString = true;
-				quote = ch;
-				out += ch;
-				i += 1;
-				continue;
-			}
-
-			out += ch;
-			i += 1;
-		}
-
-		// Remove trailing commas (outside strings).
-		let normalized = '';
-		inString = false;
-		quote = null;
-		escaped = false;
-		i = 0;
-
-		while (i < out.length) {
-			const ch = out[i] ?? '';
-
-			if (inString) {
-				normalized += ch;
-				if (escaped) escaped = false;
-				else if (ch === '\\') escaped = true;
-				else if (quote && ch === quote) {
-					inString = false;
-					quote = null;
-				}
-				i += 1;
-				continue;
-			}
-
-			if (ch === '"' || ch === "'") {
-				inString = true;
-				quote = ch;
-				normalized += ch;
-				i += 1;
-				continue;
-			}
-
-			if (ch === ',') {
-				let j = i + 1;
-				while (j < out.length && /\s/.test(out[j] ?? '')) j += 1;
-				const nextNonWs = out[j] ?? '';
-				if (nextNonWs === ']' || nextNonWs === '}') {
-					i += 1;
-					continue;
-				}
-			}
-
-			normalized += ch;
-			i += 1;
-		}
-
-		return normalized.trim();
-	};
-
-	const parseJsonc = (content: string): unknown => JSON.parse(stripJsonc(content));
 
 	const readConfigText = async (configPath: string) => {
 		try {
@@ -355,20 +254,20 @@ export namespace Config {
 		const legacyExists = await Bun.file(legacyPath).exists();
 		if (!legacyExists) return null;
 
-		Metrics.info('config.legacy.found', { path: legacyPath });
+		metricsInfo('config.legacy.found', { path: legacyPath });
 
 		let content: string;
 		try {
 			content = await Bun.file(legacyPath).text();
 		} catch (cause) {
-			Metrics.error('config.legacy.read_failed', { path: legacyPath, error: String(cause) });
+			metricsError('config.legacy.read_failed', { path: legacyPath, error: String(cause) });
 			return null;
 		}
 		let parsed: unknown;
 		try {
 			parsed = JSON.parse(content);
 		} catch (cause) {
-			Metrics.error('config.legacy.parse_failed', { path: legacyPath, error: String(cause) });
+			metricsError('config.legacy.parse_failed', { path: legacyPath, error: String(cause) });
 			return null;
 		}
 
@@ -378,7 +277,7 @@ export namespace Config {
 		const resourcesResult = LegacyResourcesConfigSchema.safeParse(parsed);
 		if (resourcesResult.success) {
 			const legacy = resourcesResult.data;
-			Metrics.info('config.legacy.parsed', {
+			metricsInfo('config.legacy.parsed', {
 				format: 'resources',
 				resourceCount: legacy.resources.length,
 				model: legacy.model,
@@ -400,7 +299,7 @@ export namespace Config {
 		const reposResult = LegacyReposConfigSchema.safeParse(parsed);
 		if (reposResult.success) {
 			const legacy = reposResult.data;
-			Metrics.info('config.legacy.parsed', {
+			metricsInfo('config.legacy.parsed', {
 				format: 'repos',
 				repoCount: legacy.repos.length,
 				model: legacy.model,
@@ -426,7 +325,7 @@ export namespace Config {
 		}
 
 		// Neither format matched
-		Metrics.error('config.legacy.invalid', {
+		metricsError('config.legacy.invalid', {
 			path: legacyPath,
 			error: 'Config does not match any known legacy format'
 		});
@@ -460,7 +359,7 @@ export namespace Config {
 			`Check that you have write permissions to "${configDir}".`
 		);
 
-		Metrics.info('config.legacy.migrated', {
+		metricsInfo('config.legacy.migrated', {
 			newPath: newConfigPath,
 			resourceCount: migrated.resources.length,
 			migratedCount
@@ -469,9 +368,9 @@ export namespace Config {
 		// Rename the legacy file to mark it as migrated
 		try {
 			await fs.rename(legacyPath, `${legacyPath}.migrated`);
-			Metrics.info('config.legacy.renamed', { from: legacyPath, to: `${legacyPath}.migrated` });
+			metricsInfo('config.legacy.renamed', { from: legacyPath, to: `${legacyPath}.migrated` });
 		} catch {
-			Metrics.info('config.legacy.rename_skipped', { path: legacyPath });
+			metricsInfo('config.legacy.rename_skipped', { path: legacyPath });
 		}
 
 		return migrated;
@@ -538,7 +437,7 @@ export namespace Config {
 		projectConfig: StoredConfig | null,
 		resourcesDirectory: string,
 		configPath: string
-	): Service => {
+	): ConfigService => {
 		// Track configs separately to avoid resource leakage
 		let currentGlobalConfig = globalConfig;
 		let currentProjectConfig = projectConfig;
@@ -600,7 +499,7 @@ export namespace Config {
 			}
 		};
 
-		const service: Service = {
+		const service: ConfigService = {
 			resourcesDirectory,
 			configPath,
 			get resources() {
@@ -667,7 +566,7 @@ export namespace Config {
 				}
 				setMutableConfig(updated);
 				await saveConfig(configPath, updated);
-				Metrics.info('config.model.updated', { provider, model });
+				metricsInfo('config.model.updated', { provider, model });
 				return {
 					provider,
 					model,
@@ -693,7 +592,7 @@ export namespace Config {
 				};
 				setMutableConfig(updated);
 				await saveConfig(configPath, updated);
-				Metrics.info('config.resource.added', { name: resource.name, type: resource.type });
+				metricsInfo('config.resource.added', { name: resource.name, type: resource.type });
 				return resource;
 			},
 
@@ -727,7 +626,7 @@ export namespace Config {
 						};
 						currentProjectConfig = updated;
 						await saveConfig(configPath, updated);
-						Metrics.info('config.resource.removed', { name, from: 'project' });
+						metricsInfo('config.resource.removed', { name, from: 'project' });
 					} else if (isInGlobal) {
 						// Resource is only in global config
 						// User wants to remove a global resource from project context
@@ -752,7 +651,7 @@ export namespace Config {
 					};
 					setMutableConfig(updated);
 					await saveConfig(configPath, updated);
-					Metrics.info('config.resource.removed', { name, from: 'global' });
+					metricsInfo('config.resource.removed', { name, from: 'global' });
 				}
 			},
 
@@ -776,18 +675,18 @@ export namespace Config {
 					}
 				}
 
-				Metrics.info('config.resources.cleared', { count: clearedCount });
+				metricsInfo('config.resources.cleared', { count: clearedCount });
 				return { cleared: clearedCount };
 			},
 
 			reload: async () => {
 				// Reload the config file from disk
 				// configPath points to either project config (if it existed at startup) or global config
-				Metrics.info('config.reload.start', { configPath });
+				metricsInfo('config.reload.start', { configPath });
 
 				const configExists = await Bun.file(configPath).exists();
 				if (!configExists) {
-					Metrics.info('config.reload.skipped', { reason: 'file not found', configPath });
+					metricsInfo('config.reload.skipped', { reason: 'file not found', configPath });
 					return;
 				}
 
@@ -800,7 +699,7 @@ export namespace Config {
 					currentGlobalConfig = reloaded;
 				}
 
-				Metrics.info('config.reload.done', {
+				metricsInfo('config.reload.done', {
 					resources: reloaded.resources.length,
 					configPath
 				});
@@ -835,9 +734,9 @@ export namespace Config {
 		return service;
 	};
 
-	export const load = async (): Promise<Service> => {
+export const load = async (): Promise<ConfigService> => {
 		const cwd = process.cwd();
-		Metrics.info('config.load.start', { cwd });
+		metricsInfo('config.load.start', { cwd });
 
 		const globalConfigPath = `${expandHome(GLOBAL_CONFIG_DIR)}/${GLOBAL_CONFIG_FILENAME}`;
 		const projectConfigPath = `${cwd}/${PROJECT_CONFIG_FILENAME}`;
@@ -851,24 +750,24 @@ export namespace Config {
 			const legacyConfigPath = `${expandHome(GLOBAL_CONFIG_DIR)}/${LEGACY_CONFIG_FILENAME}`;
 			const migrated = await migrateLegacyConfig(legacyConfigPath, globalConfigPath);
 			if (migrated) {
-				Metrics.info('config.load.global', { source: 'migrated', path: globalConfigPath });
+				metricsInfo('config.load.global', { source: 'migrated', path: globalConfigPath });
 				globalConfig = migrated;
 			} else {
-				Metrics.info('config.load.global', { source: 'default', path: globalConfigPath });
+				metricsInfo('config.load.global', { source: 'default', path: globalConfigPath });
 				globalConfig = await createDefaultConfig(globalConfigPath);
 			}
 		} else {
-			Metrics.info('config.load.global', { source: 'existing', path: globalConfigPath });
+			metricsInfo('config.load.global', { source: 'existing', path: globalConfigPath });
 			globalConfig = await loadConfigFromPath(globalConfigPath);
 		}
 
 		// Now check for project config and merge if it exists
 		const projectExists = await Bun.file(projectConfigPath).exists();
 		if (projectExists) {
-			Metrics.info('config.load.project', { source: 'project', path: projectConfigPath });
+			metricsInfo('config.load.project', { source: 'project', path: projectConfigPath });
 			let projectConfig = await loadConfigFromPath(projectConfigPath);
 
-			Metrics.info('config.load.merged', {
+			metricsInfo('config.load.merged', {
 				globalResources: globalConfig.resources.length,
 				projectResources: projectConfig.resources.length
 			});
@@ -889,7 +788,7 @@ export namespace Config {
 					legacyExists = false;
 				}
 				if (legacyExists) {
-					Metrics.info('config.project.legacy_data_dir', {
+					metricsInfo('config.project.legacy_data_dir', {
 						path: legacyProjectDataDir,
 						action: 'migrating'
 					});
@@ -910,7 +809,7 @@ export namespace Config {
 		}
 
 		// No project config, use global only
-		Metrics.info('config.load.source', { source: 'global', path: globalConfigPath });
+		metricsInfo('config.load.source', { source: 'global', path: globalConfigPath });
 		const globalDataDir = globalConfig.dataDirectory ?? expandHome(GLOBAL_DATA_DIR);
 		const resolvedGlobalDataDir = resolveDataDirectory(
 			globalDataDir,
@@ -918,4 +817,3 @@ export namespace Config {
 		);
 		return makeService(globalConfig, null, `${resolvedGlobalDataDir}/resources`, globalConfigPath);
 	};
-}

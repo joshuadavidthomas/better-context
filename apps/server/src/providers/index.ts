@@ -2,8 +2,25 @@
  * Provider Abstraction Layer
  * Exports auth, registry, and model utilities
  */
-export { Auth } from './auth.ts';
-export { Model } from './model.ts';
+export {
+	getCredentials,
+	getAuthStatus,
+	getProviderAuthHint,
+	isAuthenticated,
+	getApiKey,
+	getAllCredentials,
+	setCredentials,
+	getAuthenticatedProviders
+} from './auth.ts';
+export {
+	getModel,
+	canUseModel,
+	getAvailableProviders,
+	ProviderNotFoundError,
+	ProviderNotAuthenticatedError,
+	ProviderAuthTypeError,
+	ProviderOptionsError
+} from './model.ts';
 export {
 	PROVIDER_REGISTRY,
 	isProviderSupported,

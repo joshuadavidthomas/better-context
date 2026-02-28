@@ -1,6 +1,8 @@
 import os from 'node:os';
 import path from 'node:path';
-import { ensureServer } from '../server/manager.ts';
+import { parseJsonc } from '@btca/shared';
+import { Effect } from 'effect';
+import { withServerEffect } from '../server/manager.ts';
 import { createClient, getConfig, getProviders } from '../client/index.ts';
 import packageJson from '../../package.json';
 
@@ -28,105 +30,6 @@ type StoredConfig = {
 	resources?: unknown;
 };
 
-const stripJsonc = (content: string): string => {
-	let out = '';
-	let i = 0;
-	let inString = false;
-	let quote: '"' | "'" | null = null;
-	let escaped = false;
-
-	while (i < content.length) {
-		const ch = content[i] ?? '';
-		const next = content[i + 1] ?? '';
-
-		if (inString) {
-			out += ch;
-			if (escaped) escaped = false;
-			else if (ch === '\\') escaped = true;
-			else if (quote && ch === quote) {
-				inString = false;
-				quote = null;
-			}
-			i += 1;
-			continue;
-		}
-
-		if (ch === '/' && next === '/') {
-			i += 2;
-			while (i < content.length && content[i] !== '\n') i += 1;
-			continue;
-		}
-
-		if (ch === '/' && next === '*') {
-			i += 2;
-			while (i < content.length) {
-				if (content[i] === '*' && content[i + 1] === '/') {
-					i += 2;
-					break;
-				}
-				i += 1;
-			}
-			continue;
-		}
-
-		if (ch === '"' || ch === "'") {
-			inString = true;
-			quote = ch;
-			out += ch;
-			i += 1;
-			continue;
-		}
-
-		out += ch;
-		i += 1;
-	}
-
-	let normalized = '';
-	inString = false;
-	quote = null;
-	escaped = false;
-	i = 0;
-
-	while (i < out.length) {
-		const ch = out[i] ?? '';
-
-		if (inString) {
-			normalized += ch;
-			if (escaped) escaped = false;
-			else if (ch === '\\') escaped = true;
-			else if (quote && ch === quote) {
-				inString = false;
-				quote = null;
-			}
-			i += 1;
-			continue;
-		}
-
-		if (ch === '"' || ch === "'") {
-			inString = true;
-			quote = ch;
-			normalized += ch;
-			i += 1;
-			continue;
-		}
-
-		if (ch === ',') {
-			let j = i + 1;
-			while (j < out.length && /\s/.test(out[j] ?? '')) j += 1;
-			const nextNonWs = out[j] ?? '';
-			if (nextNonWs === ']' || nextNonWs === '}') {
-				i += 1;
-				continue;
-			}
-		}
-
-		normalized += ch;
-		i += 1;
-	}
-
-	return normalized.trim();
-};
-
 const readConfigFromPath = async (configPath: string): Promise<StoredConfig | null> => {
 	const configFile = Bun.file(configPath);
 	if (!(await configFile.exists())) {
@@ -134,7 +37,7 @@ const readConfigFromPath = async (configPath: string): Promise<StoredConfig | nu
 	}
 
 	const content = await configFile.text();
-	const parsed: unknown = JSON.parse(stripJsonc(content));
+	const parsed: unknown = parseJsonc(content);
 	return parsed as StoredConfig;
 };
 
@@ -215,46 +118,59 @@ const printResourceList = (label: string, resources: string[] | null) => {
 };
 
 export const runStatusCommand = async () => {
-	const server = await ensureServer({ quiet: true });
-	const client = createClient(server.url);
 	const projectPath = path.resolve(process.cwd(), PROJECT_CONFIG_FILENAME);
 
-	try {
-		const [config, providers, globalConfig, projectConfig] = await Promise.all([
-			getConfig(client),
-			getProviders(client),
-			readConfigFromPath(GLOBAL_CONFIG_PATH),
-			readConfigFromPath(projectPath)
-		]);
+	return Effect.runPromise(
+		withServerEffect(
+			{ quiet: true },
+			(server) =>
+				Effect.gen(function* () {
+					const client = createClient(server.url);
+					const [config, providers, globalConfig, projectConfig] = yield* Effect.tryPromise(() =>
+						Promise.all([
+							getConfig(client),
+							getProviders(client),
+							readConfigFromPath(GLOBAL_CONFIG_PATH),
+							readConfigFromPath(projectPath)
+						])
+					);
 
-		const connected = Array.isArray(providers.connected) ? providers.connected : [];
-		const isAuthenticated = connected.includes(config.provider);
-		const latestVersion = await getLatestVersion();
-		const hasUpdate = latestVersion && compareVersions(VERSION, latestVersion) < 0;
+					const connected = Array.isArray(providers.connected) ? providers.connected : [];
+					const isAuthenticated = connected.includes(config.provider);
+					const latestVersion = yield* Effect.tryPromise(() => getLatestVersion());
+					const hasUpdate = latestVersion && compareVersions(VERSION, latestVersion) < 0;
 
-		console.log('\n--- btca status ---\n');
-		const modelSource = getConfigOrigin('model', projectConfig, globalConfig);
-		const providerSource = getConfigOrigin('provider', projectConfig, globalConfig);
-		console.log(`Selected model: ${config.model} (${modelSource})`);
-		console.log(`Selected provider: ${config.provider} (${providerSource})`);
-		console.log(`Selected provider authed: ${isAuthenticated ? 'yes' : 'no'}`);
-		console.log('');
+					yield* Effect.sync(() => {
+						console.log('\n--- btca status ---\n');
+						const modelSource = getConfigOrigin('model', projectConfig, globalConfig);
+						const providerSource = getConfigOrigin('provider', projectConfig, globalConfig);
+						console.log(`Selected model: ${config.model} (${modelSource})`);
+						console.log(`Selected provider: ${config.provider} (${providerSource})`);
+						console.log(`Selected provider authed: ${isAuthenticated ? 'yes' : 'no'}`);
+						console.log('');
 
-		printResourceList('Global resources', globalConfig ? listResourceNames(globalConfig) : null);
-		printResourceList('Project resources', projectConfig ? listResourceNames(projectConfig) : null);
+						printResourceList(
+							'Global resources',
+							globalConfig ? listResourceNames(globalConfig) : null
+						);
+						printResourceList(
+							'Project resources',
+							projectConfig ? listResourceNames(projectConfig) : null
+						);
 
-		console.log(`\nbtca version: ${VERSION}`);
-		if (latestVersion) {
-			console.log(`Latest version: ${latestVersion}`);
-			if (hasUpdate) {
-				console.log('Update available: run "bun add -g btca@latest"');
-			} else {
-				console.log('btca is up to date');
-			}
-		} else {
-			console.log('Latest version: unavailable');
-		}
-	} finally {
-		server.stop();
-	}
+						console.log(`\nbtca version: ${VERSION}`);
+						if (latestVersion) {
+							console.log(`Latest version: ${latestVersion}`);
+							if (hasUpdate) {
+								console.log('Update available: run "bun add -g btca@latest"');
+							} else {
+								console.log('btca is up to date');
+							}
+						} else {
+							console.log('Latest version: unavailable');
+						}
+					});
+				})
+		)
+	);
 };

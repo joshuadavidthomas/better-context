@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
-import { Metrics } from '../../metrics/index.ts';
+import { metricsInfo, withMetricsSpan } from '../../metrics/index.ts';
 import { CommonHints } from '../../errors.ts';
 import { ResourceError, resourceNameToKey } from '../helpers.ts';
 import { GitResourceSchema } from '../schema.ts';
@@ -451,13 +451,13 @@ const ensureGitResource = async (config: BtcaGitResourceArgs): Promise<string> =
 		await cleanupDirectory(localPath);
 	}
 
-	return Metrics.span(
+	return withMetricsSpan(
 		'resource.git.ensure',
 		async () => {
 			const exists = await directoryExists(localPath);
 
 			if (exists && !config.ephemeral) {
-				Metrics.info('resource.git.update', {
+				metricsInfo('resource.git.update', {
 					name: config.name,
 					branch: config.branch,
 					repoSubPaths: config.repoSubPaths
@@ -474,7 +474,7 @@ const ensureGitResource = async (config: BtcaGitResourceArgs): Promise<string> =
 				return localPath;
 			}
 
-			Metrics.info('resource.git.clone', {
+			metricsInfo('resource.git.clone', {
 				name: config.name,
 				branch: config.ephemeral ? 'fallback' : config.branch,
 				repoSubPaths: config.repoSubPaths

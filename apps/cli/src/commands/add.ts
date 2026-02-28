@@ -1,10 +1,11 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import * as readline from 'readline';
+import { Effect } from 'effect';
 
-import { addResource, BtcaError } from '../client/index.ts';
+import { addResource } from '../client/index.ts';
 import { dim } from '../lib/utils/colors.ts';
-import { ensureServer } from '../server/manager.ts';
+import { withServerEffect } from '../server/manager.ts';
 
 interface GitHubUrlParts {
 	owner: string;
@@ -172,18 +173,6 @@ const isDirectory = async (value: string) => {
 };
 
 /**
- * Format an error for display, including hint if available.
- */
-function formatError(error: unknown): string {
-	if (error instanceof BtcaError) {
-		let output = `Error: ${error.message}`;
-		if (error.hint) output += `\n\nHint: ${error.hint}`;
-		return output;
-	}
-	return `Error: ${error instanceof Error ? error.message : String(error)}`;
-}
-
-/**
  * Create a readline interface for prompts.
  */
 function createRl(): readline.Interface {
@@ -269,6 +258,21 @@ async function promptSelect<T extends string>(
 	});
 }
 
+const runWithServer = <A>(
+	globalOpts: { server?: string; port?: number } | undefined,
+	run: (serverUrl: string) => Promise<A>
+) =>
+	Effect.runPromise(
+		withServerEffect(
+			{
+				serverUrl: globalOpts?.server,
+				port: globalOpts?.port,
+				quiet: true
+			},
+			(server) => Effect.tryPromise(() => run(server.url))
+		)
+	);
+
 /**
  * Interactive wizard for adding a git resource.
  */
@@ -279,9 +283,7 @@ async function addGitResourceWizard(
 ): Promise<void> {
 	const urlParts = parseGitHubUrl(url);
 	if (!urlParts) {
-		console.error('Error: Invalid GitHub URL.');
-		console.error('Expected format: https://github.com/owner/repo');
-		process.exit(1);
+		throw new Error('Invalid GitHub URL. Expected format: https://github.com/owner/repo');
 	}
 
 	const normalizedUrl = normalizeGitHubUrl(url);
@@ -320,26 +322,20 @@ async function addGitResourceWizard(
 
 		if (!confirmed) {
 			console.log('\nCancelled.');
-			process.exit(0);
+			return;
 		}
 
-		const server = await ensureServer({
-			serverUrl: globalOpts?.server,
-			port: globalOpts?.port,
-			quiet: true
-		});
-
-		const resource = await addResource(server.url, {
-			type: 'git',
-			name,
-			url: finalUrl,
-			branch,
-			...(searchPaths.length === 1 && { searchPath: searchPaths[0] }),
-			...(searchPaths.length > 1 && { searchPaths }),
-			...(notes && { specialNotes: notes })
-		});
-
-		server.stop();
+		const resource = await runWithServer(globalOpts, (serverUrl) =>
+			addResource(serverUrl, {
+				type: 'git',
+				name,
+				url: finalUrl,
+				branch,
+				...(searchPaths.length === 1 && { searchPath: searchPaths[0] }),
+				...(searchPaths.length > 1 && { searchPaths }),
+				...(notes && { specialNotes: notes })
+			})
+		);
 
 		console.log(`\nAdded resource: ${name}`);
 		if (resource.type === 'git' && resource.url !== finalUrl) {
@@ -390,23 +386,17 @@ async function addLocalResourceWizard(
 
 		if (!confirmed) {
 			console.log('\nCancelled.');
-			process.exit(0);
+			return;
 		}
 
-		const server = await ensureServer({
-			serverUrl: globalOpts?.server,
-			port: globalOpts?.port,
-			quiet: true
-		});
-
-		await addResource(server.url, {
-			type: 'local',
-			name,
-			path: finalPath,
-			...(notes && { specialNotes: notes })
-		});
-
-		server.stop();
+		await runWithServer(globalOpts, (serverUrl) =>
+			addResource(serverUrl, {
+				type: 'local',
+				name,
+				path: finalPath,
+				...(notes && { specialNotes: notes })
+			})
+		);
 
 		console.log(`\nAdded resource: ${name}`);
 		console.log('\nYou can now use this resource:');
@@ -426,9 +416,9 @@ async function addNpmResourceWizard(
 ): Promise<void> {
 	const parsed = parseNpmReference(npmReference);
 	if (!parsed) {
-		console.error('Error: Invalid npm reference.');
-		console.error('Use an npm package (e.g. react, @types/node, npm:react, or npmjs package URL).');
-		process.exit(1);
+		throw new Error(
+			'Invalid npm reference. Use an npm package (e.g. react, @types/node, npm:react, or npmjs package URL).'
+		);
 	}
 
 	console.log('\n--- Add npm Resource ---\n');
@@ -459,24 +449,18 @@ async function addNpmResourceWizard(
 
 		if (!confirmed) {
 			console.log('\nCancelled.');
-			process.exit(0);
+			return;
 		}
 
-		const server = await ensureServer({
-			serverUrl: globalOpts?.server,
-			port: globalOpts?.port,
-			quiet: true
-		});
-
-		await addResource(server.url, {
-			type: 'npm',
-			name,
-			package: packageName,
-			...(versionInput ? { version: versionInput } : {}),
-			...(notes ? { specialNotes: notes } : {})
-		});
-
-		server.stop();
+		await runWithServer(globalOpts, (serverUrl) =>
+			addResource(serverUrl, {
+				type: 'npm',
+				name,
+				package: packageName,
+				...(versionInput ? { version: versionInput } : {}),
+				...(notes ? { specialNotes: notes } : {})
+			})
+		);
 
 		console.log(`\nAdded resource: ${name}`);
 		console.log('\nYou can now use this resource:');
@@ -521,8 +505,7 @@ export const runAddCommand = async (args: {
 				const url = await promptInput(rl, 'GitHub URL');
 				rl.close();
 				if (!url) {
-					console.error('Error: URL is required.');
-					process.exit(1);
+					throw new Error('URL is required.');
 				}
 				await addGitResourceWizard(url, args, args.globalOpts);
 				return;
@@ -532,8 +515,7 @@ export const runAddCommand = async (args: {
 				const npmRef = await promptInput(rl, 'npm package (or npmjs URL)', 'react');
 				rl.close();
 				if (!npmRef) {
-					console.error('Error: npm package is required.');
-					process.exit(1);
+					throw new Error('npm package is required.');
 				}
 				await addNpmResourceWizard(npmRef, args, args.globalOpts);
 				return;
@@ -542,8 +524,7 @@ export const runAddCommand = async (args: {
 			const localPath = await promptInput(rl, 'Local path');
 			rl.close();
 			if (!localPath) {
-				console.error('Error: Path is required.');
-				process.exit(1);
+				throw new Error('Path is required.');
 			}
 			await addLocalResourceWizard(localPath, args, args.globalOpts);
 			return;
@@ -552,8 +533,7 @@ export const runAddCommand = async (args: {
 		let resourceType: 'git' | 'local' | 'npm';
 		if (args.type) {
 			if (args.type !== 'git' && args.type !== 'local' && args.type !== 'npm') {
-				console.error('Error: --type must be "git", "local", or "npm"');
-				process.exit(1);
+				throw new Error('--type must be "git", "local", or "npm"');
 			}
 			resourceType = args.type as 'git' | 'local' | 'npm';
 		} else {
@@ -561,27 +541,22 @@ export const runAddCommand = async (args: {
 		}
 
 		if (args.name && resourceType === 'git' && parseGitHubUrl(args.reference)) {
+			const name = args.name;
 			const normalizedUrl = normalizeGitHubUrl(args.reference);
-			const server = await ensureServer({
-				serverUrl: args.globalOpts?.server,
-				port: args.globalOpts?.port,
-				quiet: true
-			});
-
 			const searchPaths = args.searchPath ?? [];
-			const resource = await addResource(server.url, {
-				type: 'git',
-				name: args.name,
-				url: normalizedUrl,
-				branch: args.branch ?? 'main',
-				...(searchPaths.length === 1 && { searchPath: searchPaths[0] }),
-				...(searchPaths.length > 1 && { searchPaths }),
-				...(args.notes && { specialNotes: args.notes })
-			});
+			const resource = await runWithServer(args.globalOpts, (serverUrl) =>
+				addResource(serverUrl, {
+					type: 'git',
+					name,
+					url: normalizedUrl,
+					branch: args.branch ?? 'main',
+					...(searchPaths.length === 1 && { searchPath: searchPaths[0] }),
+					...(searchPaths.length > 1 && { searchPaths }),
+					...(args.notes && { specialNotes: args.notes })
+				})
+			);
 
-			server.stop();
-
-			console.log(`Added git resource: ${args.name}`);
+			console.log(`Added git resource: ${name}`);
 			if (resource.type === 'git' && resource.url !== normalizedUrl) {
 				console.log(`  URL normalized: ${resource.url}`);
 			}
@@ -589,53 +564,41 @@ export const runAddCommand = async (args: {
 		}
 
 		if (args.name && resourceType === 'local') {
+			const name = args.name;
 			const resolvedPath = path.isAbsolute(args.reference)
 				? args.reference
 				: path.resolve(process.cwd(), args.reference);
-			const server = await ensureServer({
-				serverUrl: args.globalOpts?.server,
-				port: args.globalOpts?.port,
-				quiet: true
-			});
-
-			await addResource(server.url, {
-				type: 'local',
-				name: args.name,
-				path: resolvedPath,
-				...(args.notes && { specialNotes: args.notes })
-			});
-
-			server.stop();
-			console.log(`Added local resource: ${args.name}`);
+			await runWithServer(args.globalOpts, (serverUrl) =>
+				addResource(serverUrl, {
+					type: 'local',
+					name,
+					path: resolvedPath,
+					...(args.notes && { specialNotes: args.notes })
+				})
+			);
+			console.log(`Added local resource: ${name}`);
 			return;
 		}
 
 		if (args.name && resourceType === 'npm') {
+			const name = args.name;
 			const parsed = parseNpmReference(args.reference);
 			if (!parsed) {
-				console.error('Error: Invalid npm reference.');
-				console.error(
-					'Use an npm package (e.g. react, @types/node, npm:react, or npmjs package URL).'
+				throw new Error(
+					'Invalid npm reference. Use an npm package (e.g. react, @types/node, npm:react, or npmjs package URL).'
 				);
-				process.exit(1);
 			}
 
-			const server = await ensureServer({
-				serverUrl: args.globalOpts?.server,
-				port: args.globalOpts?.port,
-				quiet: true
-			});
-
-			await addResource(server.url, {
-				type: 'npm',
-				name: args.name,
-				package: parsed.packageName,
-				...(parsed.version ? { version: parsed.version } : {}),
-				...(args.notes ? { specialNotes: args.notes } : {})
-			});
-
-			server.stop();
-			console.log(`Added npm resource: ${args.name}`);
+			await runWithServer(args.globalOpts, (serverUrl) =>
+				addResource(serverUrl, {
+					type: 'npm',
+					name,
+					package: parsed.packageName,
+					...(parsed.version ? { version: parsed.version } : {}),
+					...(args.notes ? { specialNotes: args.notes } : {})
+				})
+			);
+			console.log(`Added npm resource: ${name}`);
 			return;
 		}
 
@@ -648,10 +611,8 @@ export const runAddCommand = async (args: {
 		}
 	} catch (error) {
 		if (error instanceof Error && error.message === 'Invalid selection') {
-			console.error('\nError: Invalid selection. Please try again.');
-			process.exit(1);
+			throw new Error('Invalid selection. Please try again.');
 		}
-		console.error(formatError(error));
-		process.exit(1);
+		throw error;
 	}
 };

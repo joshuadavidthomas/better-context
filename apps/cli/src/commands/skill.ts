@@ -14,6 +14,6 @@ export async function runSkillCommand() {
 
 	const exitCode = await subprocess.exited;
 	if (exitCode !== 0) {
-		process.exit(exitCode);
+		throw new Error(`skills install command exited with code ${exitCode}`);
 	}
 }

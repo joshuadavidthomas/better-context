@@ -28,258 +28,256 @@ type MaybeStat = {
 	mtimeMs?: number;
 };
 
-export namespace VirtualFs {
-	const defaultId = 'default';
-	const instances = new Map<string, InMemoryFs>([[defaultId, new InMemoryFs()]]);
+const defaultId = 'default';
+const instances = new Map<string, InMemoryFs>([[defaultId, new InMemoryFs()]]);
 
-	const getInstance = (vfsId?: string) => {
-		const key = vfsId ?? defaultId;
-		const existing = instances.get(key);
-		if (existing) return existing;
-		const created = new InMemoryFs();
-		instances.set(key, created);
-		return created;
+const getInstance = (vfsId?: string) => {
+	const key = vfsId ?? defaultId;
+	const existing = instances.get(key);
+	if (existing) return existing;
+	const created = new InMemoryFs();
+	instances.set(key, created);
+	return created;
+};
+
+const normalizeVfsPath = (filePath: string): string => {
+	const resolved = posix.resolve('/', filePath);
+	return resolved === '' ? '/' : resolved;
+};
+
+const toStat = (stat: MaybeStat): VfsStat => {
+	const isFile = typeof stat.isFile === 'function' ? stat.isFile() : Boolean(stat.isFile);
+	const isDirectory =
+		typeof stat.isDirectory === 'function' ? stat.isDirectory() : Boolean(stat.isDirectory);
+	const mtimeMs =
+		typeof stat.mtimeMs === 'number'
+			? stat.mtimeMs
+			: stat.mtime instanceof Date
+				? stat.mtime.getTime()
+				: 0;
+	return {
+		isFile,
+		isDirectory,
+		size: stat.size ?? 0,
+		mtimeMs
 	};
+};
 
-	const normalize = (filePath: string): string => {
-		const resolved = posix.resolve('/', filePath);
-		return resolved === '' ? '/' : resolved;
-	};
+export const createVirtualFs = () => {
+	const vfsId = randomUUID();
+	instances.set(vfsId, new InMemoryFs());
+	return vfsId;
+};
 
-	const toStat = (stat: MaybeStat): VfsStat => {
-		const isFile = typeof stat.isFile === 'function' ? stat.isFile() : Boolean(stat.isFile);
-		const isDirectory =
-			typeof stat.isDirectory === 'function' ? stat.isDirectory() : Boolean(stat.isDirectory);
-		const mtimeMs =
-			typeof stat.mtimeMs === 'number'
-				? stat.mtimeMs
-				: stat.mtime instanceof Date
-					? stat.mtime.getTime()
-					: 0;
-		return {
-			isFile,
-			isDirectory,
-			size: stat.size ?? 0,
-			mtimeMs
-		};
-	};
+export const hasVirtualFs = (vfsId?: string) => {
+	const key = vfsId ?? defaultId;
+	return instances.has(key);
+};
 
-	export const create = () => {
-		const vfsId = randomUUID();
-		instances.set(vfsId, new InMemoryFs());
-		return vfsId;
-	};
+export const resetVirtualFs = (vfsId?: string) => {
+	const key = vfsId ?? defaultId;
+	instances.set(key, new InMemoryFs());
+};
 
-	export const has = (vfsId?: string) => {
-		const key = vfsId ?? defaultId;
-		return instances.has(key);
-	};
+export const disposeVirtualFs = (vfsId?: string) => {
+	const key = vfsId ?? defaultId;
+	instances.delete(key);
+};
 
-	export const reset = (vfsId?: string) => {
-		const key = vfsId ?? defaultId;
-		instances.set(key, new InMemoryFs());
-	};
+export const disposeAllVirtualFs = () => {
+	instances.clear();
+	instances.set(defaultId, new InMemoryFs());
+};
 
-	export const dispose = (vfsId?: string) => {
-		const key = vfsId ?? defaultId;
-		instances.delete(key);
-	};
+export const resolveVirtualFsPath = (filePath: string): string => normalizeVfsPath(filePath);
 
-	export const disposeAll = () => {
-		instances.clear();
-		instances.set(defaultId, new InMemoryFs());
-	};
+export const mkdirVirtualFs = async (
+	filePath: string,
+	options?: { recursive?: boolean },
+	vfsId?: string
+) => {
+	await getInstance(vfsId).mkdir(normalizeVfsPath(filePath), options);
+};
 
-	export function resolve(filePath: string): string {
-		return normalize(filePath);
+export const rmVirtualFs = async (
+	filePath: string,
+	options?: { recursive?: boolean; force?: boolean },
+	vfsId?: string
+) => {
+	await getInstance(vfsId).rm(normalizeVfsPath(filePath), options);
+};
+
+export const existsInVirtualFs = async (filePath: string, vfsId?: string) => {
+	try {
+		await getInstance(vfsId).stat(normalizeVfsPath(filePath));
+		return true;
+	} catch {
+		return false;
 	}
+};
 
-	export async function mkdir(filePath: string, options?: { recursive?: boolean }, vfsId?: string) {
-		await getInstance(vfsId).mkdir(normalize(filePath), options);
+export const statVirtualFs = async (filePath: string, vfsId?: string) => {
+	const stats = (await getInstance(vfsId).stat(normalizeVfsPath(filePath))) as MaybeStat;
+	return toStat(stats);
+};
+
+export const readdirVirtualFs = async (filePath: string, vfsId?: string) => {
+	let resolved = normalizeVfsPath(filePath);
+	try {
+		resolved = await realpathVirtualFs(filePath, vfsId);
+	} catch {
+		resolved = normalizeVfsPath(filePath);
 	}
-
-	export async function rm(
-		filePath: string,
-		options?: { recursive?: boolean; force?: boolean },
-		vfsId?: string
-	) {
-		await getInstance(vfsId).rm(normalize(filePath), options);
-	}
-
-	export async function exists(filePath: string, vfsId?: string) {
+	const entries = (await getInstance(vfsId).readdir(resolved)) as string[];
+	const result: VfsDirEntry[] = [];
+	for (const name of entries) {
+		const entryPath = normalizeVfsPath(posix.join(filePath, name));
+		let entryStat: VfsStat | null = null;
 		try {
-			await getInstance(vfsId).stat(normalize(filePath));
-			return true;
+			entryStat = await statVirtualFs(entryPath, vfsId);
 		} catch {
-			return false;
+			entryStat = null;
 		}
+		result.push({
+			name,
+			isFile: entryStat?.isFile ?? false,
+			isDirectory: entryStat?.isDirectory ?? false
+		});
 	}
+	return result;
+};
 
-	export async function stat(filePath: string, vfsId?: string) {
-		const stats = (await getInstance(vfsId).stat(normalize(filePath))) as MaybeStat;
-		return toStat(stats);
+export const readVirtualFsFile = async (filePath: string, vfsId?: string) =>
+	getInstance(vfsId).readFile(normalizeVfsPath(filePath));
+
+export const readVirtualFsFileBuffer = async (filePath: string, vfsId?: string) =>
+	getInstance(vfsId).readFileBuffer(normalizeVfsPath(filePath));
+
+export const writeVirtualFsFile = async (
+	filePath: string,
+	data: string | ArrayBufferView,
+	vfsId?: string
+) => {
+	const content =
+		typeof data === 'string'
+			? data
+			: new Uint8Array(data.buffer as ArrayBufferLike, data.byteOffset, data.byteLength);
+	await getInstance(vfsId).writeFile(normalizeVfsPath(filePath), content);
+};
+
+export const symlinkVirtualFs = async (targetPath: string, linkPath: string, vfsId?: string) => {
+	const target = posix.isAbsolute(targetPath) ? normalizeVfsPath(targetPath) : targetPath;
+	await getInstance(vfsId).symlink(target, normalizeVfsPath(linkPath));
+};
+
+export const realpathVirtualFs = async (filePath: string, vfsId?: string) => {
+	const resolved = normalizeVfsPath(filePath);
+	const maybe = getInstance(vfsId) as unknown as {
+		realpath?: (path: string) => Promise<string>;
+	};
+	if (typeof maybe.realpath === 'function') {
+		return maybe.realpath(resolved);
 	}
+	return resolved;
+};
 
-	export async function readdir(filePath: string, vfsId?: string) {
-		let resolved = normalize(filePath);
+export const listVirtualFsFilesRecursive = async (rootPath: string, vfsId?: string) => {
+	const files: string[] = [];
+	const stack: string[] = [normalizeVfsPath(rootPath)];
+
+	while (stack.length > 0) {
+		const current = stack.pop();
+		if (!current) continue;
+		let entries: VfsDirEntry[] = [];
 		try {
-			resolved = await realpath(filePath, vfsId);
+			entries = await readdirVirtualFs(current, vfsId);
 		} catch {
-			resolved = normalize(filePath);
+			entries = [];
 		}
-		const entries = (await getInstance(vfsId).readdir(resolved)) as string[];
-		const result: VfsDirEntry[] = [];
-		for (const name of entries) {
-			const entryPath = normalize(posix.join(filePath, name));
-			let entryStat: VfsStat | null = null;
-			try {
-				entryStat = await stat(entryPath, vfsId);
-			} catch {
-				entryStat = null;
+		if (entries.length === 0) continue;
+
+		for (const entry of entries) {
+			const entryPath = normalizeVfsPath(posix.join(current, entry.name));
+			if (entry.isDirectory) {
+				stack.push(entryPath);
+			} else if (entry.isFile) {
+				files.push(entryPath);
 			}
-			result.push({
-				name,
-				isFile: entryStat?.isFile ?? false,
-				isDirectory: entryStat?.isDirectory ?? false
-			});
 		}
-		return result;
 	}
 
-	export async function readFile(filePath: string, vfsId?: string) {
-		return getInstance(vfsId).readFile(normalize(filePath));
-	}
+	return files;
+};
 
-	export async function readFileBuffer(filePath: string, vfsId?: string) {
-		return getInstance(vfsId).readFileBuffer(normalize(filePath));
-	}
+export const importDirectoryIntoVirtualFs = async (args: {
+	sourcePath: string;
+	destinationPath: string;
+	ignore?: (relativePath: string) => boolean;
+	vfsId?: string;
+}) => {
+	const base = path.resolve(args.sourcePath);
+	const dest = normalizeVfsPath(args.destinationPath);
+	const ignore = args.ignore ?? (() => false);
+	const vfsId = args.vfsId;
 
-	export async function writeFile(
-		filePath: string,
-		data: string | ArrayBufferView,
-		vfsId?: string
-	) {
-		const content =
-			typeof data === 'string'
-				? data
-				: new Uint8Array(data.buffer as ArrayBufferLike, data.byteOffset, data.byteLength);
-		await getInstance(vfsId).writeFile(normalize(filePath), content);
-	}
-
-	export async function symlink(targetPath: string, linkPath: string, vfsId?: string) {
-		const target = posix.isAbsolute(targetPath) ? normalize(targetPath) : targetPath;
-		await getInstance(vfsId).symlink(target, normalize(linkPath));
-	}
-
-	export async function realpath(filePath: string, vfsId?: string) {
-		const resolved = normalize(filePath);
-		const maybe = getInstance(vfsId) as unknown as {
-			realpath?: (path: string) => Promise<string>;
-		};
-		if (typeof maybe.realpath === 'function') {
-			return maybe.realpath(resolved);
+	const walk = async (currentPath: string): Promise<void> => {
+		const relative = path.relative(base, currentPath);
+		if (relative && ignore(relative)) return;
+		let dirents: Dirent[] = [];
+		try {
+			dirents = await fs.readdir(currentPath, { withFileTypes: true });
+		} catch {
+			dirents = [];
 		}
-		return resolved;
-	}
+		if (dirents.length === 0) return;
 
-	export async function listFilesRecursive(rootPath: string, vfsId?: string) {
-		const files: string[] = [];
-		const stack: string[] = [normalize(rootPath)];
+		for (const dirent of dirents) {
+			const srcPath = path.join(currentPath, dirent.name);
+			const relPath = path.relative(base, srcPath);
+			if (ignore(relPath)) continue;
+			const destPath = normalizeVfsPath(posix.join(dest, relPath.split(path.sep).join('/')));
 
-		while (stack.length > 0) {
-			const current = stack.pop();
-			if (!current) continue;
-			let entries: VfsDirEntry[] = [];
-			try {
-				entries = await readdir(current, vfsId);
-			} catch {
-				entries = [];
+			if (dirent.isDirectory()) {
+				await mkdirVirtualFs(destPath, { recursive: true }, vfsId);
+				await walk(srcPath);
+				continue;
 			}
-			if (entries.length === 0) continue;
 
-			for (const entry of entries) {
-				const entryPath = normalize(posix.join(current, entry.name));
-				if (entry.isDirectory) {
-					stack.push(entryPath);
-				} else if (entry.isFile) {
-					files.push(entryPath);
+			if (dirent.isSymbolicLink()) {
+				let target: string | null = null;
+				try {
+					target = await fs.readlink(srcPath);
+				} catch {
+					target = null;
 				}
-			}
-		}
-
-		return files;
-	}
-
-	export async function importDirectoryFromDisk(args: {
-		sourcePath: string;
-		destinationPath: string;
-		ignore?: (relativePath: string) => boolean;
-		vfsId?: string;
-	}) {
-		const base = path.resolve(args.sourcePath);
-		const dest = normalize(args.destinationPath);
-		const ignore = args.ignore ?? (() => false);
-		const vfsId = args.vfsId;
-
-		const walk = async (currentPath: string): Promise<void> => {
-			const relative = path.relative(base, currentPath);
-			if (relative && ignore(relative)) return;
-			let dirents: Dirent[] = [];
-			try {
-				dirents = await fs.readdir(currentPath, { withFileTypes: true });
-			} catch {
-				dirents = [];
-			}
-			if (dirents.length === 0) return;
-
-			for (const dirent of dirents) {
-				const srcPath = path.join(currentPath, dirent.name);
-				const relPath = path.relative(base, srcPath);
-				if (ignore(relPath)) continue;
-				const destPath = normalize(posix.join(dest, relPath.split(path.sep).join('/')));
-
-				if (dirent.isDirectory()) {
-					await mkdir(destPath, { recursive: true }, vfsId);
-					await walk(srcPath);
-					continue;
-				}
-
-				if (dirent.isSymbolicLink()) {
-					let target: string | null = null;
+				if (target) {
 					try {
-						target = await fs.readlink(srcPath);
+						await symlinkVirtualFs(target, destPath, vfsId);
 					} catch {
-						target = null;
+						// Ignore invalid symlink entries while importing.
 					}
-					if (target) {
-						try {
-							await symlink(target, destPath, vfsId);
-						} catch {
-							// Ignore invalid symlink entries while importing.
-						}
-					}
-					continue;
 				}
+				continue;
+			}
 
-				if (dirent.isFile()) {
-					let buffer: Buffer | null = null;
+			if (dirent.isFile()) {
+				let buffer: Buffer | null = null;
+				try {
+					buffer = await fs.readFile(srcPath);
+				} catch {
+					buffer = null;
+				}
+				if (buffer) {
 					try {
-						buffer = await fs.readFile(srcPath);
+						await writeVirtualFsFile(destPath, buffer, vfsId);
 					} catch {
-						buffer = null;
-					}
-					if (buffer) {
-						try {
-							await writeFile(destPath, buffer, vfsId);
-						} catch {
-							// Ignore individual file write errors while importing.
-						}
+						// Ignore individual file write errors while importing.
 					}
 				}
 			}
-		};
+		}
+	};
 
-		await mkdir(dest, { recursive: true }, vfsId);
-		await walk(base);
-	}
-}
+	await mkdirVirtualFs(dest, { recursive: true }, vfsId);
+	await walk(base);
+};

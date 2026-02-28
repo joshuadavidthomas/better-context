@@ -1,8 +1,8 @@
 import { stripUserQuestionFromStart, extractCoreQuestion } from '@btca/shared';
 
 import { getErrorHint, getErrorMessage, getErrorTag } from '../errors.ts';
-import { Metrics } from '../metrics/index.ts';
-import type { AgentLoop } from '../agent/loop.ts';
+import { metricsError, metricsErrorInfo, metricsInfo } from '../metrics/index.ts';
+import type { AgentEvent } from '../agent/loop.ts';
 
 import type {
 	BtcaStreamDoneEvent,
@@ -35,10 +35,9 @@ const hasAnyDefined = (record: Record<string, unknown> | undefined) =>
 const costFor = (tokens: number | undefined, usdPerMTokens: number | undefined) =>
 	tokens == null || usdPerMTokens == null ? undefined : (tokens / 1_000_000) * usdPerMTokens;
 
-export namespace StreamService {
-	export const createSseStream = (args: {
+export const createSseStream = (args: {
 		meta: BtcaStreamMetaEvent;
-		eventStream: AsyncIterable<AgentLoop.AgentEvent>;
+		eventStream: AsyncIterable<AgentEvent>;
 		question?: string; // Original question - used to filter echoed user message
 		requestStartMs?: number;
 		pricing?: {
@@ -91,7 +90,7 @@ export namespace StreamService {
 		return new ReadableStream<Uint8Array>({
 			start(controller) {
 				streamStartMs = performance.now();
-				Metrics.info('stream.start', {
+				metricsInfo('stream.start', {
 					collectionKey: args.meta.collection.key,
 					resources: args.meta.resources,
 					model: args.meta.model
@@ -264,7 +263,7 @@ export namespace StreamService {
 													}
 												: undefined;
 
-									Metrics.info('stream.done', {
+									metricsInfo('stream.done', {
 										collectionKey: args.meta.collection.key,
 										textLength: finalText.length,
 										reasoningLength: accumulatedReasoning.length,
@@ -296,9 +295,9 @@ export namespace StreamService {
 								}
 
 								case 'error': {
-									Metrics.error('stream.error', {
+									metricsError('stream.error', {
 										collectionKey: args.meta.collection.key,
-										error: Metrics.errorInfo(event.error)
+										error: metricsErrorInfo(event.error)
 									});
 									const err: BtcaStreamErrorEvent = {
 										type: 'error',
@@ -312,9 +311,9 @@ export namespace StreamService {
 							}
 						}
 					} catch (cause) {
-						Metrics.error('stream.error', {
+						metricsError('stream.error', {
 							collectionKey: args.meta.collection.key,
-							error: Metrics.errorInfo(cause)
+							error: metricsErrorInfo(cause)
 						});
 						const err: BtcaStreamErrorEvent = {
 							type: 'error',
@@ -326,7 +325,7 @@ export namespace StreamService {
 					}
 
 					{
-						Metrics.info('stream.closed', { collectionKey: args.meta.collection.key });
+						metricsInfo('stream.closed', { collectionKey: args.meta.collection.key });
 						if (!closed) {
 							closed = true;
 							try {
@@ -344,4 +343,4 @@ export namespace StreamService {
 			}
 		});
 	};
-}
+

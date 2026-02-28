@@ -4,11 +4,23 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { GlobTool } from '../tools/glob.ts';
-import { GrepTool } from '../tools/grep.ts';
-import { ListTool } from '../tools/list.ts';
-import { ReadTool } from '../tools/read.ts';
-import { VirtualFs } from './virtual-fs.ts';
+import { executeGlobTool } from '../tools/glob.ts';
+import { executeGrepTool } from '../tools/grep.ts';
+import { executeListTool } from '../tools/list.ts';
+import { executeReadTool } from '../tools/read.ts';
+import {
+	createVirtualFs,
+	disposeVirtualFs,
+	existsInVirtualFs,
+	importDirectoryIntoVirtualFs,
+	listVirtualFsFilesRecursive,
+	mkdirVirtualFs,
+	readVirtualFsFile,
+	readdirVirtualFs,
+	rmVirtualFs,
+	statVirtualFs,
+	writeVirtualFsFile
+} from './virtual-fs.ts';
 
 const posix = path.posix;
 
@@ -16,7 +28,7 @@ const createRoot = () => `/vfs-test-${randomUUID()}`;
 
 const cleanupVirtual = async (root: string, vfsId?: string) => {
 	try {
-		await VirtualFs.rm(root, { recursive: true, force: true }, vfsId);
+		await rmVirtualFs(root, { recursive: true, force: true }, vfsId);
 	} catch {
 		// ignore cleanup failures
 	}
@@ -25,37 +37,37 @@ const cleanupVirtual = async (root: string, vfsId?: string) => {
 describe('VirtualFs (just-bash)', () => {
 	it('supports basic in-memory file operations', async () => {
 		const root = createRoot();
-		const vfsId = VirtualFs.create();
+		const vfsId = createVirtualFs();
 		try {
 			const dir = posix.join(root, 'dir');
 			const file = posix.join(dir, 'hello.txt');
 
-			await VirtualFs.mkdir(dir, { recursive: true }, vfsId);
-			await VirtualFs.writeFile(file, 'Hello virtual', vfsId);
+			await mkdirVirtualFs(dir, { recursive: true }, vfsId);
+			await writeVirtualFsFile(file, 'Hello virtual', vfsId);
 
-			const text = await VirtualFs.readFile(file, vfsId);
+			const text = await readVirtualFsFile(file, vfsId);
 			expect(text).toBe('Hello virtual');
 
-			const fileStat = await VirtualFs.stat(file, vfsId);
+			const fileStat = await statVirtualFs(file, vfsId);
 			expect(fileStat.isFile).toBe(true);
 
-			const dirStat = await VirtualFs.stat(dir, vfsId);
+			const dirStat = await statVirtualFs(dir, vfsId);
 			expect(dirStat.isDirectory).toBe(true);
 
-			const entries = await VirtualFs.readdir(dir, vfsId);
+			const entries = await readdirVirtualFs(dir, vfsId);
 			expect(entries.some((entry) => entry.name === 'hello.txt')).toBe(true);
 
-			const files = await VirtualFs.listFilesRecursive(root, vfsId);
+			const files = await listVirtualFsFilesRecursive(root, vfsId);
 			expect(files).toContain(file);
 		} finally {
 			await cleanupVirtual(root, vfsId);
-			VirtualFs.dispose(vfsId);
+			disposeVirtualFs(vfsId);
 		}
 	});
 
 	it('imports from disk and works with virtual tools', async () => {
 		const root = createRoot();
-		const vfsId = VirtualFs.create();
+		const vfsId = createVirtualFs();
 		const sourceDir = await fs.mkdtemp(path.join(os.tmpdir(), 'btca-just-bash-'));
 		try {
 			const resourceName = `repo-${randomUUID()}`;
@@ -68,9 +80,9 @@ describe('VirtualFs (just-bash)', () => {
 			await fs.mkdir(path.join(sourceDir, '.git'), { recursive: true });
 			await fs.writeFile(path.join(sourceDir, '.git', 'HEAD'), 'ref: refs/heads/main');
 
-			await VirtualFs.mkdir(collectionPath, { recursive: true }, vfsId);
+			await mkdirVirtualFs(collectionPath, { recursive: true }, vfsId);
 
-			await VirtualFs.importDirectoryFromDisk({
+			await importDirectoryIntoVirtualFs({
 				sourcePath: sourceDir,
 				destinationPath: resourcePath,
 				vfsId,
@@ -82,26 +94,26 @@ describe('VirtualFs (just-bash)', () => {
 				}
 			});
 
-			expect(await VirtualFs.exists(posix.join(resourcePath, 'README.md'), vfsId)).toBe(true);
-			expect(await VirtualFs.exists(posix.join(resourcePath, '.git', 'HEAD'), vfsId)).toBe(false);
+			expect(await existsInVirtualFs(posix.join(resourcePath, 'README.md'), vfsId)).toBe(true);
+			expect(await existsInVirtualFs(posix.join(resourcePath, '.git', 'HEAD'), vfsId)).toBe(false);
 
 			const context = { basePath: collectionPath, vfsId };
 
-			const listResult = await ListTool.execute({ path: '.' }, context);
+			const listResult = await executeListTool({ path: '.' }, context);
 			expect(listResult.metadata.entries.some((entry) => entry.name === resourceName)).toBe(true);
 
-			const readResult = await ReadTool.execute({ path: `${resourceName}/README.md` }, context);
+			const readResult = await executeReadTool({ path: `${resourceName}/README.md` }, context);
 			expect(readResult.output).toContain('needle');
 
-			const globResult = await GlobTool.execute({ pattern: '**/*.ts' }, context);
+			const globResult = await executeGlobTool({ pattern: '**/*.ts' }, context);
 			expect(globResult.output.split('\n')).toContain(`${resourceName}/src/index.ts`);
 
-			const grepResult = await GrepTool.execute({ pattern: 'needle' }, context);
+			const grepResult = await executeGrepTool({ pattern: 'needle' }, context);
 			expect(grepResult.output).toContain(`${resourceName}/README.md`);
 		} finally {
 			await cleanupVirtual(root, vfsId);
 			await fs.rm(sourceDir, { recursive: true, force: true });
-			VirtualFs.dispose(vfsId);
+			disposeVirtualFs(vfsId);
 		}
 	});
 });

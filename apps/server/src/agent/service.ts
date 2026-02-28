@@ -4,22 +4,22 @@
  */
 import { Effect } from 'effect';
 
-import { Config } from '../config/index.ts';
+import type { ConfigService as ConfigServiceShape } from '../config/index.ts';
 import { getErrorHint, getErrorMessage, type TaggedErrorOptions } from '../errors.ts';
-import { Metrics } from '../metrics/index.ts';
-import { Auth, getSupportedProviders } from '../providers/index.ts';
+import { metricsError, metricsErrorInfo, metricsInfo } from '../metrics/index.ts';
+import {
+	getAuthenticatedProviders,
+	getProviderAuthHint,
+	getSupportedProviders,
+	isAuthenticated
+} from '../providers/index.ts';
 import type { CollectionResult } from '../collections/types.ts';
 import { clearVirtualCollectionMetadata } from '../collections/virtual-metadata.ts';
-import { VirtualFs } from '../vfs/virtual-fs.ts';
+import { disposeVirtualFs } from '../vfs/virtual-fs.ts';
 import type { AgentResult } from './types.ts';
-import { AgentLoop } from './loop.ts';
+import { runAgentLoop, streamAgentLoop, type AgentEvent } from './loop.ts';
 
-export namespace Agent {
-	// ─────────────────────────────────────────────────────────────────────────────
-	// Error Classes
-	// ─────────────────────────────────────────────────────────────────────────────
-
-	export class AgentError extends Error {
+export class AgentError extends Error {
 		readonly _tag = 'AgentError';
 		override readonly cause?: unknown;
 		readonly hint?: string;
@@ -31,7 +31,7 @@ export namespace Agent {
 		}
 	}
 
-	export class InvalidProviderError extends Error {
+export class InvalidProviderError extends Error {
 		readonly _tag = 'InvalidProviderError';
 		readonly providerId: string;
 		readonly availableProviders: string[];
@@ -47,7 +47,7 @@ export namespace Agent {
 		}
 	}
 
-	export class InvalidModelError extends Error {
+export class InvalidModelError extends Error {
 		readonly _tag = 'InvalidModelError';
 		readonly providerId: string;
 		readonly modelId: string;
@@ -67,7 +67,7 @@ export namespace Agent {
 		}
 	}
 
-	export class ProviderNotConnectedError extends Error {
+export class ProviderNotConnectedError extends Error {
 		readonly _tag = 'ProviderNotConnectedError';
 		readonly providerId: string;
 		readonly connectedProviders: string[];
@@ -77,7 +77,7 @@ export namespace Agent {
 			super(`Provider "${args.providerId}" is not connected`);
 			this.providerId = args.providerId;
 			this.connectedProviders = args.connectedProviders;
-			const baseHint = Auth.getProviderAuthHint(args.providerId);
+			const baseHint = getProviderAuthHint(args.providerId);
 			if (args.connectedProviders.length > 0) {
 				this.hint = `${baseHint} Connected providers: ${args.connectedProviders.join(', ')}.`;
 			} else {
@@ -86,19 +86,15 @@ export namespace Agent {
 		}
 	}
 
-	// ─────────────────────────────────────────────────────────────────────────────
-	// Service Type
-	// ─────────────────────────────────────────────────────────────────────────────
-
-	export type Service = {
+export type AgentService = {
 		askStream: (args: { collection: CollectionResult; question: string }) => Promise<{
-			stream: AsyncIterable<AgentLoop.AgentEvent>;
+			stream: AsyncIterable<AgentEvent>;
 			model: { provider: string; model: string };
 		}>;
 		askStreamEffect: (
 			args: { collection: CollectionResult; question: string }
 		) => Effect.Effect<{
-			stream: AsyncIterable<AgentLoop.AgentEvent>;
+			stream: AsyncIterable<AgentEvent>;
 			model: { provider: string; model: string };
 		}, unknown>;
 
@@ -117,15 +113,13 @@ export namespace Agent {
 		}, unknown>;
 	};
 
-	// ─────────────────────────────────────────────────────────────────────────────
-	// Service Factory
-	// ─────────────────────────────────────────────────────────────────────────────
+export type Service = AgentService;
 
-	export const create = (config: Config.Service): Service => {
+export const createAgentService = (config: ConfigServiceShape): AgentService => {
 		const cleanupCollection = (collection: CollectionResult) =>
 			Effect.promise(async () => {
 				if (collection.vfsId) {
-					VirtualFs.dispose(collection.vfsId);
+					disposeVirtualFs(collection.vfsId);
 					clearVirtualCollectionMetadata(collection.vfsId);
 				}
 				try {
@@ -136,10 +130,10 @@ export namespace Agent {
 			});
 
 		const ensureProviderConnected = Effect.fn(function* () {
-			const isAuthed = yield* Effect.tryPromise(() => Auth.isAuthenticated(config.provider));
+			const isAuthed = yield* Effect.tryPromise(() => isAuthenticated(config.provider));
 			const requiresAuth = config.provider !== 'opencode' && config.provider !== 'openai-compat';
 			if (isAuthed || !requiresAuth) return;
-			const authenticated = yield* Effect.tryPromise(() => Auth.getAuthenticatedProviders());
+			const authenticated = yield* Effect.tryPromise(() => getAuthenticatedProviders());
 			yield* Effect.fail(
 				new ProviderNotConnectedError({
 					providerId: config.provider,
@@ -151,8 +145,8 @@ export namespace Agent {
 		/**
 		 * Ask a question and stream the response using the new AI SDK loop
 		 */
-		const askStream: Service['askStream'] = async ({ collection, question }) => {
-			Metrics.info('agent.ask.start', {
+		const askStream: AgentService['askStream'] = async ({ collection, question }) => {
+			metricsInfo('agent.ask.start', {
 				provider: config.provider,
 				model: config.model,
 				questionLength: question.length
@@ -168,7 +162,7 @@ export namespace Agent {
 			// Create a generator that wraps the AgentLoop stream
 			const eventGenerator = (async function* () {
 				try {
-					const stream = AgentLoop.stream({
+					const stream = streamAgentLoop({
 						providerId: config.provider,
 						modelId: config.model,
 						maxSteps: config.maxSteps,
@@ -195,10 +189,10 @@ export namespace Agent {
 		/**
 		 * Ask a question and return the complete response
 		 */
-		const ask: Service['ask'] = async ({ collection, question }) => {
+		const ask: AgentService['ask'] = async ({ collection, question }) => {
 			return Effect.runPromise(
 				Effect.gen(function* () {
-					Metrics.info('agent.ask.start', {
+					metricsInfo('agent.ask.start', {
 						provider: config.provider,
 						model: config.model,
 						questionLength: question.length
@@ -208,7 +202,7 @@ export namespace Agent {
 
 					const result = yield* Effect.tryPromise({
 						try: () =>
-							AgentLoop.run({
+							runAgentLoop({
 								providerId: config.provider,
 								modelId: config.model,
 								maxSteps: config.maxSteps,
@@ -228,7 +222,7 @@ export namespace Agent {
 							})
 					});
 
-					Metrics.info('agent.ask.complete', {
+					metricsInfo('agent.ask.complete', {
 						provider: config.provider,
 						model: config.model,
 						answerLength: result.answer.length,
@@ -242,7 +236,7 @@ export namespace Agent {
 					};
 				}).pipe(
 					Effect.tapError((error) =>
-						Effect.sync(() => Metrics.error('agent.ask.error', { error: Metrics.errorInfo(error) }))
+						Effect.sync(() => metricsError('agent.ask.error', { error: metricsErrorInfo(error) }))
 					),
 					Effect.ensuring(cleanupCollection(collection))
 				)
@@ -252,12 +246,12 @@ export namespace Agent {
 		/**
 		 * List available providers using local auth data
 		 */
-		const listProviders: Service['listProviders'] = async () => {
+		const listProviders: AgentService['listProviders'] = async () => {
 			return Effect.runPromise(
 				Effect.gen(function* () {
 					const supportedProviders = getSupportedProviders();
 					const authenticatedProviders = yield* Effect.tryPromise(() =>
-						Auth.getAuthenticatedProviders()
+						getAuthenticatedProviders()
 					);
 					const all = supportedProviders.map((id) => ({
 						id,
@@ -272,17 +266,17 @@ export namespace Agent {
 			);
 		};
 
-		const askStreamEffect: Service['askStreamEffect'] = (args) =>
+		const askStreamEffect: AgentService['askStreamEffect'] = (args) =>
 			Effect.tryPromise({
 				try: () => askStream(args),
 				catch: (cause) => cause
 			});
-		const askEffect: Service['askEffect'] = (args) =>
+		const askEffect: AgentService['askEffect'] = (args) =>
 			Effect.tryPromise({
 				try: () => ask(args),
 				catch: (cause) => cause
 			});
-		const listProvidersEffect: Service['listProvidersEffect'] = () =>
+		const listProvidersEffect: AgentService['listProvidersEffect'] = () =>
 			Effect.tryPromise({
 				try: () => listProviders(),
 				catch: (cause) => cause
@@ -297,4 +291,3 @@ export namespace Agent {
 			listProvidersEffect
 		};
 	};
-}

@@ -112,9 +112,7 @@ async function fileExists(filePath: string): Promise<boolean> {
 async function handleCliSetup(cwd: string, configPath: string, force?: boolean): Promise<void> {
 	if (await fileExists(configPath)) {
 		if (!force) {
-			console.error(`\nError: ${PROJECT_CONFIG_FILENAME} already exists.`);
-			console.error('Use --force to overwrite.');
-			process.exit(1);
+			throw new Error(`${PROJECT_CONFIG_FILENAME} already exists. Use --force to overwrite.`);
 		}
 		console.log(`\nOverwriting existing ${PROJECT_CONFIG_FILENAME}...`);
 	}

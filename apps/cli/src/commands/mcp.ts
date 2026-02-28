@@ -386,11 +386,9 @@ export const runMcpConfigureLocalCommand = async () => {
 		console.log(`\nLocal MCP configured for ${editor} in: ${filePath}\n`);
 	} catch (error) {
 		if (error instanceof Error && error.message === 'Invalid selection') {
-			console.error('\nError: Invalid selection. Please try again.');
-		} else {
-			console.error(formatError(error));
+			throw new Error('Invalid selection. Please try again.');
 		}
-		process.exit(1);
+		throw error;
 	}
 };
 

@@ -1,6 +1,7 @@
 import select from '@inquirer/select';
 import * as readline from 'readline';
-import { ensureServer } from '../server/manager.ts';
+import { Effect } from 'effect';
+import { withServerEffect } from '../server/manager.ts';
 import { createClient, getProviders } from '../client/index.ts';
 import { removeProviderAuth } from '../lib/opencode-oauth.ts';
 
@@ -54,41 +55,49 @@ export const runDisconnectCommand = async (args: {
 	provider?: string;
 	globalOpts?: { server?: string; port?: number };
 }) => {
-	const server = await ensureServer({
-		serverUrl: args.globalOpts?.server,
-		port: args.globalOpts?.port,
-		quiet: true
-	});
-	try {
-		const client = createClient(server.url);
-		const providers = await getProviders(client);
+	return Effect.runPromise(
+		withServerEffect(
+			{
+				serverUrl: args.globalOpts?.server,
+				port: args.globalOpts?.port,
+				quiet: true
+			},
+			(server) =>
+				Effect.gen(function* () {
+					const client = createClient(server.url);
+					const providers = yield* Effect.tryPromise(() => getProviders(client));
 
-		if (providers.connected.length === 0) {
-			console.log('No providers are currently connected.');
-			return;
-		}
+					if (providers.connected.length === 0) {
+						yield* Effect.sync(() => console.log('No providers are currently connected.'));
+						return;
+					}
 
-		const provider =
-			args.provider ??
-			(await promptSelect(
-				'Select a connected provider to disconnect:',
-				providers.connected.map((id) => ({ label: id, value: id }))
-			));
+					const provider =
+						args.provider ??
+						(yield* Effect.tryPromise(() =>
+							promptSelect(
+								'Select a connected provider to disconnect:',
+								providers.connected.map((id) => ({ label: id, value: id }))
+							)
+						));
 
-		if (!providers.connected.includes(provider)) {
-			console.error(`Provider "${provider}" is not connected.`);
-			process.exit(1);
-		}
+					if (!providers.connected.includes(provider)) {
+						yield* Effect.fail(new Error(`Provider "${provider}" is not connected.`));
+					}
 
-		const removed = await removeProviderAuth(provider);
-		if (!removed) {
-			console.warn(
-				`No saved credentials found for "${provider}". If it's still connected, check env vars.`
-			);
-		} else {
-			console.log(`Disconnected "${provider}" and removed saved credentials.`);
-		}
-	} finally {
-		server.stop();
-	}
+					const removed = yield* Effect.tryPromise(() => removeProviderAuth(provider));
+					if (!removed) {
+						yield* Effect.sync(() =>
+							console.warn(
+								`No saved credentials found for "${provider}". If it's still connected, check env vars.`
+							)
+						);
+					} else {
+						yield* Effect.sync(() =>
+							console.log(`Disconnected "${provider}" and removed saved credentials.`)
+						);
+					}
+				})
+		)
+	);
 };

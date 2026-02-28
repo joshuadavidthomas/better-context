@@ -236,12 +236,13 @@ const root = pipe(
 export const runEffectCli = async (
 	argv: ReadonlyArray<string>,
 	version: string
-): Promise<void> => {
+): Promise<number> => {
 	const run = Command.runWith(root, { version });
 	const cliEffect = run(argv.slice(2)).pipe(Effect.provide(BunServices.layer));
 	const exit = await Effect.runPromiseExit(cliEffect);
 	if (Exit.isFailure(exit)) {
 		console.error(formatCliCommandError(Cause.squash(exit.cause)));
-		process.exit(1);
+		return 1;
 	}
+	return 0;
 };

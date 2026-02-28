@@ -1,10 +1,11 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
+import { parseJsonc } from '@btca/shared';
 import { z } from 'zod';
 
 import { CommonHints, type TaggedErrorOptions } from '../errors.ts';
-import { Metrics } from '../metrics/index.ts';
+import { metricsError, metricsInfo } from '../metrics/index.ts';
 import { GitResourceSchema, type GitResource } from '../resources/schema.ts';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -90,109 +91,6 @@ const expandHome = (filePath: string): string => {
 	return filePath;
 };
 
-const stripJsonc = (content: string): string => {
-	// Remove // and /* */ comments without touching strings.
-	let out = '';
-	let i = 0;
-	let inString = false;
-	let quote: '"' | "'" | null = null;
-	let escaped = false;
-
-	while (i < content.length) {
-		const ch = content[i] ?? '';
-		const next = content[i + 1] ?? '';
-
-		if (inString) {
-			out += ch;
-			if (escaped) escaped = false;
-			else if (ch === '\\') escaped = true;
-			else if (quote && ch === quote) {
-				inString = false;
-				quote = null;
-			}
-			i += 1;
-			continue;
-		}
-
-		if (ch === '/' && next === '/') {
-			i += 2;
-			while (i < content.length && content[i] !== '\n') i += 1;
-			continue;
-		}
-
-		if (ch === '/' && next === '*') {
-			i += 2;
-			while (i < content.length) {
-				if (content[i] === '*' && content[i + 1] === '/') {
-					i += 2;
-					break;
-				}
-				i += 1;
-			}
-			continue;
-		}
-
-		if (ch === '"' || ch === "'") {
-			inString = true;
-			quote = ch;
-			out += ch;
-			i += 1;
-			continue;
-		}
-
-		out += ch;
-		i += 1;
-	}
-
-	// Remove trailing commas (outside strings).
-	let normalized = '';
-	inString = false;
-	quote = null;
-	escaped = false;
-	i = 0;
-
-	while (i < out.length) {
-		const ch = out[i] ?? '';
-
-		if (inString) {
-			normalized += ch;
-			if (escaped) escaped = false;
-			else if (ch === '\\') escaped = true;
-			else if (quote && ch === quote) {
-				inString = false;
-				quote = null;
-			}
-			i += 1;
-			continue;
-		}
-
-		if (ch === '"' || ch === "'") {
-			inString = true;
-			quote = ch;
-			normalized += ch;
-			i += 1;
-			continue;
-		}
-
-		if (ch === ',') {
-			let j = i + 1;
-			while (j < out.length && /\s/.test(out[j] ?? '')) j += 1;
-			const nextNonWs = out[j] ?? '';
-			if (nextNonWs === ']' || nextNonWs === '}') {
-				i += 1;
-				continue;
-			}
-		}
-
-		normalized += ch;
-		i += 1;
-	}
-
-	return normalized.trim();
-};
-
-const parseJsonc = (content: string): unknown => JSON.parse(stripJsonc(content));
-
 const readJsonFile = async (filePath: string) => {
 	try {
 		const content = await Bun.file(filePath).text();
@@ -211,29 +109,21 @@ const readJsoncFile = async (filePath: string) => {
 	}
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Remote Config Namespace
-// ─────────────────────────────────────────────────────────────────────────────
-
-export namespace RemoteConfigService {
-	/**
-	 * Get the path to the remote auth file
-	 */
-	export function getAuthPath(): string {
+export function getAuthPath(): string {
 		return `${expandHome(GLOBAL_CONFIG_DIR)}/${REMOTE_AUTH_FILENAME}`;
 	}
 
 	/**
 	 * Get the path to the remote config file in the current directory
 	 */
-	export function getConfigPath(cwd: string = process.cwd()): string {
+export function getConfigPath(cwd: string = process.cwd()): string {
 		return `${cwd}/${REMOTE_CONFIG_FILENAME}`;
 	}
 
 	/**
 	 * Check if the user is authenticated with remote
 	 */
-	export async function isAuthenticated(): Promise<boolean> {
+export async function isAuthenticated(): Promise<boolean> {
 		const authPath = getAuthPath();
 		const parsed = await readJsonFile(authPath);
 		if (!parsed) return false;
@@ -244,13 +134,13 @@ export namespace RemoteConfigService {
 	/**
 	 * Load the remote auth credentials
 	 */
-	export async function loadAuth(): Promise<RemoteAuth | null> {
+export async function loadAuth(): Promise<RemoteAuth | null> {
 		const authPath = getAuthPath();
 		const parsed = await readJsonFile(authPath);
 		if (!parsed) return null;
 		const authResult = RemoteAuthSchema.safeParse(parsed);
 		if (!authResult.success) {
-			Metrics.error('remote.auth.invalid', { path: authPath, error: authResult.error.message });
+			metricsError('remote.auth.invalid', { path: authPath, error: authResult.error.message });
 			return null;
 		}
 		return authResult.data;
@@ -259,7 +149,7 @@ export namespace RemoteConfigService {
 	/**
 	 * Save remote auth credentials
 	 */
-	export async function saveAuth(auth: RemoteAuth): Promise<void> {
+export async function saveAuth(auth: RemoteAuth): Promise<void> {
 		const authPath = getAuthPath();
 		const configDir = path.dirname(authPath);
 		try {
@@ -273,17 +163,17 @@ export namespace RemoteConfigService {
 				cause
 			});
 		}
-		Metrics.info('remote.auth.saved', { path: authPath });
+		metricsInfo('remote.auth.saved', { path: authPath });
 	}
 
 	/**
 	 * Delete remote auth credentials (unlink)
 	 */
-	export async function deleteAuth(): Promise<void> {
+export async function deleteAuth(): Promise<void> {
 		const authPath = getAuthPath();
 		try {
 			await fs.unlink(authPath);
-			Metrics.info('remote.auth.deleted', { path: authPath });
+			metricsInfo('remote.auth.deleted', { path: authPath });
 		} catch {
 			return;
 		}
@@ -292,7 +182,7 @@ export namespace RemoteConfigService {
 	/**
 	 * Check if a remote config file exists in the current directory
 	 */
-	export async function configExists(cwd: string = process.cwd()): Promise<boolean> {
+export async function configExists(cwd: string = process.cwd()): Promise<boolean> {
 		const configPath = getConfigPath(cwd);
 		return Bun.file(configPath).exists();
 	}
@@ -300,7 +190,7 @@ export namespace RemoteConfigService {
 	/**
 	 * Load the remote config from the current directory
 	 */
-	export async function loadConfig(cwd: string = process.cwd()): Promise<RemoteConfig | null> {
+export async function loadConfig(cwd: string = process.cwd()): Promise<RemoteConfig | null> {
 		const configPath = getConfigPath(cwd);
 
 		const parsed = await readJsoncFile(configPath);
@@ -318,7 +208,7 @@ export namespace RemoteConfigService {
 			});
 		}
 
-		Metrics.info('remote.config.loaded', {
+		metricsInfo('remote.config.loaded', {
 			path: configPath,
 			project: parsedResult.data.project,
 			resourceCount: parsedResult.data.resources.length
@@ -330,7 +220,7 @@ export namespace RemoteConfigService {
 	/**
 	 * Save the remote config to the current directory
 	 */
-	export async function saveConfig(
+export async function saveConfig(
 		config: RemoteConfig,
 		cwd: string = process.cwd()
 	): Promise<void> {
@@ -350,7 +240,7 @@ export namespace RemoteConfigService {
 				cause
 			});
 		}
-		Metrics.info('remote.config.saved', {
+		metricsInfo('remote.config.saved', {
 			path: configPath,
 			project: config.project,
 			resourceCount: config.resources.length
@@ -360,7 +250,7 @@ export namespace RemoteConfigService {
 	/**
 	 * Create a new remote config with defaults
 	 */
-	export function createDefaultConfig(projectName: string): RemoteConfig {
+export function createDefaultConfig(projectName: string): RemoteConfig {
 		return {
 			project: projectName,
 			model: 'claude-haiku',
@@ -371,7 +261,7 @@ export namespace RemoteConfigService {
 	/**
 	 * Add a resource to the remote config
 	 */
-	export async function addResource(
+export async function addResource(
 		resource: GitResource,
 		cwd: string = process.cwd()
 	): Promise<RemoteConfig> {
@@ -404,7 +294,7 @@ export namespace RemoteConfigService {
 	/**
 	 * Remove a resource from the remote config
 	 */
-	export async function removeResource(
+export async function removeResource(
 		name: string,
 		cwd: string = process.cwd()
 	): Promise<RemoteConfig> {
@@ -437,7 +327,7 @@ export namespace RemoteConfigService {
 	/**
 	 * Update the model in the remote config
 	 */
-	export async function updateModel(
+export async function updateModel(
 		model: RemoteModelId,
 		cwd: string = process.cwd()
 	): Promise<RemoteConfig> {
@@ -450,8 +340,7 @@ export namespace RemoteConfigService {
 			});
 		}
 
-		config = { ...config, model };
-		await saveConfig(config, cwd);
-		return config;
-	}
+	config = { ...config, model };
+	await saveConfig(config, cwd);
+	return config;
 }

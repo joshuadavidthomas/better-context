@@ -1,6 +1,6 @@
 import { createOpenAI } from '@ai-sdk/openai';
 import * as os from 'node:os';
-import { Auth } from './auth.ts';
+import { getCredentials, setCredentials } from './auth.ts';
 
 const CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann';
 const ISSUER = 'https://auth.openai.com';
@@ -165,7 +165,7 @@ export function createOpenAICodex(
 	} = {}
 ) {
 	const customFetch = (async (requestInput, init) => {
-		const storedAuth = await Auth.getCredentials('openai');
+		const storedAuth = await getCredentials('openai');
 		let accessToken = options.apiKey;
 		let accountId = options.accountId;
 
@@ -178,7 +178,7 @@ export function createOpenAICodex(
 				const refreshedAccountId = extractAccountId(tokens) ?? accountId;
 				accessToken = tokens.access_token;
 				accountId = refreshedAccountId;
-				await Auth.setCredentials('openai', {
+				await setCredentials('openai', {
 					type: 'oauth',
 					refresh: tokens.refresh_token ?? storedAuth.refresh,
 					access: tokens.access_token,

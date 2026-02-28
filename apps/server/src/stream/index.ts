@@ -1,4 +1,4 @@
-export { StreamService } from './service.ts';
+export { createSseStream } from './service.ts';
 export {
 	BtcaStreamEventSchema,
 	BtcaStreamMetaEventSchema,

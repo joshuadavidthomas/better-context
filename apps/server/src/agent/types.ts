@@ -1,7 +1,7 @@
-import type { AgentLoop } from './loop.ts';
+import type { AgentEvent } from './loop.ts';
 
 export type AgentResult = {
 	answer: string;
 	model: { provider: string; model: string };
-	events: AgentLoop.AgentEvent[];
+	events: AgentEvent[];
 };

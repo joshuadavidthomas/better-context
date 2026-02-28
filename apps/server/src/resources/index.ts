@@ -1,5 +1,6 @@
 export { ResourceError } from './helpers.ts';
-export { Resources } from './service.ts';
+export { createResourcesService, createAnonymousResource, resolveResourceDefinition } from './service.ts';
+export type { ResourcesService } from './service.ts';
 export {
 	GitResourceSchema,
 	LocalResourceSchema,

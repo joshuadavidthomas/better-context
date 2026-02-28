@@ -3,14 +3,21 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 
-import { Agent } from './service.ts';
-import { Config } from '../config/index.ts';
+import { createAgentService } from './service.ts';
+import { load as loadConfig } from '../config/index.ts';
 import type { CollectionResult } from '../collections/types.ts';
 import {
 	getVirtualCollectionMetadata,
 	setVirtualCollectionMetadata
 } from '../collections/virtual-metadata.ts';
-import { VirtualFs } from '../vfs/virtual-fs.ts';
+import {
+	createVirtualFs,
+	hasVirtualFs,
+	mkdirVirtualFs,
+	writeVirtualFsFile
+} from '../vfs/virtual-fs.ts';
+
+const Config = { load: loadConfig } as const;
 
 describe('Agent', () => {
 	let testDir: string;
@@ -34,7 +41,7 @@ describe('Agent', () => {
 		it('creates an agent service with ask and askStream methods', async () => {
 			process.chdir(testDir);
 			const config = await Config.load();
-			const agent = Agent.create(config);
+			const agent = createAgentService(config);
 
 			expect(agent).toBeDefined();
 			expect(typeof agent.ask).toBe('function');
@@ -48,11 +55,11 @@ describe('Agent', () => {
 		it('asks a question and receives an answer', async () => {
 			process.chdir(testDir);
 			const config = await Config.load();
-			const agent = Agent.create(config);
+			const agent = createAgentService(config);
 
-			const vfsId = VirtualFs.create();
-			await VirtualFs.mkdir('/', { recursive: true }, vfsId);
-			await VirtualFs.writeFile(
+			const vfsId = createVirtualFs();
+			await mkdirVirtualFs('/', { recursive: true }, vfsId);
+			await writeVirtualFsFile(
 				'/README.md',
 				'# Test Documentation\n\nThis is a test file. The answer to life is 42.',
 				vfsId
@@ -83,11 +90,11 @@ describe('Agent', () => {
 		it('handles askStream and receives events', async () => {
 			process.chdir(testDir);
 			const config = await Config.load();
-			const agent = Agent.create(config);
+			const agent = createAgentService(config);
 
-			const vfsId = VirtualFs.create();
-			await VirtualFs.mkdir('/', { recursive: true }, vfsId);
-			await VirtualFs.writeFile('/data.txt', 'The capital of France is Paris.', vfsId);
+			const vfsId = createVirtualFs();
+			await mkdirVirtualFs('/', { recursive: true }, vfsId);
+			await writeVirtualFsFile('/data.txt', 'The capital of France is Paris.', vfsId);
 
 			const collection: CollectionResult = {
 				path: '/',
@@ -118,12 +125,12 @@ describe('Agent', () => {
 		it('cleans up virtual collections after ask', async () => {
 			process.chdir(testDir);
 			const config = await Config.load();
-			const agent = Agent.create(config);
+			const agent = createAgentService(config);
 
-			const vfsId = VirtualFs.create();
-			await VirtualFs.mkdir('/', { recursive: true }, vfsId);
-			await VirtualFs.mkdir('/docs', { recursive: true }, vfsId);
-			await VirtualFs.writeFile('/docs/README.md', 'Virtual README\nThe answer is 42.', vfsId);
+			const vfsId = createVirtualFs();
+			await mkdirVirtualFs('/', { recursive: true }, vfsId);
+			await mkdirVirtualFs('/docs', { recursive: true }, vfsId);
+			await writeVirtualFsFile('/docs/README.md', 'Virtual README\nThe answer is 42.', vfsId);
 
 			setVirtualCollectionMetadata({
 				vfsId,
@@ -153,19 +160,19 @@ describe('Agent', () => {
 			});
 
 			expect(result).toBeDefined();
-			expect(VirtualFs.has(vfsId)).toBe(false);
+			expect(hasVirtualFs(vfsId)).toBe(false);
 			expect(getVirtualCollectionMetadata(vfsId)).toBeUndefined();
 		}, 60000);
 
 		it('cleans up virtual collections after askStream', async () => {
 			process.chdir(testDir);
 			const config = await Config.load();
-			const agent = Agent.create(config);
+			const agent = createAgentService(config);
 
-			const vfsId = VirtualFs.create();
-			await VirtualFs.mkdir('/', { recursive: true }, vfsId);
-			await VirtualFs.mkdir('/docs', { recursive: true }, vfsId);
-			await VirtualFs.writeFile(
+			const vfsId = createVirtualFs();
+			await mkdirVirtualFs('/', { recursive: true }, vfsId);
+			await mkdirVirtualFs('/docs', { recursive: true }, vfsId);
+			await writeVirtualFsFile(
 				'/docs/README.md',
 				'Virtual README\nThe capital of France is Paris.',
 				vfsId
@@ -202,7 +209,7 @@ describe('Agent', () => {
 				// drain stream to trigger cleanup
 			}
 
-			expect(VirtualFs.has(vfsId)).toBe(false);
+			expect(hasVirtualFs(vfsId)).toBe(false);
 			expect(getVirtualCollectionMetadata(vfsId)).toBeUndefined();
 		}, 60000);
 	});

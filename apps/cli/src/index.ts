@@ -1,4 +1,4 @@
-import { Effect } from 'effect';
+import { Cause, Effect, Exit } from 'effect';
 import { launchRepl } from './commands/repl.ts';
 import { launchTui } from './commands/tui.ts';
 import { runEffectCli } from './effect/cli-app.ts';
@@ -188,14 +188,15 @@ if (firstOperand() === null && !shouldDelegateRoot()) {
 		await launchTui(launchOptions);
 	});
 
-	try {
-		await runtime.runPromise(launchEffect);
-	} catch (error) {
-		console.error('Error:', formatCliError(error));
+	const launchExit = await runtime.runPromiseExit(launchEffect);
+	await runtime.dispose();
+	if (Exit.isFailure(launchExit)) {
+		console.error('Error:', formatCliError(Cause.squash(launchExit.cause)));
 		process.exit(1);
-	} finally {
-		await runtime.dispose();
 	}
 } else {
-	await runEffectCli(process.argv, VERSION);
+	const exitCode = await runEffectCli(process.argv, VERSION);
+	if (exitCode !== 0) {
+		process.exit(exitCode);
+	}
 }
