@@ -11,7 +11,8 @@ import { Agent } from './agent/service.ts';
 import { Collections } from './collections/service.ts';
 import { getCollectionKey } from './collections/types.ts';
 import { Config } from './config/index.ts';
-import { getErrorMessage, getErrorTag, getErrorHint } from './errors.ts';
+import { toHttpErrorPayload } from './effect/errors.ts';
+import { createServerRuntime } from './effect/runtime.ts';
 import { Metrics } from './metrics/index.ts';
 import { ModelsDevPricing } from './pricing/models-dev.ts';
 import { Resources } from './resources/service.ts';
@@ -176,26 +177,6 @@ const decodeJson = <T>(
 		}
 		return parsed.data;
 	});
-
-const getHttpStatusFromErrorTag = (tag: string) => {
-	if (
-		tag === 'RequestError' ||
-		tag === 'CollectionError' ||
-		tag === 'ResourceError' ||
-		tag === 'ConfigError' ||
-		tag === 'InvalidProviderError' ||
-		tag === 'InvalidModelError' ||
-		tag === 'ProviderNotAuthenticatedError' ||
-		tag === 'ProviderAuthTypeError' ||
-		tag === 'ProviderNotFoundError' ||
-		tag === 'ProviderNotConnectedError' ||
-		tag === 'ProviderOptionsError'
-	) {
-		return 400;
-	}
-	if (tag === 'RouteNotFound') return 404;
-	return 500;
-};
 
 const getRequest = Effect.contextWith((context) =>
 	EffectContext.get(context, HttpServerRequest.HttpServerRequest)
@@ -458,11 +439,11 @@ const createApp = (deps: {
 		HttpRouter.catchAllCause((cause) => {
 			const error = Cause.squash(cause);
 			Metrics.error('http.error', { error: Metrics.errorInfo(error) });
-			const tag = getErrorTag(error);
-			const message = getErrorMessage(error);
-			const hint = getErrorHint(error);
-			const status = getHttpStatusFromErrorTag(tag);
-			return HttpServerResponse.unsafeJson({ error: message, tag, ...(hint && { hint }) }, { status });
+			const payload = toHttpErrorPayload(error);
+			return HttpServerResponse.unsafeJson(
+				{ error: payload.error, tag: payload.tag, ...(payload.hint && { hint: payload.hint }) },
+				{ status: payload.status }
+			);
 		})
 	);
 };
@@ -502,8 +483,9 @@ export const startServer = async (options: StartServerOptions = {}): Promise<Ser
 	const resources = Resources.create(config);
 	const collections = Collections.create({ config, resources });
 	const agent = Agent.create(config);
+	const runtime = createServerRuntime();
 	const router = createApp({ config, resources, collections, agent });
-	const httpApp = Effect.runSync(HttpRouter.toHttpApp(router));
+	const httpApp = await runtime.runPromise(HttpRouter.toHttpApp(router));
 	const handler = HttpApp.toWebHandler(httpApp as HttpApp.Default<unknown, Scope.Scope>);
 
 	const server = Bun.serve({
@@ -522,6 +504,7 @@ export const startServer = async (options: StartServerOptions = {}): Promise<Ser
 			VirtualFs.disposeAll();
 			clearAllVirtualCollectionMetadata();
 			server.stop();
+			void runtime.dispose();
 		}
 	};
 };

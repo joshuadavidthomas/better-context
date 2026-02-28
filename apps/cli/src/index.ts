@@ -1,5 +1,5 @@
-import { Result } from 'better-result';
 import { Command } from 'commander';
+import { Effect } from 'effect';
 import { addCommand } from './commands/add.ts';
 import { askCommand } from './commands/ask.ts';
 import { clearCommand } from './commands/clear.ts';
@@ -17,6 +17,8 @@ import { telemetryCommand } from './commands/telemetry.ts';
 import { launchTui } from './commands/tui.ts';
 import { launchRepl } from './commands/repl.ts';
 import { wipeCommand } from './commands/wipe.ts';
+import { formatCliError } from './effect/errors.ts';
+import { createCliRuntime } from './effect/runtime.ts';
 import { setTelemetryContext } from './lib/telemetry.ts';
 import packageJson from '../package.json';
 
@@ -178,21 +180,22 @@ program.action(async (...actionArgs: unknown[]) => {
 		subAgent?: boolean;
 	};
 
-	const result = await Result.tryPromise(async () => {
-		// --no-tui sets tui to false
+	const runtime = createCliRuntime();
+	const launchEffect = Effect.tryPromise(async () => {
 		if (typedOptions.tui === false) {
 			await launchRepl(typedOptions);
-		} else {
-			await launchTui(typedOptions);
+			return;
 		}
+		await launchTui(typedOptions);
 	});
 
-	if (Result.isError(result)) {
-		console.error(
-			'Error:',
-			result.error instanceof Error ? result.error.message : String(result.error)
-		);
+	try {
+		await runtime.runPromise(launchEffect);
+	} catch (error) {
+		console.error('Error:', formatCliError(error));
 		process.exit(1);
+	} finally {
+		await runtime.dispose();
 	}
 });
 
