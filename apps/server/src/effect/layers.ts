@@ -1,11 +1,11 @@
 import { Layer, ServiceMap, pipe } from 'effect';
 import type { AgentService as AgentServiceShape } from '../agent/service.ts';
 import type { CollectionsService as CollectionsServiceShape } from '../collections/service.ts';
-import type { Config } from '../config/index.ts';
+import type { ConfigService as ConfigServiceShape } from '../config/index.ts';
 import { AgentService, CollectionsService, ConfigService } from './services.ts';
 
 export type ServerLayerDependencies = {
-	config: Config.Service;
+	config: ConfigServiceShape;
 	collections: CollectionsServiceShape;
 	agent: AgentServiceShape;
 };

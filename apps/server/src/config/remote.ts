@@ -211,29 +211,21 @@ const readJsoncFile = async (filePath: string) => {
 	}
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Remote Config Namespace
-// ─────────────────────────────────────────────────────────────────────────────
-
-export namespace RemoteConfigService {
-	/**
-	 * Get the path to the remote auth file
-	 */
-	export function getAuthPath(): string {
+export function getAuthPath(): string {
 		return `${expandHome(GLOBAL_CONFIG_DIR)}/${REMOTE_AUTH_FILENAME}`;
 	}
 
 	/**
 	 * Get the path to the remote config file in the current directory
 	 */
-	export function getConfigPath(cwd: string = process.cwd()): string {
+export function getConfigPath(cwd: string = process.cwd()): string {
 		return `${cwd}/${REMOTE_CONFIG_FILENAME}`;
 	}
 
 	/**
 	 * Check if the user is authenticated with remote
 	 */
-	export async function isAuthenticated(): Promise<boolean> {
+export async function isAuthenticated(): Promise<boolean> {
 		const authPath = getAuthPath();
 		const parsed = await readJsonFile(authPath);
 		if (!parsed) return false;
@@ -244,7 +236,7 @@ export namespace RemoteConfigService {
 	/**
 	 * Load the remote auth credentials
 	 */
-	export async function loadAuth(): Promise<RemoteAuth | null> {
+export async function loadAuth(): Promise<RemoteAuth | null> {
 		const authPath = getAuthPath();
 		const parsed = await readJsonFile(authPath);
 		if (!parsed) return null;
@@ -259,7 +251,7 @@ export namespace RemoteConfigService {
 	/**
 	 * Save remote auth credentials
 	 */
-	export async function saveAuth(auth: RemoteAuth): Promise<void> {
+export async function saveAuth(auth: RemoteAuth): Promise<void> {
 		const authPath = getAuthPath();
 		const configDir = path.dirname(authPath);
 		try {
@@ -279,7 +271,7 @@ export namespace RemoteConfigService {
 	/**
 	 * Delete remote auth credentials (unlink)
 	 */
-	export async function deleteAuth(): Promise<void> {
+export async function deleteAuth(): Promise<void> {
 		const authPath = getAuthPath();
 		try {
 			await fs.unlink(authPath);
@@ -292,7 +284,7 @@ export namespace RemoteConfigService {
 	/**
 	 * Check if a remote config file exists in the current directory
 	 */
-	export async function configExists(cwd: string = process.cwd()): Promise<boolean> {
+export async function configExists(cwd: string = process.cwd()): Promise<boolean> {
 		const configPath = getConfigPath(cwd);
 		return Bun.file(configPath).exists();
 	}
@@ -300,7 +292,7 @@ export namespace RemoteConfigService {
 	/**
 	 * Load the remote config from the current directory
 	 */
-	export async function loadConfig(cwd: string = process.cwd()): Promise<RemoteConfig | null> {
+export async function loadConfig(cwd: string = process.cwd()): Promise<RemoteConfig | null> {
 		const configPath = getConfigPath(cwd);
 
 		const parsed = await readJsoncFile(configPath);
@@ -330,7 +322,7 @@ export namespace RemoteConfigService {
 	/**
 	 * Save the remote config to the current directory
 	 */
-	export async function saveConfig(
+export async function saveConfig(
 		config: RemoteConfig,
 		cwd: string = process.cwd()
 	): Promise<void> {
@@ -360,7 +352,7 @@ export namespace RemoteConfigService {
 	/**
 	 * Create a new remote config with defaults
 	 */
-	export function createDefaultConfig(projectName: string): RemoteConfig {
+export function createDefaultConfig(projectName: string): RemoteConfig {
 		return {
 			project: projectName,
 			model: 'claude-haiku',
@@ -371,7 +363,7 @@ export namespace RemoteConfigService {
 	/**
 	 * Add a resource to the remote config
 	 */
-	export async function addResource(
+export async function addResource(
 		resource: GitResource,
 		cwd: string = process.cwd()
 	): Promise<RemoteConfig> {
@@ -404,7 +396,7 @@ export namespace RemoteConfigService {
 	/**
 	 * Remove a resource from the remote config
 	 */
-	export async function removeResource(
+export async function removeResource(
 		name: string,
 		cwd: string = process.cwd()
 	): Promise<RemoteConfig> {
@@ -437,7 +429,7 @@ export namespace RemoteConfigService {
 	/**
 	 * Update the model in the remote config
 	 */
-	export async function updateModel(
+export async function updateModel(
 		model: RemoteModelId,
 		cwd: string = process.cwd()
 	): Promise<RemoteConfig> {
@@ -450,8 +442,23 @@ export namespace RemoteConfigService {
 			});
 		}
 
-		config = { ...config, model };
-		await saveConfig(config, cwd);
-		return config;
-	}
+	config = { ...config, model };
+	await saveConfig(config, cwd);
+	return config;
 }
+
+export const RemoteConfigService = {
+	getAuthPath,
+	getConfigPath,
+	isAuthenticated,
+	loadAuth,
+	saveAuth,
+	deleteAuth,
+	configExists,
+	loadConfig,
+	saveConfig,
+	createDefaultConfig,
+	addResource,
+	removeResource,
+	updateModel
+} as const;

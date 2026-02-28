@@ -114,8 +114,7 @@ type LegacyReposConfig = z.infer<typeof LegacyReposConfigSchema>;
 type LegacyResourcesConfig = z.infer<typeof LegacyResourcesConfigSchema>;
 type LegacyRepo = z.infer<typeof LegacyRepoSchema>;
 
-export namespace Config {
-	export class ConfigError extends Error {
+export class ConfigError extends Error {
 		readonly _tag = 'ConfigError';
 		override readonly cause?: unknown;
 		readonly hint?: string;
@@ -127,7 +126,7 @@ export namespace Config {
 		}
 	}
 
-	export type Service = {
+export type ConfigService = {
 		resourcesDirectory: string;
 		resources: readonly ResourceDefinition[];
 		model: string;
@@ -158,6 +157,8 @@ export namespace Config {
 		reload: () => Promise<void>;
 		reloadEffect: () => Effect.Effect<void, unknown>;
 	};
+
+export type Service = ConfigService;
 
 	const expandHome = (path: string): string => {
 		const home = process.env.HOME ?? process.env.USERPROFILE ?? '';
@@ -538,7 +539,7 @@ export namespace Config {
 		projectConfig: StoredConfig | null,
 		resourcesDirectory: string,
 		configPath: string
-	): Service => {
+	): ConfigService => {
 		// Track configs separately to avoid resource leakage
 		let currentGlobalConfig = globalConfig;
 		let currentProjectConfig = projectConfig;
@@ -600,7 +601,7 @@ export namespace Config {
 			}
 		};
 
-		const service: Service = {
+		const service: ConfigService = {
 			resourcesDirectory,
 			configPath,
 			get resources() {
@@ -835,7 +836,7 @@ export namespace Config {
 		return service;
 	};
 
-	export const load = async (): Promise<Service> => {
+export const load = async (): Promise<ConfigService> => {
 		const cwd = process.cwd();
 		Metrics.info('config.load.start', { cwd });
 
@@ -918,4 +919,8 @@ export namespace Config {
 		);
 		return makeService(globalConfig, null, `${resolvedGlobalDataDir}/resources`, globalConfigPath);
 	};
-}
+
+export const Config = {
+	load,
+	ConfigError
+} as const;

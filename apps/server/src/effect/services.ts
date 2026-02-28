@@ -2,10 +2,10 @@ import { Effect, ServiceMap } from 'effect';
 import type { AgentService as AgentServiceShape } from '../agent/service.ts';
 import type { CollectionsService as CollectionsServiceShape } from '../collections/service.ts';
 import { getCollectionKey } from '../collections/types.ts';
-import { Config } from '../config/index.ts';
+import type { ConfigService as ConfigServiceShape } from '../config/index.ts';
 import type { ResourceDefinition } from '../resources/schema.ts';
 
-export class ConfigService extends ServiceMap.Service<ConfigService, Config.Service>()(
+export class ConfigService extends ServiceMap.Service<ConfigService, ConfigServiceShape>()(
 	'btca-server/effect/ConfigService'
 ) {}
 
@@ -129,8 +129,8 @@ export const askQuestionStream = (args: {
 export const updateModelConfig = (args: {
 	provider: string;
 	model: string;
-	providerOptions?: Parameters<Config.Service['updateModel']>[2];
-}): Effect.Effect<Awaited<ReturnType<Config.Service['updateModel']>>, unknown, ConfigService> =>
+	providerOptions?: Parameters<ConfigServiceShape['updateModel']>[2];
+}): Effect.Effect<Awaited<ReturnType<ConfigServiceShape['updateModel']>>, unknown, ConfigService> =>
 	Effect.flatMap(configService, (config) =>
 		config.updateModelEffect(args.provider, args.model, args.providerOptions)
 	);
@@ -146,7 +146,7 @@ export const removeConfigResource = (
 	Effect.flatMap(configService, (config) => config.removeResourceEffect(name));
 
 export const clearConfigResources: Effect.Effect<
-	Awaited<ReturnType<Config.Service['clearResources']>>,
+	Awaited<ReturnType<ConfigServiceShape['clearResources']>>,
 	unknown,
 	ConfigService
 > = Effect.flatMap(configService, (config) => config.clearResourcesEffect());

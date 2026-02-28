@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 
 import { Effect } from 'effect';
 
-import { Config } from '../config/index.ts';
+import type { ConfigService as ConfigServiceShape } from '../config/index.ts';
 import { parseNpmReference, validateGitUrl } from '../validation/index.ts';
 import { CommonHints } from '../errors.ts';
 
@@ -139,7 +139,7 @@ export const createAnonymousResource = (reference: string): ResourceDefinition |
 
 export const resolveResourceDefinition = (
 	reference: string,
-	getResource: Config.Service['getResource']
+	getResource: ConfigServiceShape['getResource']
 ): ResourceDefinition => {
 	const definition = getResource(reference);
 	if (definition) return definition;
@@ -153,7 +153,7 @@ export const resolveResourceDefinition = (
 	});
 };
 
-export const createResourcesService = (config: Config.Service): ResourcesService => {
+export const createResourcesService = (config: ConfigServiceShape): ResourcesService => {
 	const loadEffect: ResourcesService['loadEffect'] = (name, options) =>
 		Effect.gen(function* () {
 			const quiet = options?.quiet ?? false;

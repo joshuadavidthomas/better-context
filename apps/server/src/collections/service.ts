@@ -2,7 +2,7 @@ import path from 'node:path';
 
 import { Effect } from 'effect';
 
-import { Config } from '../config/index.ts';
+import type { ConfigService as ConfigServiceShape } from '../config/index.ts';
 import { Transaction } from '../context/transaction.ts';
 import { CommonHints, getErrorHint, getErrorMessage } from '../errors.ts';
 import { Metrics } from '../metrics/index.ts';
@@ -218,7 +218,7 @@ export type CollectionsService = {
 		resource: BtcaFsResource;
 		resourcePath: string;
 		loadedAt: string;
-		definition?: ReturnType<Config.Service['getResource']>;
+		definition?: ReturnType<ConfigServiceShape['getResource']>;
 	}) => {
 		const base = {
 			name: args.resource.name,
@@ -266,7 +266,7 @@ export type CollectionsService = {
 	};
 
 export const createCollectionsService = (args: {
-		config: Config.Service;
+		config: ConfigServiceShape;
 		resources: ResourcesService;
 	}): CollectionsService => {
 		const load: CollectionsService['load'] = ({ resourceNames, quiet = false }) =>

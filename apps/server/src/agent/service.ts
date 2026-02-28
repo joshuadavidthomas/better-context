@@ -4,7 +4,7 @@
  */
 import { Effect } from 'effect';
 
-import { Config } from '../config/index.ts';
+import type { ConfigService as ConfigServiceShape } from '../config/index.ts';
 import { getErrorHint, getErrorMessage, type TaggedErrorOptions } from '../errors.ts';
 import { Metrics } from '../metrics/index.ts';
 import { Auth, getSupportedProviders } from '../providers/index.ts';
@@ -110,7 +110,7 @@ export type AgentService = {
 
 export type Service = AgentService;
 
-export const createAgentService = (config: Config.Service): AgentService => {
+export const createAgentService = (config: ConfigServiceShape): AgentService => {
 		const cleanupCollection = (collection: CollectionResult) =>
 			Effect.promise(async () => {
 				if (collection.vfsId) {
