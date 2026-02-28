@@ -7,7 +7,12 @@ import { z } from 'zod';
 
 import type { ToolContext } from './context.ts';
 import { resolveSandboxPathWithSymlinks } from './virtual-sandbox.ts';
-import { VirtualFs } from '../vfs/virtual-fs.ts';
+import {
+	existsInVirtualFs,
+	readVirtualFsFile,
+	readVirtualFsFileBuffer,
+	readdirVirtualFs
+} from '../vfs/virtual-fs.ts';
 
 const MAX_LINES = 2000;
 const MAX_BYTES = 50 * 1024;
@@ -69,14 +74,14 @@ export const executeReadTool = async (
 ): Promise<ReadToolResult> => {
 	const { basePath, vfsId } = context;
 	const resolvedPath = await resolveSandboxPathWithSymlinks(basePath, params.path, vfsId);
-	const exists = await VirtualFs.exists(resolvedPath, vfsId);
+	const exists = await existsInVirtualFs(resolvedPath, vfsId);
 	if (!exists) {
 		const dir = path.dirname(resolvedPath);
 		const filename = path.basename(resolvedPath);
 
 		let files: string[] = [];
 		try {
-			const entries = await VirtualFs.readdir(dir, vfsId);
+			const entries = await readdirVirtualFs(dir, vfsId);
 			files = entries.map((entry) => entry.name);
 		} catch {
 			files = [];
@@ -103,7 +108,7 @@ export const executeReadTool = async (
 	const ext = path.extname(resolvedPath).toLowerCase();
 
 	if (IMAGE_EXTENSIONS.has(ext)) {
-		const bytes = await VirtualFs.readFileBuffer(resolvedPath, vfsId);
+		const bytes = await readVirtualFsFileBuffer(resolvedPath, vfsId);
 		const base64 = Buffer.from(bytes).toString('base64');
 		const mime = getImageMime(ext);
 
@@ -126,7 +131,7 @@ export const executeReadTool = async (
 	}
 
 	if (PDF_EXTENSIONS.has(ext)) {
-		const bytes = await VirtualFs.readFileBuffer(resolvedPath, vfsId);
+		const bytes = await readVirtualFsFileBuffer(resolvedPath, vfsId);
 		const base64 = Buffer.from(bytes).toString('base64');
 
 		return {
@@ -147,7 +152,7 @@ export const executeReadTool = async (
 		};
 	}
 
-	if (isBinaryBuffer(await VirtualFs.readFileBuffer(resolvedPath, vfsId))) {
+	if (isBinaryBuffer(await readVirtualFsFileBuffer(resolvedPath, vfsId))) {
 		return {
 			title: params.path,
 			output: `[Binary file: ${path.basename(resolvedPath)}]`,
@@ -159,7 +164,7 @@ export const executeReadTool = async (
 		};
 	}
 
-	const text = await VirtualFs.readFile(resolvedPath, vfsId);
+	const text = await readVirtualFsFile(resolvedPath, vfsId);
 	const allLines = text.split('\n');
 
 	const offset = params.offset ?? 0;

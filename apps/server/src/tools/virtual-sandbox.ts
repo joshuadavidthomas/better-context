@@ -1,6 +1,10 @@
 import * as path from 'node:path';
 
-import { VirtualFs } from '../vfs/virtual-fs.ts';
+import {
+	existsInVirtualFs,
+	realpathVirtualFs,
+	statVirtualFs
+} from '../vfs/virtual-fs.ts';
 
 const posix = path.posix;
 
@@ -48,7 +52,7 @@ export const resolveSandboxPathWithSymlinks = async (
 ) => {
 	const resolved = resolveSandboxPath(basePath, requestedPath);
 	try {
-		return await VirtualFs.realpath(resolved, vfsId);
+		return await realpathVirtualFs(resolved, vfsId);
 	} catch {
 		return resolved;
 	}
@@ -57,7 +61,7 @@ export const resolveSandboxPathWithSymlinks = async (
 export const sandboxPathExists = async (basePath: string, requestedPath: string, vfsId?: string) => {
 	try {
 		const resolved = resolveSandboxPath(basePath, requestedPath);
-		return await VirtualFs.exists(resolved, vfsId);
+		return await existsInVirtualFs(resolved, vfsId);
 	} catch {
 		return false;
 	}
@@ -70,7 +74,7 @@ export const sandboxPathIsDirectory = async (
 ) => {
 	try {
 		const resolved = resolveSandboxPath(basePath, requestedPath);
-		const stats = await VirtualFs.stat(resolved, vfsId);
+		const stats = await statVirtualFs(resolved, vfsId);
 		return stats.isDirectory;
 	} catch {
 		return false;
@@ -80,7 +84,7 @@ export const sandboxPathIsDirectory = async (
 export const sandboxPathIsFile = async (basePath: string, requestedPath: string, vfsId?: string) => {
 	try {
 		const resolved = resolveSandboxPath(basePath, requestedPath);
-		const stats = await VirtualFs.stat(resolved, vfsId);
+		const stats = await statVirtualFs(resolved, vfsId);
 		return stats.isFile;
 	} catch {
 		return false;
@@ -93,7 +97,7 @@ export const validateSandboxPath = async (
 	vfsId?: string
 ) => {
 	const resolved = resolveSandboxPath(basePath, requestedPath);
-	if (!(await VirtualFs.exists(resolved, vfsId))) {
+	if (!(await existsInVirtualFs(resolved, vfsId))) {
 		throw new PathNotFoundError(requestedPath);
 	}
 	return resolved;

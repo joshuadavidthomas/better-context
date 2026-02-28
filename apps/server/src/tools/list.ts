@@ -7,7 +7,7 @@ import { z } from 'zod';
 
 import type { ToolContext } from './context.ts';
 import { resolveSandboxPath } from './virtual-sandbox.ts';
-import { VirtualFs } from '../vfs/virtual-fs.ts';
+import { readdirVirtualFs, statVirtualFs } from '../vfs/virtual-fs.ts';
 
 export const ListToolParameters = z.object({
 	path: z.string().describe('The directory path to list')
@@ -33,7 +33,7 @@ export type ListToolResult = {
 
 const safeStat = async (filePath: string, vfsId?: string) => {
 	try {
-		return await VirtualFs.stat(filePath, vfsId);
+		return await statVirtualFs(filePath, vfsId);
 	} catch {
 		return null;
 	}
@@ -70,7 +70,7 @@ export const executeListTool = async (
 	}
 
 	const entries: ListToolEntry[] = [];
-	const dirents = await VirtualFs.readdir(resolvedPath, vfsId);
+	const dirents = await readdirVirtualFs(resolvedPath, vfsId);
 	for (const dirent of dirents) {
 		let type: ListToolEntry['type'] = 'other';
 		let size: number | undefined;

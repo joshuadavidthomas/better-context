@@ -14,7 +14,12 @@ import {
 	executeListTool
 } from './src/tools/index.ts';
 import { runAgentLoop } from './src/agent/loop.ts';
-import { VirtualFs } from './src/vfs/virtual-fs.ts';
+import {
+	createVirtualFs,
+	disposeVirtualFs,
+	importDirectoryIntoVirtualFs,
+	mkdirVirtualFs
+} from './src/vfs/virtual-fs.ts';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -50,9 +55,9 @@ async function main() {
 	await fs.mkdir(path.join(testDir, 'subdir'));
 	await fs.writeFile(path.join(testDir, 'subdir', 'nested.ts'), 'export const foo = "bar";');
 
-	const vfsId = VirtualFs.create();
-	await VirtualFs.mkdir('/', { recursive: true }, vfsId);
-	await VirtualFs.importDirectoryFromDisk({
+	const vfsId = createVirtualFs();
+	await mkdirVirtualFs('/', { recursive: true }, vfsId);
+	await importDirectoryIntoVirtualFs({
 		sourcePath: testDir,
 		destinationPath: '/',
 		vfsId
@@ -81,7 +86,7 @@ async function main() {
 	);
 
 	// Cleanup
-	VirtualFs.dispose(vfsId);
+	disposeVirtualFs(vfsId);
 	await fs.rm(testDir, { recursive: true });
 	console.log('   ✅ All tools working\n');
 
@@ -110,9 +115,9 @@ async function main() {
 			path.join(agentTestDir, 'README.md'),
 			'# Test Project\n\nThis project contains the secret code: ALPHA-123.'
 		);
-		const agentVfsId = VirtualFs.create();
-		await VirtualFs.mkdir('/', { recursive: true }, agentVfsId);
-		await VirtualFs.importDirectoryFromDisk({
+		const agentVfsId = createVirtualFs();
+		await mkdirVirtualFs('/', { recursive: true }, agentVfsId);
+		await importDirectoryIntoVirtualFs({
 			sourcePath: agentTestDir,
 			destinationPath: '/',
 			vfsId: agentVfsId
@@ -139,7 +144,7 @@ async function main() {
 			console.log(`   ❌ Agent loop failed: ${e}\n`);
 		}
 
-		VirtualFs.dispose(agentVfsId);
+		disposeVirtualFs(agentVfsId);
 		await fs.rm(agentTestDir, { recursive: true });
 	} else {
 		console.log('5. Skipping full agent loop test (run with --full to enable)\n');

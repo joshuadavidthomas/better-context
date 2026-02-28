@@ -22,7 +22,7 @@ import {
 	validateResourceReference
 } from './validation/index.ts';
 import { clearAllVirtualCollectionMetadata } from './collections/virtual-metadata.ts';
-import { VirtualFs } from './vfs/virtual-fs.ts';
+import { disposeAllVirtualFs } from './vfs/virtual-fs.ts';
 
 const DEFAULT_PORT = 8080;
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : DEFAULT_PORT;
@@ -478,7 +478,7 @@ export const startServer = async (options: StartServerOptions = {}): Promise<Ser
 		port: actualPort,
 		url: `http://localhost:${actualPort}`,
 		stop: () => {
-			VirtualFs.disposeAll();
+			disposeAllVirtualFs();
 			clearAllVirtualCollectionMetadata();
 			server.stop();
 			void dispose();

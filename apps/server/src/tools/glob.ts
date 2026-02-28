@@ -7,7 +7,7 @@ import { z } from 'zod';
 
 import type { ToolContext } from './context.ts';
 import { resolveSandboxPath } from './virtual-sandbox.ts';
-import { VirtualFs } from '../vfs/virtual-fs.ts';
+import { listVirtualFsFilesRecursive, statVirtualFs } from '../vfs/virtual-fs.ts';
 
 const MAX_RESULTS = 100;
 
@@ -34,7 +34,7 @@ export type GlobToolResult = {
 
 const safeStat = async (filePath: string, vfsId?: string) => {
 	try {
-		return await VirtualFs.stat(filePath, vfsId);
+		return await statVirtualFs(filePath, vfsId);
 	} catch {
 		return null;
 	}
@@ -71,7 +71,7 @@ export const executeGlobTool = async (
 	const files: Array<{ path: string; mtime: number }> = [];
 	let truncated = false;
 	const patternRegex = globToRegExp(params.pattern);
-	const allFiles = await VirtualFs.listFilesRecursive(searchPath, vfsId);
+	const allFiles = await listVirtualFsFilesRecursive(searchPath, vfsId);
 
 	for (const file of allFiles) {
 		if (files.length >= MAX_RESULTS) {

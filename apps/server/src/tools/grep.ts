@@ -7,7 +7,12 @@ import { z } from 'zod';
 
 import type { ToolContext } from './context.ts';
 import { resolveSandboxPath } from './virtual-sandbox.ts';
-import { VirtualFs } from '../vfs/virtual-fs.ts';
+import {
+	listVirtualFsFilesRecursive,
+	readVirtualFsFile,
+	readVirtualFsFileBuffer,
+	statVirtualFs
+} from '../vfs/virtual-fs.ts';
 
 const MAX_RESULTS = 100;
 
@@ -37,7 +42,7 @@ export type GrepToolResult = {
 
 const safeStat = async (filePath: string, vfsId?: string) => {
 	try {
-		return await VirtualFs.stat(filePath, vfsId);
+		return await statVirtualFs(filePath, vfsId);
 	} catch {
 		return null;
 	}
@@ -45,7 +50,7 @@ const safeStat = async (filePath: string, vfsId?: string) => {
 
 const safeReadBuffer = async (filePath: string, vfsId?: string) => {
 	try {
-		return await VirtualFs.readFileBuffer(filePath, vfsId);
+		return await readVirtualFsFileBuffer(filePath, vfsId);
 	} catch {
 		return null;
 	}
@@ -103,7 +108,7 @@ export const executeGrepTool = async (
 	}
 
 	const includeMatcher = params.include ? buildIncludeMatcher(params.include) : null;
-	const allFiles = await VirtualFs.listFilesRecursive(searchPath, vfsId);
+	const allFiles = await listVirtualFsFilesRecursive(searchPath, vfsId);
 	const results: Array<{ path: string; lineNumber: number; lineText: string; mtime: number }> = [];
 
 	for (const filePath of allFiles) {
@@ -112,7 +117,7 @@ export const executeGrepTool = async (
 		if (includeMatcher && !includeMatcher(relative)) continue;
 		const buffer = await safeReadBuffer(filePath, vfsId);
 		if (!buffer || isBinaryBuffer(buffer)) continue;
-		const text = await VirtualFs.readFile(filePath, vfsId);
+		const text = await readVirtualFsFile(filePath, vfsId);
 		const lines = text.split('\n');
 		const fileStats = await safeStat(filePath, vfsId);
 		const mtime = fileStats?.mtimeMs ?? 0;

@@ -15,7 +15,7 @@ import {
 } from '../providers/index.ts';
 import type { CollectionResult } from '../collections/types.ts';
 import { clearVirtualCollectionMetadata } from '../collections/virtual-metadata.ts';
-import { VirtualFs } from '../vfs/virtual-fs.ts';
+import { disposeVirtualFs } from '../vfs/virtual-fs.ts';
 import type { AgentResult } from './types.ts';
 import { runAgentLoop, streamAgentLoop, type AgentEvent } from './loop.ts';
 
@@ -119,7 +119,7 @@ export const createAgentService = (config: ConfigServiceShape): AgentService => 
 		const cleanupCollection = (collection: CollectionResult) =>
 			Effect.promise(async () => {
 				if (collection.vfsId) {
-					VirtualFs.dispose(collection.vfsId);
+					disposeVirtualFs(collection.vfsId);
 					clearVirtualCollectionMetadata(collection.vfsId);
 				}
 				try {

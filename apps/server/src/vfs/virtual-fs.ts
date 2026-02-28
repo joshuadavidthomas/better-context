@@ -281,24 +281,3 @@ export const importDirectoryIntoVirtualFs = async (args: {
 	await mkdirVirtualFs(dest, { recursive: true }, vfsId);
 	await walk(base);
 };
-
-export const VirtualFs = {
-	create: createVirtualFs,
-	has: hasVirtualFs,
-	reset: resetVirtualFs,
-	dispose: disposeVirtualFs,
-	disposeAll: disposeAllVirtualFs,
-	resolve: resolveVirtualFsPath,
-	mkdir: mkdirVirtualFs,
-	rm: rmVirtualFs,
-	exists: existsInVirtualFs,
-	stat: statVirtualFs,
-	readdir: readdirVirtualFs,
-	readFile: readVirtualFsFile,
-	readFileBuffer: readVirtualFsFileBuffer,
-	writeFile: writeVirtualFsFile,
-	symlink: symlinkVirtualFs,
-	realpath: realpathVirtualFs,
-	listFilesRecursive: listVirtualFsFilesRecursive,
-	importDirectoryFromDisk: importDirectoryIntoVirtualFs
-} as const;

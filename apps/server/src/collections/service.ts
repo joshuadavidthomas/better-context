@@ -11,7 +11,13 @@ import { isGitResource, isNpmResource } from '../resources/schema.ts';
 import { FS_RESOURCE_SYSTEM_NOTE, type BtcaFsResource } from '../resources/types.ts';
 import { parseNpmReference } from '../validation/index.ts';
 import { CollectionError, getCollectionKey, type CollectionResult } from './types.ts';
-import { VirtualFs } from '../vfs/virtual-fs.ts';
+import {
+	createVirtualFs,
+	disposeVirtualFs,
+	importDirectoryIntoVirtualFs,
+	mkdirVirtualFs,
+	rmVirtualFs
+} from '../vfs/virtual-fs.ts';
 import {
 	clearVirtualCollectionMetadata,
 	setVirtualCollectionMetadata,
@@ -91,7 +97,7 @@ export type CollectionsService = {
 
 	const initVirtualRoot = async (collectionPath: string, vfsId: string) => {
 		try {
-			await VirtualFs.mkdir(collectionPath, { recursive: true }, vfsId);
+			await mkdirVirtualFs(collectionPath, { recursive: true }, vfsId);
 		} catch (cause) {
 			throw new CollectionError({
 				message: `Failed to initialize virtual collection root: "${collectionPath}"`,
@@ -136,7 +142,7 @@ export type CollectionsService = {
 		vfsId: string;
 	}) => {
 		try {
-			await VirtualFs.importDirectoryFromDisk({
+			await importDirectoryIntoVirtualFs({
 				sourcePath: args.resourcePath,
 				destinationPath: args.virtualResourcePath,
 				vfsId: args.vfsId,
@@ -283,9 +289,9 @@ export const createCollectionsService = (args: {
 				const sortedNames = [...uniqueNames].sort((a, b) => a.localeCompare(b));
 				const key = getCollectionKey(sortedNames);
 				const collectionPath = '/';
-				const vfsId = VirtualFs.create();
+				const vfsId = createVirtualFs();
 				const cleanupVirtual = () => {
-					VirtualFs.dispose(vfsId);
+					disposeVirtualFs(vfsId);
 					clearVirtualCollectionMetadata(vfsId);
 				};
 				const cleanupResources = (resources: BtcaFsResource[]) =>
@@ -313,7 +319,7 @@ export const createCollectionsService = (args: {
 						const virtualResourcePath = path.posix.join('/', resource.fsName);
 
 						await ignoreErrors(() =>
-							VirtualFs.rm(virtualResourcePath, { recursive: true, force: true }, vfsId)
+							rmVirtualFs(virtualResourcePath, { recursive: true, force: true }, vfsId)
 						);
 
 						await virtualizeResource({
