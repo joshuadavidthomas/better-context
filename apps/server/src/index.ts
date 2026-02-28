@@ -9,10 +9,10 @@ import { z } from 'zod';
 
 import { Agent } from './agent/service.ts';
 import { Collections } from './collections/service.ts';
-import { getCollectionKey } from './collections/types.ts';
 import { Config } from './config/index.ts';
 import { toHttpErrorPayload } from './effect/errors.ts';
 import { createServerRuntime } from './effect/runtime.ts';
+import * as ServerServices from './effect/services.ts';
 import { Metrics } from './metrics/index.ts';
 import { ModelsDevPricing } from './pricing/models-dev.ts';
 import { Resources } from './resources/service.ts';
@@ -202,62 +202,31 @@ const createApp = (deps: {
 		),
 		HttpRouter.get(
 			'/config',
-			HttpServerResponse.unsafeJson({
-				provider: config.provider,
-				model: config.model,
-				providerTimeoutMs: config.providerTimeoutMs ?? null,
-				maxSteps: config.maxSteps,
-				resourcesDirectory: config.resourcesDirectory,
-				resourceCount: config.resources.length
-			})
+			Effect.map(ServerServices.getConfigSnapshot, (snapshot) =>
+				HttpServerResponse.unsafeJson(snapshot)
+			)
 		),
 		HttpRouter.get(
 			'/resources',
-			HttpServerResponse.unsafeJson({
-				resources: config.resources.map((resource) => {
-					if (resource.type === 'git') {
-						return {
-							name: resource.name,
-							type: resource.type,
-							url: resource.url,
-							branch: resource.branch,
-							searchPath: resource.searchPath ?? null,
-							searchPaths: resource.searchPaths ?? null,
-							specialNotes: resource.specialNotes ?? null
-						};
-					}
-					if (resource.type === 'local') {
-						return {
-							name: resource.name,
-							type: resource.type,
-							path: resource.path,
-							specialNotes: resource.specialNotes ?? null
-						};
-					}
-					return {
-						name: resource.name,
-						type: resource.type,
-						package: resource.package,
-						version: resource.version ?? null,
-						specialNotes: resource.specialNotes ?? null
-					};
-				})
-			})
+			Effect.map(ServerServices.getResourcesSnapshot, (snapshot) =>
+				HttpServerResponse.unsafeJson(snapshot)
+			)
 		),
 		HttpRouter.get(
 			'/providers',
 			Effect.gen(function* () {
-				const providers = yield* Effect.tryPromise(() => agent.listProviders());
+				const providers = yield* ServerServices.listProviders;
 				return HttpServerResponse.unsafeJson(providers);
 			})
 		),
 		HttpRouter.post(
 			'/reload-config',
 			Effect.gen(function* () {
-				yield* Effect.tryPromise(() => config.reload());
+				yield* ServerServices.reloadConfig;
+				const resources = yield* ServerServices.getDefaultResourceNames;
 				return HttpServerResponse.unsafeJson({
 					ok: true,
-					resources: config.resources.map((resource) => resource.name)
+					resources
 				});
 			})
 		),
@@ -266,12 +235,13 @@ const createApp = (deps: {
 			Effect.gen(function* () {
 				const request = yield* getRequest;
 				const decoded = yield* decodeJson(request, QuestionRequestSchema);
-				const resourceNames =
+				const resourceNames = Array.from(
 					decoded.resources && decoded.resources.length > 0
 						? Array.from(new Set(decoded.resources.map(normalizeQuestionResourceReference)))
-						: config.resources.map((resource) => resource.name);
+						: yield* ServerServices.getDefaultResourceNames
+				);
 
-				const collectionKey = getCollectionKey(resourceNames);
+				const collectionKey = ServerServices.loadedResourceCollectionKey(resourceNames);
 				Metrics.info('question.received', {
 					stream: false,
 					quiet: decoded.quiet ?? false,
@@ -280,14 +250,16 @@ const createApp = (deps: {
 					collectionKey
 				});
 
-				const collection = yield* Effect.tryPromise(() =>
-					collections.load({ resourceNames, quiet: decoded.quiet })
-				);
+				const collection = yield* ServerServices.loadCollection({
+					resourceNames,
+					quiet: decoded.quiet
+				});
 				Metrics.info('collection.ready', { collectionKey, path: collection.path });
 
-				const result = yield* Effect.tryPromise(() =>
-					agent.ask({ collection, question: decoded.question })
-				);
+				const result = yield* ServerServices.askQuestion({
+					collection,
+					question: decoded.question
+				});
 				Metrics.info('question.done', {
 					collectionKey,
 					answerLength: result.answer.length,
@@ -308,12 +280,13 @@ const createApp = (deps: {
 				const request = yield* getRequest;
 				const requestStartMs = performance.now();
 				const decoded = yield* decodeJson(request, QuestionRequestSchema);
-				const resourceNames =
+				const resourceNames = Array.from(
 					decoded.resources && decoded.resources.length > 0
 						? Array.from(new Set(decoded.resources.map(normalizeQuestionResourceReference)))
-						: config.resources.map((resource) => resource.name);
+						: yield* ServerServices.getDefaultResourceNames
+				);
 
-				const collectionKey = getCollectionKey(resourceNames);
+				const collectionKey = ServerServices.loadedResourceCollectionKey(resourceNames);
 				Metrics.info('question.received', {
 					stream: true,
 					quiet: decoded.quiet ?? false,
@@ -322,17 +295,16 @@ const createApp = (deps: {
 					collectionKey
 				});
 
-				const collection = yield* Effect.tryPromise(() =>
-					collections.load({ resourceNames, quiet: decoded.quiet })
-				);
+				const collection = yield* ServerServices.loadCollection({
+					resourceNames,
+					quiet: decoded.quiet
+				});
 				Metrics.info('collection.ready', { collectionKey, path: collection.path });
 
-				const { stream: eventStream, model } = yield* Effect.tryPromise(() =>
-					agent.askStream({
-						collection,
-						question: decoded.question
-					})
-				);
+				const { stream: eventStream, model } = yield* ServerServices.askQuestionStream({
+					collection,
+					question: decoded.question
+				});
 
 				const meta = {
 					type: 'meta',
@@ -370,9 +342,11 @@ const createApp = (deps: {
 			Effect.gen(function* () {
 				const request = yield* getRequest;
 				const decoded = yield* decodeJson(request, UpdateModelRequestSchema);
-				const result = yield* Effect.tryPromise(() =>
-					config.updateModel(decoded.provider, decoded.model, decoded.providerOptions)
-				);
+				const result = yield* ServerServices.updateModelConfig({
+					provider: decoded.provider,
+					model: decoded.model,
+					providerOptions: decoded.providerOptions
+				});
 				return HttpServerResponse.unsafeJson(result);
 			})
 		),
@@ -392,7 +366,7 @@ const createApp = (deps: {
 						...(decoded.searchPaths && { searchPaths: decoded.searchPaths }),
 						...(decoded.specialNotes && { specialNotes: decoded.specialNotes })
 					};
-					const added = yield* Effect.tryPromise(() => config.addResource(resource));
+					const added = yield* ServerServices.addConfigResource(resource);
 					return HttpServerResponse.unsafeJson(added, { status: 201 });
 				}
 				if (decoded.type === 'local') {
@@ -402,7 +376,7 @@ const createApp = (deps: {
 						path: decoded.path,
 						...(decoded.specialNotes && { specialNotes: decoded.specialNotes })
 					};
-					const added = yield* Effect.tryPromise(() => config.addResource(resource));
+					const added = yield* ServerServices.addConfigResource(resource);
 					return HttpServerResponse.unsafeJson(added, { status: 201 });
 				}
 				const resource = {
@@ -412,7 +386,7 @@ const createApp = (deps: {
 					...(decoded.version ? { version: decoded.version } : {}),
 					...(decoded.specialNotes ? { specialNotes: decoded.specialNotes } : {})
 				};
-				const added = yield* Effect.tryPromise(() => config.addResource(resource));
+				const added = yield* ServerServices.addConfigResource(resource);
 				return HttpServerResponse.unsafeJson(added, { status: 201 });
 			})
 		),
@@ -421,14 +395,14 @@ const createApp = (deps: {
 			Effect.gen(function* () {
 				const request = yield* getRequest;
 				const decoded = yield* decodeJson(request, RemoveResourceRequestSchema);
-				yield* Effect.tryPromise(() => config.removeResource(decoded.name));
+				yield* ServerServices.removeConfigResource(decoded.name);
 				return HttpServerResponse.unsafeJson({ success: true, name: decoded.name });
 			})
 		),
 		HttpRouter.post(
 			'/clear',
 			Effect.gen(function* () {
-				const result = yield* Effect.tryPromise(() => config.clearResources());
+				const result = yield* ServerServices.clearConfigResources;
 				return HttpServerResponse.unsafeJson(result);
 			})
 		)
@@ -436,6 +410,9 @@ const createApp = (deps: {
 
 	return pipe(
 		routes,
+		HttpRouter.provideService(ServerServices.ConfigService, config),
+		HttpRouter.provideService(ServerServices.CollectionsService, collections),
+		HttpRouter.provideService(ServerServices.AgentService, agent),
 		HttpRouter.catchAllCause((cause) => {
 			const error = Cause.squash(cause);
 			Metrics.error('http.error', { error: Metrics.errorInfo(error) });
