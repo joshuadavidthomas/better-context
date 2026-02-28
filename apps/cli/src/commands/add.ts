@@ -3,7 +3,7 @@ import path from 'node:path';
 import * as readline from 'readline';
 import { Effect } from 'effect';
 
-import { addResource, BtcaError } from '../client/index.ts';
+import { addResource } from '../client/index.ts';
 import { dim } from '../lib/utils/colors.ts';
 import { withServerEffect } from '../server/manager.ts';
 
@@ -171,18 +171,6 @@ const isDirectory = async (value: string) => {
 		return false;
 	}
 };
-
-/**
- * Format an error for display, including hint if available.
- */
-function formatError(error: unknown): string {
-	if (error instanceof BtcaError) {
-		let output = `Error: ${error.message}`;
-		if (error.hint) output += `\n\nHint: ${error.hint}`;
-		return output;
-	}
-	return `Error: ${error instanceof Error ? error.message : String(error)}`;
-}
 
 /**
  * Create a readline interface for prompts.

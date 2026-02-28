@@ -3,7 +3,7 @@ import * as readline from 'readline';
 import { spawn } from 'bun';
 import { Effect } from 'effect';
 import { withServerEffect } from '../server/manager.ts';
-import { createClient, getProviders, updateModel, BtcaError } from '../client/index.ts';
+import { createClient, getProviders, updateModel } from '../client/index.ts';
 import { dim, green } from '../lib/utils/colors.ts';
 import { loginCopilotOAuth } from '../lib/copilot-oauth.ts';
 import { loginOpenAIOAuth, saveProviderApiKey } from '../lib/opencode-oauth.ts';
@@ -14,20 +14,6 @@ import {
 	PROVIDER_MODEL_DOCS,
 	PROVIDER_SETUP_LINKS
 } from '../connect/constants.ts';
-
-/**
- * Format an error for display, including hint if available.
- */
-function formatError(error: unknown): string {
-	if (error instanceof BtcaError) {
-		let output = `Error: ${error.message}`;
-		if (error.hint) {
-			output += `\n\nHint: ${error.hint}`;
-		}
-		return output;
-	}
-	return `Error: ${error instanceof Error ? error.message : String(error)}`;
-}
 
 const isPromptCancelled = (error: unknown) =>
 	error instanceof Error &&
