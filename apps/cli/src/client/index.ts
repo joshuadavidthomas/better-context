@@ -1,4 +1,4 @@
-import { Result } from 'better-result';
+import { Effect } from 'effect';
 
 export type Client = {
 	baseUrl: string;
@@ -64,10 +64,11 @@ export class BtcaError extends Error {
 /**
  * Parse error response from server and create a BtcaError.
  */
-async function parseErrorResponse(
+const parseErrorResponse = (
 	res: Response,
 	fallbackMessage: string
-): Promise<BtcaError> {
+): Effect.Effect<BtcaError, never> =>
+	Effect.gen(function* () {
 	const normalizeMessage = (message: string) => {
 		if (message.startsWith('Unhandled exception:')) {
 			const stripped = message.slice('Unhandled exception:'.length).trim();
@@ -79,18 +80,41 @@ async function parseErrorResponse(
 		return message;
 	};
 
-	const result = await Result.tryPromise(() => res.json());
-	return result.match({
-		ok: (body) => {
-			const parsed = body as { error?: string; hint?: string; tag?: string };
-			return new BtcaError(normalizeMessage(parsed.error ?? fallbackMessage), {
-				hint: parsed.hint,
-				tag: parsed.tag
-			});
-		},
-		err: () => new BtcaError(fallbackMessage)
+	const bodyResult = yield* Effect.either(Effect.tryPromise(() => res.json()));
+	if (bodyResult._tag === 'Left') {
+		return new BtcaError(fallbackMessage);
+	}
+	const parsed = bodyResult.right as { error?: string; hint?: string; tag?: string };
+	return new BtcaError(normalizeMessage(parsed.error ?? fallbackMessage), {
+		hint: parsed.hint,
+		tag: parsed.tag
 	});
-}
+	});
+
+const requestJson = <T>(
+	url: string,
+	init: RequestInit | undefined,
+	fallbackMessage: string
+): Effect.Effect<T, BtcaError> =>
+	Effect.gen(function* () {
+		const response = yield* Effect.tryPromise({
+			try: () => fetch(url, init),
+			catch: (error) => new BtcaError(String(error))
+		});
+		if (!response.ok) {
+			const parsedError = yield* parseErrorResponse(
+				response,
+				`${fallbackMessage}: ${response.status}`
+			);
+			return yield* Effect.fail(parsedError);
+		}
+		return (yield* Effect.tryPromise({
+			try: () => response.json() as Promise<T>,
+			catch: (error) => new BtcaError(String(error))
+		})) as T;
+	});
+
+const runClientEffect = <A>(effect: Effect.Effect<A, BtcaError>) => Effect.runPromise(effect);
 
 /**
  * Create an HTTP client descriptor for the btca server
@@ -103,30 +127,32 @@ export function createClient(baseUrl: string): Client {
  * Get server configuration
  */
 export async function getConfig(client: Client): Promise<ConfigResponse> {
-	const res = await fetch(`${client.baseUrl}/config`);
-	if (!res.ok) {
-		throw await parseErrorResponse(res, `Failed to get config: ${res.status}`);
-	}
-	return res.json() as Promise<ConfigResponse>;
+	return runClientEffect(
+		requestJson<ConfigResponse>(`${client.baseUrl}/config`, undefined, 'Failed to get config')
+	);
 }
 
 /**
  * Get available resources
  */
 export async function getResources(client: Client): Promise<ResourcesResponse> {
-	const res = await fetch(`${client.baseUrl}/resources`);
-	if (!res.ok) {
-		throw await parseErrorResponse(res, `Failed to get resources: ${res.status}`);
-	}
-	return res.json() as Promise<ResourcesResponse>;
+	return runClientEffect(
+		requestJson<ResourcesResponse>(
+			`${client.baseUrl}/resources`,
+			undefined,
+			'Failed to get resources'
+		)
+	);
 }
 
 export async function getProviders(client: Client): Promise<ProvidersResponse> {
-	const res = await fetch(`${client.baseUrl}/providers`);
-	if (!res.ok) {
-		throw await parseErrorResponse(res, `Failed to get providers: ${res.status}`);
-	}
-	return res.json() as Promise<ProvidersResponse>;
+	return runClientEffect(
+		requestJson<ProvidersResponse>(
+			`${client.baseUrl}/providers`,
+			undefined,
+			'Failed to get providers'
+		)
+	);
 }
 
 /**
@@ -140,23 +166,23 @@ export async function askQuestion(
 		quiet?: boolean;
 	}
 ): Promise<{ answer: string; model: { provider: string; model: string } }> {
-	const res = await fetch(`${client.baseUrl}/question`, {
-		method: 'POST',
-		headers: {
-			'Content-Type': 'application/json'
-		},
-		body: JSON.stringify({
-			question: options.question,
-			resources: options.resources,
-			quiet: options.quiet
-		})
-	});
-
-	if (!res.ok) {
-		throw await parseErrorResponse(res, `Failed to ask question: ${res.status}`);
-	}
-
-	return res.json() as Promise<{ answer: string; model: { provider: string; model: string } }>;
+	return runClientEffect(
+		requestJson<{ answer: string; model: { provider: string; model: string } }>(
+			`${client.baseUrl}/question`,
+			{
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({
+					question: options.question,
+					resources: options.resources,
+					quiet: options.quiet
+				})
+			},
+			'Failed to ask question'
+		)
+	);
 }
 
 /**
@@ -171,7 +197,6 @@ export async function askQuestionStream(
 		signal?: AbortSignal;
 	}
 ): Promise<Response> {
-	// Use raw fetch for streaming since Hono client doesn't handle SSE well
 	const res = await fetch(`${baseUrl}/question/stream`, {
 		method: 'POST',
 		headers: {
@@ -186,7 +211,9 @@ export async function askQuestionStream(
 	});
 
 	if (!res.ok) {
-		throw await parseErrorResponse(res, `Failed to ask question: ${res.status}`);
+		throw await Effect.runPromise(
+			parseErrorResponse(res, `Failed to ask question: ${res.status}`)
+		);
 	}
 
 	return res;
@@ -212,23 +239,23 @@ export async function updateModel(
 	model: string,
 	providerOptions?: ProviderOptionsInput
 ): Promise<ModelUpdateResult> {
-	const res = await fetch(`${baseUrl}/config/model`, {
-		method: 'PUT',
-		headers: {
-			'Content-Type': 'application/json'
-		},
-		body: JSON.stringify({
-			provider,
-			model,
-			...(providerOptions ? { providerOptions } : {})
-		})
-	});
-
-	if (!res.ok) {
-		throw await parseErrorResponse(res, `Failed to update model: ${res.status}`);
-	}
-
-	return res.json() as Promise<ModelUpdateResult>;
+	return runClientEffect(
+		requestJson<ModelUpdateResult>(
+			`${baseUrl}/config/model`,
+			{
+				method: 'PUT',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({
+					provider,
+					model,
+					...(providerOptions ? { providerOptions } : {})
+				})
+			},
+			'Failed to update model'
+		)
+	);
 }
 
 export interface GitResourceInput {
@@ -265,52 +292,54 @@ export async function addResource(
 	baseUrl: string,
 	resource: ResourceInput
 ): Promise<ResourceInput> {
-	const res = await fetch(`${baseUrl}/config/resources`, {
-		method: 'POST',
-		headers: {
-			'Content-Type': 'application/json'
-		},
-		body: JSON.stringify(resource)
-	});
-
-	if (!res.ok) {
-		throw await parseErrorResponse(res, `Failed to add resource: ${res.status}`);
-	}
-
-	return res.json() as Promise<ResourceInput>;
+	return runClientEffect(
+		requestJson<ResourceInput>(
+			`${baseUrl}/config/resources`,
+			{
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify(resource)
+			},
+			'Failed to add resource'
+		)
+	);
 }
 
 /**
  * Remove a resource
  */
 export async function removeResource(baseUrl: string, name: string): Promise<void> {
-	const res = await fetch(`${baseUrl}/config/resources`, {
-		method: 'DELETE',
-		headers: {
-			'Content-Type': 'application/json'
-		},
-		body: JSON.stringify({ name })
-	});
-
-	if (!res.ok) {
-		throw await parseErrorResponse(res, `Failed to remove resource: ${res.status}`);
-	}
+	await runClientEffect(
+		requestJson<{ success: boolean }>(
+			`${baseUrl}/config/resources`,
+			{
+				method: 'DELETE',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({ name })
+			},
+			'Failed to remove resource'
+		)
+	);
 }
 
 /**
  * Clear all locally cloned resources
  */
 export async function clearResources(baseUrl: string): Promise<{ cleared: number }> {
-	const res = await fetch(`${baseUrl}/clear`, {
-		method: 'POST',
-		headers: {
-			'Content-Type': 'application/json'
-		}
-	});
-
-	if (!res.ok) {
-		throw await parseErrorResponse(res, `Failed to clear resources: ${res.status}`);
-	}
-
-	return res.json() as Promise<{ cleared: number }>;
+	return runClientEffect(
+		requestJson<{ cleared: number }>(
+			`${baseUrl}/clear`,
+			{
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				}
+			},
+			'Failed to clear resources'
+		)
+	);
 }
