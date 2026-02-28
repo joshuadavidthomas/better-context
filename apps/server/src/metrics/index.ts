@@ -1,5 +1,3 @@
-import { Result } from 'better-result';
-
 import { Context } from '../context/index.ts';
 import { getErrorMessage, getErrorTag } from '../errors.ts';
 
@@ -45,13 +43,15 @@ export namespace Metrics {
 		fields?: Fields
 	): Promise<T> => {
 		const start = performance.now();
-		const result = await Result.tryPromise(fn);
-		const ms = Math.round(performance.now() - start);
-		if (!Result.isOk(result)) {
-			error('span.err', { name, ms, ...fields, error: errorInfo(result.error) });
-			throw result.error;
+		try {
+			const value = await fn();
+			const ms = Math.round(performance.now() - start);
+			info('span.ok', { name, ms, ...fields });
+			return value;
+		} catch (errorCause) {
+			const ms = Math.round(performance.now() - start);
+			error('span.err', { name, ms, ...fields, error: errorInfo(errorCause) });
+			throw errorCause;
 		}
-		info('span.ok', { name, ms, ...fields });
-		return result.value;
 	};
 }

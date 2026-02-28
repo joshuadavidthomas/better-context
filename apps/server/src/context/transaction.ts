@@ -1,5 +1,3 @@
-import { Result } from 'better-result';
-
 import { Metrics } from '../metrics/index.ts';
 import { Context } from './index.ts';
 
@@ -11,23 +9,20 @@ export namespace Transaction {
 
 		const start = performance.now();
 		Metrics.info('tx.start', { name, depth });
-		const result = await Result.tryPromise(fn);
-		store.txDepth = depth;
-
-		return result.match({
-			ok: (value) => {
-				Metrics.info('tx.commit', { name, depth, ms: Math.round(performance.now() - start) });
-				return value;
-			},
-			err: (cause) => {
-				Metrics.error('tx.rollback', {
-					name,
-					depth,
-					ms: Math.round(performance.now() - start),
-					error: Metrics.errorInfo(cause)
-				});
-				throw cause;
-			}
-		});
+		try {
+			const value = await fn();
+			Metrics.info('tx.commit', { name, depth, ms: Math.round(performance.now() - start) });
+			return value;
+		} catch (cause) {
+			Metrics.error('tx.rollback', {
+				name,
+				depth,
+				ms: Math.round(performance.now() - start),
+				error: Metrics.errorInfo(cause)
+			});
+			throw cause;
+		} finally {
+			store.txDepth = depth;
+		}
 	};
 }
