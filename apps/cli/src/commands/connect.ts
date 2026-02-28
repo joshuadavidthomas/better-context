@@ -1,5 +1,4 @@
 import { Result } from 'better-result';
-import { Command } from 'commander';
 import select from '@inquirer/select';
 import * as readline from 'readline';
 import { spawn } from 'bun';
@@ -367,20 +366,3 @@ export const runConnectCommand = async (args: {
 	}
 };
 
-export const connectCommand = new Command('connect')
-	.description('Configure the AI provider and model')
-	.option('-g, --global', 'Save to global config instead of project config')
-	.option(
-		'-p, --provider <id>',
-		'Provider ID (opencode, openrouter, openai, openai-compat, google, anthropic, github-copilot, minimax)'
-	)
-	.option('-m, --model <id>', 'Model ID (e.g., "claude-haiku-4-5")')
-	.action(async (options: { global?: boolean; provider?: string; model?: string }, command) => {
-		const globalOpts = command.parent?.opts() as { server?: string; port?: number } | undefined;
-		await runConnectCommand({
-			global: options.global,
-			provider: options.provider,
-			model: options.model,
-			globalOpts
-		});
-	});

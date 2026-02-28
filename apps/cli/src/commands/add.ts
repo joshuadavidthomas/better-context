@@ -1,7 +1,6 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { Result } from 'better-result';
-import { Command } from 'commander';
 import * as readline from 'readline';
 
 import { addResource, BtcaError } from '../client/index.ts';
@@ -492,33 +491,6 @@ const inferResourceType = async (value: string): Promise<'git' | 'local' | 'npm'
 	if (isLikelyGitUrl(value)) return 'git';
 	return 'local';
 };
-
-export const addCommand = new Command('add')
-	.description('Add a resource (git repository, local directory, or npm package)')
-	.argument('[reference]', 'Repository URL, local path, or npm package reference')
-	.option('-g, --global', 'Add to global config instead of project config')
-	.option('-n, --name <name>', 'Resource name')
-	.option('-b, --branch <branch>', 'Git branch (default: main)')
-	.option('-s, --search-path <path...>', 'Search paths within repo (can specify multiple)')
-	.option('--notes <notes>', 'Special notes for the agent')
-	.option('-t, --type <type>', 'Resource type: git, local, or npm (auto-detected if not specified)')
-	.action(
-		async (
-			reference: string | undefined,
-			options: {
-				global?: boolean;
-				name?: string;
-				branch?: string;
-				searchPath?: string[];
-				notes?: string;
-				type?: string;
-			},
-			command
-		) => {
-			const globalOpts = command.parent?.opts() as { server?: string; port?: number } | undefined;
-			await runAddCommand({ reference, ...options, globalOpts });
-		}
-	);
 
 export const runAddCommand = async (args: {
 	reference?: string;

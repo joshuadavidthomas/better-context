@@ -1,5 +1,3 @@
-import { Command } from 'commander';
-
 const INSTALL_COMMAND = [
 	'bunx',
 	'skills',
@@ -8,10 +6,6 @@ const INSTALL_COMMAND = [
 	'--skill',
 	'btca-cli'
 ];
-
-export const skillCommand = new Command('skill')
-	.description('Install the btca CLI skill via skills.sh')
-	.action(runSkillCommand);
 
 export async function runSkillCommand() {
 	const subprocess = Bun.spawn(INSTALL_COMMAND, {

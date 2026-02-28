@@ -1,5 +1,4 @@
 import { Result } from 'better-result';
-import { Command } from 'commander';
 import select from '@inquirer/select';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
@@ -155,23 +154,6 @@ async function handleCliSetup(cwd: string, configPath: string, force?: boolean):
 	console.log('  3. Or launch the TUI: btca');
 	console.log("\nRun 'btca --help' for more options.");
 }
-
-export const initCommand = new Command('init')
-	.description('Initialize btca for this project')
-	.option('-f, --force', 'Overwrite existing configuration')
-	.action(async (options: { force?: boolean }) => {
-		const result = await Result.tryPromise(() => runInitCommand({ force: options.force }));
-
-		if (Result.isError(result)) {
-			const error = result.error;
-			if (error instanceof Error && error.message === 'Invalid selection') {
-				console.error('\nError: Invalid selection. Please run btca init again.');
-				process.exit(1);
-			}
-			console.error('Error:', error instanceof Error ? error.message : String(error));
-			process.exit(1);
-		}
-	});
 
 export const runInitCommand = async (args: { force?: boolean }) => {
 	const cwd = process.cwd();

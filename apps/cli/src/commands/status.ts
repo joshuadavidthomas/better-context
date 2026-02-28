@@ -1,10 +1,7 @@
-import { Result } from 'better-result';
-import { Command } from 'commander';
 import os from 'node:os';
 import path from 'node:path';
 import { ensureServer } from '../server/manager.ts';
 import { createClient, getConfig, getProviders } from '../client/index.ts';
-import { formatCliCommandError } from '../effect/errors.ts';
 import packageJson from '../../package.json';
 
 declare const __VERSION__: string;
@@ -261,14 +258,3 @@ export const runStatusCommand = async () => {
 		server.stop();
 	}
 };
-
-export const statusCommand = new Command('status')
-	.description('Show selected provider/model and config status')
-	.action(async () => {
-		const result = await Result.tryPromise(() => runStatusCommand());
-
-		if (Result.isError(result)) {
-			console.error(formatCliCommandError(result.error));
-			process.exit(1);
-		}
-	});

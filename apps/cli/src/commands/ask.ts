@@ -1,6 +1,5 @@
 import { Result } from 'better-result';
 import type { BtcaStreamEvent } from 'btca-server/stream/types';
-import { Command } from 'commander';
 import { ensureServer } from '../server/manager.ts';
 import {
 	createClient,
@@ -444,25 +443,6 @@ export const runAskCommand = async (args: {
 	});
 	process.exit(0);
 };
-
-export const askCommand = new Command('ask')
-	.description('Ask a question about configured resources')
-	.requiredOption('-q, --question <text>', 'Question to ask')
-	.option('-r, --resource <name...>', 'Resources to search (can specify multiple)')
-	.option('--no-thinking', 'Hide reasoning output')
-	.option('--no-tools', 'Hide tool-call traces')
-	.option('--sub-agent', 'Emit clean output (no reasoning or tool traces)')
-	.action(async (options, command) => {
-		const globalOpts = command.parent?.opts() as { server?: string; port?: number } | undefined;
-		await runAskCommand({
-			question: options.question as string,
-			resource: options.resource as string[] | undefined,
-			thinking: options.thinking as boolean | undefined,
-			tools: options.tools as boolean | undefined,
-			subAgent: options.subAgent as boolean | undefined,
-			globalOpts
-		});
-	});
 
 interface StreamHandlers {
 	onMeta?: () => void;

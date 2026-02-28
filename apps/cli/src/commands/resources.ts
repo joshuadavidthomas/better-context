@@ -1,8 +1,5 @@
-import { Result } from 'better-result';
-import { Command } from 'commander';
 import { ensureServer } from '../server/manager.ts';
 import { createClient, getResources } from '../client/index.ts';
-import { formatCliCommandError } from '../effect/errors.ts';
 
 export const runResourcesCommand = async (globalOpts?: { server?: string; port?: number }) => {
 	const server = await ensureServer({
@@ -47,15 +44,3 @@ export const runResourcesCommand = async (globalOpts?: { server?: string; port?:
 		server.stop();
 	}
 };
-
-export const resourcesCommand = new Command('resources')
-	.description('List all configured resources')
-	.action(async (_options, command) => {
-		const globalOpts = command.parent?.opts() as { server?: string; port?: number } | undefined;
-		const result = await Result.tryPromise(() => runResourcesCommand(globalOpts));
-
-		if (Result.isError(result)) {
-			console.error(formatCliCommandError(result.error));
-			process.exit(1);
-		}
-	});

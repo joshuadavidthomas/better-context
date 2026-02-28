@@ -1,5 +1,4 @@
 import { Result } from 'better-result';
-import { Command } from 'commander';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -120,20 +119,6 @@ const printReport = (result: Awaited<ReturnType<typeof runWipe>>) => {
 		for (const line of result.failed) console.log(`- ${line}`);
 	}
 };
-
-export const wipeCommand = new Command('wipe')
-	.description('Delete BTCA config files in the current directory and global config directory')
-	.option('-y, --yes', 'Skip confirmation prompt')
-	.action(async (options: { yes?: boolean }) => {
-		const result = await Result.tryPromise(() => runWipeCommand({ yes: options.yes }));
-
-		if (Result.isError(result)) {
-			console.error(
-				`Error: ${result.error instanceof Error ? result.error.message : String(result.error)}`
-			);
-			process.exit(1);
-		}
-	});
 
 export const runWipeCommand = async (args: { yes?: boolean }) => {
 	const targets = listTargets();

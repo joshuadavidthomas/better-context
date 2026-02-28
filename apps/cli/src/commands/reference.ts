@@ -1,5 +1,4 @@
 import { Result } from 'better-result';
-import { Command } from 'commander';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
@@ -100,20 +99,6 @@ const printAgentSnippets = () => {
 	);
 	console.log('```');
 };
-
-export const referenceCommand = new Command('reference')
-	.description('Clone a reference repository into ./references and keep it untracked locally')
-	.argument('<repo>', 'Repository URL or git clone target')
-	.action(async (repo: string) => {
-		const result = await Result.tryPromise(() => runReferenceCommand(repo));
-
-		if (Result.isError(result)) {
-			console.error(
-				`Error: ${result.error instanceof Error ? result.error.message : String(result.error)}`
-			);
-			process.exit(1);
-		}
-	});
 
 export const runReferenceCommand = async (repo: string) => {
 	const cwd = process.cwd();

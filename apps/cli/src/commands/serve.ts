@@ -1,8 +1,6 @@
 import { Result } from 'better-result';
-import { Command } from 'commander';
 import { startServer } from 'btca-server';
 import { createClient, getConfig } from '../client/index.ts';
-import { formatCliCommandError } from '../effect/errors.ts';
 import { setTelemetryContext, trackTelemetryEvent } from '../lib/telemetry.ts';
 
 const DEFAULT_PORT = 8080;
@@ -58,17 +56,3 @@ export const runServeCommand = async (options: { port?: number } = {}) => {
 		throw result.error;
 	}
 };
-
-export const serveCommand = new Command('serve')
-	.description('Start the btca server and listen for requests')
-	.option('-p, --port <port>', 'Port to listen on (default: 8080)')
-	.action(async (options: { port?: string }) => {
-		try {
-			await runServeCommand({
-				port: options.port ? parseInt(options.port, 10) : DEFAULT_PORT
-			});
-		} catch (error) {
-			console.error(formatCliCommandError(error));
-			process.exit(1);
-		}
-	});

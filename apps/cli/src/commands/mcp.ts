@@ -1,5 +1,4 @@
 import { Result } from 'better-result';
-import { Command } from 'commander';
 import { McpServer } from 'tmcp';
 import { StdioTransport } from '@tmcp/transport-stdio';
 import { ZodJsonSchemaAdapter } from '@tmcp/adapter-zod';
@@ -394,18 +393,3 @@ export const runMcpConfigureLocalCommand = async () => {
 	}
 };
 
-const configureLocalMcp = new Command('local')
-	.description('Configure local MCP settings for your editor')
-	.action(runMcpConfigureLocalCommand);
-
-export const mcpCommand = new Command('mcp')
-	.description('Run the local MCP server or configure editor MCP settings')
-	.action(async (_options, command) => {
-		const globalOpts = command.parent?.opts() as { server?: string; port?: number } | undefined;
-		const result = await Result.tryPromise(() => runMcpServerCommand({ globalOpts }));
-		if (Result.isError(result)) {
-			console.error(formatError(result.error));
-			process.exit(1);
-		}
-	})
-	.addCommand(configureLocalMcp);

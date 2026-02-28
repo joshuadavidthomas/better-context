@@ -1,30 +1,8 @@
-import { Result } from 'better-result';
-import { Command } from 'commander';
 import select from '@inquirer/select';
 import * as readline from 'readline';
 import { ensureServer } from '../server/manager.ts';
-import { createClient, getProviders, BtcaError } from '../client/index.ts';
+import { createClient, getProviders } from '../client/index.ts';
 import { removeProviderAuth } from '../lib/opencode-oauth.ts';
-
-/**
- * Format an error for display, including hint if available.
- */
-function formatError(error: unknown): string {
-	if (error instanceof BtcaError) {
-		let output = `Error: ${error.message}`;
-		if (error.hint) {
-			output += `\n\nHint: ${error.hint}`;
-		}
-		return output;
-	}
-	return `Error: ${error instanceof Error ? error.message : String(error)}`;
-}
-
-const isPromptCancelled = (error: unknown) =>
-	error instanceof Error &&
-	(error.name === 'ExitPromptError' ||
-		error.message.toLowerCase().includes('canceled') ||
-		error.message.toLowerCase().includes('cancelled'));
 
 /**
  * Prompt for single selection from a list.
@@ -71,29 +49,6 @@ async function promptSelect<T extends string>(
 	});
 	return selection as T;
 }
-
-export const disconnectCommand = new Command('disconnect')
-	.description('Disconnect a provider and remove saved credentials')
-	.option('-p, --provider <id>', 'Provider ID to disconnect')
-	.action(async (options: { provider?: string }, command) => {
-		const globalOpts = command.parent?.opts() as { server?: string; port?: number } | undefined;
-		const result = await Result.tryPromise(() =>
-			runDisconnectCommand({ provider: options.provider, globalOpts })
-		);
-		if (Result.isError(result)) {
-			const error = result.error;
-			if (error instanceof Error && error.message === 'Invalid selection') {
-				console.error('\nError: Invalid selection. Please try again.');
-				process.exit(1);
-			}
-			if (isPromptCancelled(error)) {
-				console.log('\nSelection cancelled.');
-				process.exit(0);
-			}
-			console.error(formatError(error));
-			process.exit(1);
-		}
-	});
 
 export const runDisconnectCommand = async (args: {
 	provider?: string;

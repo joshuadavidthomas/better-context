@@ -59,7 +59,6 @@
 		"babel-plugin-react-compiler": "^1.0.0",
 		"better-result": "^2.6.0",
 		"btca-server": "workspace:*",
-		"commander": "^12.1.0",
 		"prettier": "^3.7.4",
 		"react": "^19.2.4",
 		"tmcp": "^1.19.2",
