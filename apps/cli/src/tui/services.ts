@@ -1,4 +1,5 @@
 import { Result } from 'better-result';
+import { Effect } from 'effect';
 import type { BtcaStreamEvent } from 'btca-server/stream/types';
 
 import {
@@ -27,6 +28,8 @@ const getServerUrl = (): string => {
 // Current request abort controller for cancellation
 let currentAbortController: AbortController | null = null;
 
+const runTuiEffect = <A>(effect: Effect.Effect<A, unknown>) => Effect.runPromise(effect);
+
 export type ChunkUpdate =
 	| { type: 'add'; chunk: BtcaChunk }
 	| { type: 'update'; id: string; chunk: Partial<BtcaChunk> };
@@ -41,35 +44,51 @@ export const services = {
 	 * Get all configured resources for @mention autocomplete
 	 */
 	getRepos: async (): Promise<Repo[]> => {
-		const client = createClient(getServerUrl());
-		const { resources } = await getResources(client);
-		return resources.map((r) => ({
-			name: r.name,
-			type: r.type,
-			url:
-				r.type === 'git' ? (r.url ?? '') : r.type === 'local' ? (r.path ?? '') : (r.package ?? ''),
-			branch: r.type === 'git' ? (r.branch ?? 'main') : 'main',
-			specialNotes: r.specialNotes ?? undefined,
-			searchPath: r.type === 'git' ? (r.searchPath ?? undefined) : undefined,
-			searchPaths: r.type === 'git' ? (r.searchPaths ?? undefined) : undefined
-		}));
+		return runTuiEffect(
+			Effect.gen(function* () {
+				const client = createClient(getServerUrl());
+				const { resources } = yield* Effect.tryPromise(() => getResources(client));
+				return resources.map((r) => ({
+					name: r.name,
+					type: r.type,
+					url:
+						r.type === 'git'
+							? (r.url ?? '')
+							: r.type === 'local'
+								? (r.path ?? '')
+								: (r.package ?? ''),
+					branch: r.type === 'git' ? (r.branch ?? 'main') : 'main',
+					specialNotes: r.specialNotes ?? undefined,
+					searchPath: r.type === 'git' ? (r.searchPath ?? undefined) : undefined,
+					searchPaths: r.type === 'git' ? (r.searchPaths ?? undefined) : undefined
+				}));
+			})
+		);
 	},
 
 	/**
 	 * Get current model config
 	 */
 	getModel: async (): Promise<{ provider: string; model: string }> => {
-		const client = createClient(getServerUrl());
-		const config = await getConfig(client);
-		return { provider: config.provider, model: config.model };
+		return runTuiEffect(
+			Effect.gen(function* () {
+				const client = createClient(getServerUrl());
+				const config = yield* Effect.tryPromise(() => getConfig(client));
+				return { provider: config.provider, model: config.model };
+			})
+		);
 	},
 
 	/**
 	 * Get provider connection status
 	 */
 	getProviders: async () => {
-		const client = createClient(getServerUrl());
-		return getProvidersClient(client);
+		return runTuiEffect(
+			Effect.gen(function* () {
+				const client = createClient(getServerUrl());
+				return yield* Effect.tryPromise(() => getProvidersClient(client));
+			})
+		);
 	},
 
 	/**
@@ -82,64 +101,69 @@ export const services = {
 	): Promise<{
 		chunks: BtcaChunk[];
 		doneEvent?: Extract<BtcaStreamEvent, { type: 'done' }>;
-	}> => {
-		const serverUrl = getServerUrl();
-
-		// Create abort controller for this request
-		currentAbortController = new AbortController();
-		const signal = currentAbortController.signal;
-
-		const response = await askQuestionStream(serverUrl, {
-			question,
-			resources: resourceNames,
-			quiet: true,
-			signal
-		});
-
-		// Track chunks by ID for updates, and order separately for display
-		const chunksById = new Map<string, BtcaChunk>();
-		const chunkOrder: string[] = [];
-		let doneEvent: Extract<BtcaStreamEvent, { type: 'done' }> | undefined;
-
-		const streamResult = await Result.tryPromise(async () => {
-			for await (const event of parseSSEStream(response)) {
-				if (signal.aborted) break;
-				if (event.type === 'error') {
-					throw new Error(formatTuiStreamError(event));
+	}> =>
+		runTuiEffect(
+			Effect.gen(function* () {
+				const serverUrl = getServerUrl();
+				currentAbortController = new AbortController();
+				const signal = currentAbortController.signal;
+				const response = yield* Effect.tryPromise(() =>
+					askQuestionStream(serverUrl, {
+						question,
+						resources: resourceNames,
+						quiet: true,
+						signal
+					})
+				);
+				const chunksById = new Map<string, BtcaChunk>();
+				const chunkOrder: string[] = [];
+				let doneEvent: Extract<BtcaStreamEvent, { type: 'done' }> | undefined;
+				const streamResult = yield* Effect.tryPromise(() =>
+					Result.tryPromise(async () => {
+						for await (const event of parseSSEStream(response)) {
+							if (signal.aborted) break;
+							if (event.type === 'error') {
+								throw new Error(formatTuiStreamError(event));
+							}
+							if (event.type === 'done') {
+								doneEvent = event;
+								continue;
+							}
+							processStreamEvent(event, chunksById, chunkOrder, onChunkUpdate);
+						}
+					})
+				);
+				if (streamResult.isErr()) {
+					const error = streamResult.error;
+					if (!(error instanceof Error && error.name === 'AbortError')) {
+						return yield* Effect.fail(error);
+					}
 				}
-				if (event.type === 'done') {
-					doneEvent = event;
-					continue;
-				}
-				processStreamEvent(event, chunksById, chunkOrder, onChunkUpdate);
-			}
-		});
-		if (streamResult.isErr()) {
-			const error = streamResult.error;
-			if (!(error instanceof Error && error.name === 'AbortError')) {
-				throw error;
-			}
-		}
-
-		currentAbortController = null;
-		return {
-			chunks: chunkOrder.map((id) => chunksById.get(id)!),
-			...(doneEvent ? { doneEvent } : {})
-		};
-	},
+				currentAbortController = null;
+				return {
+					chunks: chunkOrder.map((id) => chunksById.get(id)!),
+					...(doneEvent ? { doneEvent } : {})
+				};
+			})
+		),
 
 	/**
 	 * Cancel the current request
 	 */
 	cancelCurrentRequest: async (): Promise<void> => {
-		if (currentAbortController) {
-			currentAbortController.abort();
-			currentAbortController = null;
-			await trackTelemetryEvent({
-				event: 'cli_stream_cancelled',
-				properties: { command: 'btca', mode: 'tui' }
-			});
-		}
+		await runTuiEffect(
+			Effect.gen(function* () {
+				if (!currentAbortController) return;
+				currentAbortController.abort();
+				currentAbortController = null;
+				yield* Effect.tryPromise(() =>
+					trackTelemetryEvent({
+						event: 'cli_stream_cancelled',
+						properties: { command: 'btca', mode: 'tui' }
+					})
+				);
+			})
+		);
 	},
 
 	/**
@@ -150,24 +174,25 @@ export const services = {
 		model: string,
 		providerOptions?: ProviderOptionsInput
 	): Promise<ModelUpdateResult> => {
-		const serverUrl = getServerUrl();
-		return updateModelClient(serverUrl, provider, model, providerOptions);
+		return runTuiEffect(
+			Effect.tryPromise(() =>
+				updateModelClient(getServerUrl(), provider, model, providerOptions)
+			)
+		);
 	},
 
 	/**
 	 * Add a new resource
 	 */
 	addResource: async (resource: ResourceInput): Promise<ResourceInput> => {
-		const serverUrl = getServerUrl();
-		return addResourceClient(serverUrl, resource);
+		return runTuiEffect(Effect.tryPromise(() => addResourceClient(getServerUrl(), resource)));
 	},
 
 	/**
 	 * Remove a resource
 	 */
 	removeResource: async (name: string): Promise<void> => {
-		const serverUrl = getServerUrl();
-		return removeResourceClient(serverUrl, name);
+		await runTuiEffect(Effect.tryPromise(() => removeResourceClient(getServerUrl(), name)));
 	}
 };
 
