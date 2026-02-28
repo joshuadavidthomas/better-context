@@ -806,11 +806,30 @@ export namespace Config {
 				});
 			},
 			updateModelEffect: (provider, model, providerOptions) =>
-				Effect.tryPromise(() => service.updateModel(provider, model, providerOptions)),
-			addResourceEffect: (resource) => Effect.tryPromise(() => service.addResource(resource)),
-			removeResourceEffect: (name) => Effect.tryPromise(() => service.removeResource(name)),
-			clearResourcesEffect: () => Effect.tryPromise(() => service.clearResources()),
-			reloadEffect: () => Effect.tryPromise(() => service.reload())
+				Effect.tryPromise({
+					try: () => service.updateModel(provider, model, providerOptions),
+					catch: (cause) => cause
+				}),
+			addResourceEffect: (resource) =>
+				Effect.tryPromise({
+					try: () => service.addResource(resource),
+					catch: (cause) => cause
+				}),
+			removeResourceEffect: (name) =>
+				Effect.tryPromise({
+					try: () => service.removeResource(name),
+					catch: (cause) => cause
+				}),
+			clearResourcesEffect: () =>
+				Effect.tryPromise({
+					try: () => service.clearResources(),
+					catch: (cause) => cause
+				}),
+			reloadEffect: () =>
+				Effect.tryPromise({
+					try: () => service.reload(),
+					catch: (cause) => cause
+				})
 		};
 
 		return service;

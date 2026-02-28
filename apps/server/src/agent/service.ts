@@ -273,10 +273,20 @@ export namespace Agent {
 		};
 
 		const askStreamEffect: Service['askStreamEffect'] = (args) =>
-			Effect.tryPromise(() => askStream(args));
-		const askEffect: Service['askEffect'] = (args) => Effect.tryPromise(() => ask(args));
+			Effect.tryPromise({
+				try: () => askStream(args),
+				catch: (cause) => cause
+			});
+		const askEffect: Service['askEffect'] = (args) =>
+			Effect.tryPromise({
+				try: () => ask(args),
+				catch: (cause) => cause
+			});
 		const listProvidersEffect: Service['listProvidersEffect'] = () =>
-			Effect.tryPromise(() => listProviders());
+			Effect.tryPromise({
+				try: () => listProviders(),
+				catch: (cause) => cause
+			});
 
 		return {
 			askStream,
