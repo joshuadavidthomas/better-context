@@ -9,7 +9,7 @@ import {
 	type ReactNode
 } from 'react';
 import { formatConversationHistory, type ThreadMessage } from '@btca/shared';
-import { Result } from 'better-result';
+import { Effect } from 'effect';
 
 import type { BtcaChunk, CancelState, InputState, Message } from '../types.ts';
 import { services, type ChunkUpdate } from '../services.ts';
@@ -98,6 +98,10 @@ const formatStreamStats = (done: {
 
 	return parts.length > 0 ? `Generation stats: ${parts.join(' || ')}` : null;
 };
+
+function runMessagesEffect<A>(effect: Effect.Effect<A, unknown>) {
+	return Effect.runPromise(effect);
+}
 
 type MessagesState = {
 	messages: Message[];
@@ -376,34 +380,35 @@ export const MessagesProvider = (props: { children: ReactNode }) => {
 			setIsStreaming(true);
 			setCancelState('none');
 
-			const result = await Result.tryPromise(async () => {
+			try {
 				const questionWithHistory = formatConversationHistory(threadMessages, question);
-				const result = await services.askQuestion(
-					updatedResources,
-					questionWithHistory,
-					handleChunkUpdate
+				const response = await runMessagesEffect(
+					Effect.tryPromise(() =>
+						services.askQuestion(updatedResources, questionWithHistory, handleChunkUpdate)
+					)
 				);
 
-				if (cancelStateRef.current === 'pending') return;
+				if (cancelStateRef.current !== 'pending') {
+					if (response.doneEvent) {
+						const stats = formatStreamStats(response.doneEvent);
+						if (stats) addMessage({ role: 'system', content: stats });
+					}
 
-				if (result.doneEvent) {
-					const stats = formatStreamStats(result.doneEvent);
-					if (stats) addMessage({ role: 'system', content: stats });
+					addMessage({ role: 'system', content: 'run /copy to copy message to clipboard' });
 				}
-
-				addMessage({ role: 'system', content: 'run /copy to copy message to clipboard' });
-			});
-
-			if (result.isErr() && cancelStateRef.current !== 'pending') {
-				addMessage({ role: 'system', content: `Error: ${formatError(result.error)}` });
+			} catch (error) {
+				if (cancelStateRef.current !== 'pending') {
+					addMessage({ role: 'system', content: `Error: ${formatError(error)}` });
+				}
 			}
 
 			setIsStreaming(false);
 			setCancelState('none');
 
-			const persistResult = await Result.tryPromise(persistCurrentThread);
-			if (persistResult.isErr()) {
-				addMessage({ role: 'system', content: `Error: ${formatError(persistResult.error)}` });
+			try {
+				await runMessagesEffect(Effect.tryPromise(persistCurrentThread));
+			} catch (error) {
+				addMessage({ role: 'system', content: `Error: ${formatError(error)}` });
 			}
 		},
 		[addMessage, convertToThreadMessages, handleChunkUpdate, persistCurrentThread]
@@ -420,22 +425,25 @@ export const MessagesProvider = (props: { children: ReactNode }) => {
 		setIsStreaming(false);
 		setCancelState('none');
 
-		const persistResult = await Result.tryPromise(persistCurrentThread);
-		if (persistResult.isErr()) {
-			addMessage({ role: 'system', content: `Error: ${formatError(persistResult.error)}` });
+		try {
+			await runMessagesEffect(Effect.tryPromise(persistCurrentThread));
+		} catch (error) {
+			addMessage({ role: 'system', content: `Error: ${formatError(error)}` });
 		}
 	}, [addMessage, markLastAssistantMessageCanceled, persistCurrentThread]);
 
 	const clearMessages = useCallback(() => {
 		void (async () => {
-			const persistResult = await Result.tryPromise(persistCurrentThread);
-			if (persistResult.isErr()) {
-				addMessage({ role: 'system', content: `Error: ${formatError(persistResult.error)}` });
+			try {
+				await runMessagesEffect(Effect.tryPromise(persistCurrentThread));
+			} catch (error) {
+				addMessage({ role: 'system', content: `Error: ${formatError(error)}` });
 				return;
 			}
-			const resetResult = await Result.tryPromise(startNewThread);
-			if (resetResult.isErr()) {
-				addMessage({ role: 'system', content: `Error: ${formatError(resetResult.error)}` });
+			try {
+				await runMessagesEffect(Effect.tryPromise(startNewThread));
+			} catch (error) {
+				addMessage({ role: 'system', content: `Error: ${formatError(error)}` });
 			}
 		})();
 	}, [addMessage, persistCurrentThread, startNewThread]);
@@ -466,9 +474,10 @@ export const MessagesProvider = (props: { children: ReactNode }) => {
 			'Assistant:',
 			getAssistantMessageText(assistantMessage)
 		].join('\n');
-		const copyResult = await Result.tryPromise(() => copyToClipboard(payload));
-		if (copyResult.isErr()) {
-			addMessage({ role: 'system', content: `Error: ${formatError(copyResult.error)}` });
+		try {
+			await runMessagesEffect(Effect.tryPromise(() => copyToClipboard(payload)));
+		} catch (error) {
+			addMessage({ role: 'system', content: `Error: ${formatError(error)}` });
 			return;
 		}
 
@@ -486,9 +495,10 @@ export const MessagesProvider = (props: { children: ReactNode }) => {
 			return;
 		}
 
-		const copyResult = await Result.tryPromise(() => copyToClipboard(parts.join('\n\n')));
-		if (copyResult.isErr()) {
-			addMessage({ role: 'system', content: `Error: ${formatError(copyResult.error)}` });
+		try {
+			await runMessagesEffect(Effect.tryPromise(() => copyToClipboard(parts.join('\n\n'))));
+		} catch (error) {
+			addMessage({ role: 'system', content: `Error: ${formatError(error)}` });
 			return;
 		}
 
@@ -499,19 +509,21 @@ export const MessagesProvider = (props: { children: ReactNode }) => {
 		async (nextThreadId: string) => {
 			if (nextThreadId === threadIdRef.current) return;
 
-			const persistResult = await Result.tryPromise(persistCurrentThread);
-			if (persistResult.isErr()) {
-				addMessage({ role: 'system', content: `Error: ${formatError(persistResult.error)}` });
+			try {
+				await runMessagesEffect(Effect.tryPromise(persistCurrentThread));
+			} catch (error) {
+				addMessage({ role: 'system', content: `Error: ${formatError(error)}` });
 				return;
 			}
 
-			const threadResult = await Result.tryPromise(() => loadThread(nextThreadId));
-			if (threadResult.isErr()) {
-				addMessage({ role: 'system', content: `Error: ${formatError(threadResult.error)}` });
+			let thread: Awaited<ReturnType<typeof loadThread>>;
+			try {
+				thread = await runMessagesEffect(Effect.tryPromise(() => loadThread(nextThreadId)));
+			} catch (error) {
+				addMessage({ role: 'system', content: `Error: ${formatError(error)}` });
 				return;
 			}
 
-			const thread = threadResult.value;
 			if (!thread) {
 				addMessage({ role: 'system', content: 'Thread not found.' });
 				return;
@@ -527,7 +539,7 @@ export const MessagesProvider = (props: { children: ReactNode }) => {
 	);
 
 	useEffect(() => {
-		void Result.tryPromise(persistCurrentThread);
+		void runMessagesEffect(Effect.tryPromise(persistCurrentThread)).catch(() => undefined);
 	}, [persistCurrentThread]);
 
 	const state = useMemo<MessagesState>(
