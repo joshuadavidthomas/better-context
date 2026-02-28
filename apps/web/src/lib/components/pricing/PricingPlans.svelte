@@ -24,10 +24,10 @@
 	}: Props = $props();
 
 	const features = [
-		'Claude Haiku 4.5',
-		'Dedicated sandbox',
-		'MCP server for AI coding tools',
-		'Monthly usage budget across tokens + sandbox time',
+		'More messages and ongoing usage',
+		'Dedicated sandbox for cloud repo work',
+		'Saved threads and project organization',
+		'Cloud MCP for coding tools',
 		'Priority support'
 	];
 
@@ -55,9 +55,11 @@
 				<span class="bc-badge">Pro Plan</span>
 			</div>
 			<div class="max-w-2xl">
-				<h1 class="text-4xl font-semibold tracking-tight">Learn by Searching the Source</h1>
+				<h1 class="text-4xl font-semibold tracking-tight">
+					For developers who want grounded answers from real codebases
+				</h1>
 				<p class="bc-muted mt-3 text-base">
-					A powerful web chat interface for researching technologies by searching their source
+					Search repos, save threads, and use btca as your codebase research layer.
 				</p>
 			</div>
 		</div>
@@ -71,39 +73,40 @@
 					<h3 class="mt-2 text-3xl font-semibold">$0</h3>
 					<p class="bc-muted text-xs">forever</p>
 				</div>
-				<span class="bc-badge">Try it out</span>
+				<span class="bc-badge">Try btca</span>
 			</div>
+			<p class="mt-4 text-sm font-medium">Try btca on a real codebase</p>
 			<ul class="mt-6 grid gap-3 text-sm">
 				<li class="flex items-start gap-3">
 					<Check size={18} class="mt-0.5 text-[hsl(var(--bc-success))]" />
-					<span>5 free messages to get started</span>
+					<span>Limited messages to test the workflow</span>
 				</li>
 				<li class="flex items-start gap-3">
 					<Check size={18} class="mt-0.5 text-[hsl(var(--bc-success))]" />
-					<span>Claude Haiku 4.5</span>
+					<span>Grounded codebase search</span>
 				</li>
 				<li class="flex items-start gap-3">
 					<Check size={18} class="mt-0.5 text-[hsl(var(--bc-success))]" />
-					<span>Codebase search</span>
+					<span>Web app access with Claude Haiku 4.5</span>
 				</li>
 			</ul>
 			<div
 				class="bc-card mt-6 border-[hsl(var(--bc-border))] bg-[hsl(var(--bc-surface-2))] p-4 text-xs"
 			>
-				Perfect for trying out the platform. Upgrade to Pro for unlimited messages and sandbox
-				access.
+				Good for evaluating the product before you commit to a paid workflow.
 			</div>
 		</div>
 
 		<div class="bc-card bc-reveal p-8" style="--delay: 90ms">
 			<div class="flex items-baseline justify-between">
 				<div>
-					<p class="bc-muted text-xs uppercase tracking-[0.3em]">Monthly</p>
+					<p class="bc-muted text-xs uppercase tracking-[0.3em]">Pro</p>
 					<h3 class="mt-2 text-3xl font-semibold">${BILLING_PLAN.priceUsd}</h3>
 					<p class="bc-muted text-xs">per month</p>
 				</div>
 				<span class="bc-badge">Cancel anytime</span>
 			</div>
+			<p class="mt-4 text-sm font-medium">For solo developers doing ongoing codebase research</p>
 			<ul class="mt-6 grid gap-3 text-sm">
 				{#each features as feature}
 					<li class="flex items-start gap-3">
@@ -115,7 +118,8 @@
 			<div
 				class="bc-card mt-6 border-[hsl(var(--bc-border))] bg-[hsl(var(--bc-surface-2))] p-4 text-xs"
 			>
-				Usage is enforced monthly across tokens in/out and sandbox hours
+				Usage is measured across model tokens and sandbox compute. If you hit your monthly limit,
+				you can upgrade or wait for the next billing cycle.
 			</div>
 			{#if errorMessage}
 				<p class="mt-4 text-xs text-red-500">{errorMessage}</p>
@@ -133,9 +137,9 @@
 						<Loader2 size={16} class="animate-spin" />
 						Starting checkout...
 					{:else if !isSignedIn}
-						Sign in to subscribe
+						Start with Free
 					{:else}
-						Subscribe now
+						Upgrade to Pro
 					{/if}
 				</button>
 			{/if}

@@ -58,29 +58,29 @@
 
 <svelte:head>
 	<link rel="icon" href={favicon} />
-	<title>Better Context</title>
+	<title>btca</title>
 	<meta
 		name="description"
-		content="Better Context: CLI + web app for answering questions from real source code."
+		content="Ask questions about any codebase and get answers grounded in the repo with btca."
 	/>
 
 	<meta property="og:type" content="website" />
-	<meta property="og:title" content="The Better Context App" />
+	<meta property="og:title" content="btca" />
 	<meta
 		property="og:description"
-		content="Better Context: CLI + web app for answering questions from real source code."
+		content="Ask questions about any codebase and get answers grounded in the repo with btca."
 	/>
 	<meta property="og:url" content="https://btca.dev" />
-	<meta property="og:site_name" content="The Better Context App" />
+	<meta property="og:site_name" content="btca" />
 	<meta property="og:image" content={ogImageUrl} />
 	<meta property="og:image:width" content="1200" />
 	<meta property="og:image:height" content="630" />
 
 	<meta name="twitter:card" content="summary_large_image" />
-	<meta name="twitter:title" content="The Better Context App" />
+	<meta name="twitter:title" content="btca" />
 	<meta
 		name="twitter:description"
-		content="Better Context: CLI + web app for answering questions from real source code."
+		content="Ask questions about any codebase and get answers grounded in the repo with btca."
 	/>
 	<meta name="twitter:image" content={ogImageUrl} />
 </svelte:head>
@@ -102,8 +102,8 @@
 						<Bot size={18} strokeWidth={2.25} />
 					</div>
 					<div class="min-w-0 leading-tight">
-						<div class="bc-title text-sm">Better Context</div>
-						<div class="bc-subtitle text-xs">btca · learn about tech from the actual source</div>
+						<div class="bc-title text-sm">btca</div>
+						<div class="bc-subtitle text-xs">grounded codebase answers</div>
 					</div>
 				</a>
 
@@ -123,7 +123,7 @@
 				</nav>
 
 				<div class="flex items-center gap-2">
-					<a href="/app" class="bc-chip bc-btnPrimary hidden sm:inline-flex">Go to App</a>
+					<a href="/app" class="bc-chip bc-btnPrimary hidden sm:inline-flex">Try the web app</a>
 
 					<a
 						class="bc-chip hidden sm:inline-flex"
@@ -187,7 +187,7 @@
 								class={`bc-navLink ${isActive('/resources') ? 'bc-navLink-active' : ''}`}
 								href="/resources">Resources</a
 							>
-							<a class="bc-navLink" href="/app">Go to App</a>
+							<a class="bc-navLink" href="/app">Try the web app</a>
 							<a
 								class="bc-navLink"
 								href="https://github.com/bmdavis419/better-context"
@@ -212,7 +212,7 @@
 			<div class="bc-container grid gap-8 py-12 sm:grid-cols-2">
 				<div class="flex flex-col gap-2">
 					<div class="text-sm font-semibold tracking-tight">
-						Help your agents get it right on the first try.
+						Help your AI work from the codebase you actually care about.
 					</div>
 				</div>
 
@@ -224,7 +224,7 @@
 					<a class="bc-chip" href="/web">Web</a>
 					<a class="bc-chip" href="/pricing">Pricing</a>
 					<a class="bc-chip" href="/resources">Resources</a>
-					<a class="bc-chip" href="/app">Go to App</a>
+					<a class="bc-chip" href="/app">Try the web app</a>
 				</div>
 			</div>
 		</footer>

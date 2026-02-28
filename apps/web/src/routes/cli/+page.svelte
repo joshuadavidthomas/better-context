@@ -6,7 +6,7 @@
 	<title>btca | CLI</title>
 	<meta
 		name="description"
-		content="The btca CLI for asking questions about real codebases straight from your terminal."
+		content="Ask questions about any codebase from your terminal with the btca CLI."
 	/>
 </svelte:head>
 
@@ -18,11 +18,11 @@
 		</div>
 
 		<h1 class="bc-h1 text-balance text-5xl sm:text-6xl">
-			Answers from source, right in your terminal.
+			Ask questions about any codebase from your terminal.
 		</h1>
 		<p class="bc-prose max-w-2xl text-pretty text-base sm:text-lg">
-			Ask questions about any codebase and get answers grounded in real source code — no browser
-			required.
+			Search repos and local directories from the CLI and get answers grounded in source files,
+			docs, and config - no browser required.
 		</p>
 
 		<div class="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -30,13 +30,13 @@
 				href="https://docs.btca.dev/guides/quickstart"
 				class="bc-chip bc-btnPrimary justify-center"
 				target="_blank"
-				rel="noreferrer">Get started</a
+				rel="noreferrer">Install btca</a
 			>
 			<a
-				href="https://docs.btca.dev"
+				href="https://docs.btca.dev/guides/cli-reference"
 				class="bc-chip justify-center"
 				target="_blank"
-				rel="noreferrer">Read the docs</a
+				rel="noreferrer">Read CLI docs</a
 			>
 		</div>
 	</header>
@@ -46,7 +46,9 @@
 			<span class="bc-kickerDot"></span>
 			<span>In action</span>
 		</div>
-		<p class="mt-2 max-w-2xl text-sm bc-prose">A quick look at asking a question with the CLI.</p>
+		<p class="mt-2 max-w-2xl text-sm bc-prose">
+			See what a grounded repo query looks like in the terminal.
+		</p>
 
 		<div class="mt-4">
 			<div class="bc-card bc-ring p-5">
@@ -64,48 +66,67 @@
 			<li class="flex items-start gap-2">
 				<span class="bc-kickerDot mt-1.5 shrink-0"></span>
 				<span
-					>One command to ask a question — <code class="bc-code"
-						>btca ask -r svelte -q "How do runes work?"</code
-					></span
+					><strong>Ask a repo question with one command</strong> -
+					<code class="bc-code">btca ask -r svelte -q "How do runes work?"</code></span
 				>
 			</li>
 			<li class="flex items-start gap-2">
 				<span class="bc-kickerDot mt-1.5 shrink-0"></span>
-				<span>Interactive TUI for multi-turn conversations with @mentions</span>
+				<span><strong>Use the TUI for multi-turn debugging and exploration</strong></span>
 			</li>
 			<li class="flex items-start gap-2">
 				<span class="bc-kickerDot mt-1.5 shrink-0"></span>
-				<span>Add any git repo or local directory as a searchable resource</span>
+				<span><strong>Index any git repo or local directory</strong></span>
 			</li>
 			<li class="flex items-start gap-2">
 				<span class="bc-kickerDot mt-1.5 shrink-0"></span>
-				<span>Bring your own model — 7+ providers supported out of the box</span>
+				<span
+					><strong>Use your own model provider</strong> - 7+ providers supported out of the box</span
+				>
 			</li>
 			<li class="flex items-start gap-2">
 				<span class="bc-kickerDot mt-1.5 shrink-0"></span>
-				<span>Built-in MCP server so your AI tools can query repos too</span>
+				<span><strong>Expose a local MCP server for coding tools</strong></span>
 			</li>
 			<li class="flex items-start gap-2">
 				<span class="bc-kickerDot mt-1.5 shrink-0"></span>
-				<span>Fully local — your code never leaves your machine</span>
+				<span><strong>Keep private code on your machine</strong></span>
 			</li>
 		</ul>
+	</section>
+
+	<section class="bc-card bc-ring p-6">
+		<div class="max-w-3xl">
+			<div class="text-sm font-semibold">Why use btca?</div>
+			<p class="mt-2 text-sm bc-prose">
+				Generic AI answers are often based on priors, stale docs, or incomplete context. btca
+				narrows the model to the repos and resources you choose, so answers are grounded in the
+				codebase you actually care about.
+			</p>
+		</div>
 	</section>
 
 	<section class="bc-card bc-ring p-6">
 		<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 			<div>
 				<div class="text-sm font-semibold">Ready to try it?</div>
-				<p class="mt-1 text-sm bc-prose">Install with one command and start asking questions.</p>
+				<p class="mt-1 text-sm bc-prose">
+					Install btca, add a repo, and ask your first grounded question in minutes.
+				</p>
 			</div>
 			<div class="flex flex-wrap gap-3">
 				<a
 					href="https://docs.btca.dev/guides/quickstart"
 					class="bc-chip bc-btnPrimary"
 					target="_blank"
-					rel="noreferrer">Get started</a
+					rel="noreferrer">Install btca</a
 				>
-				<a href="https://docs.btca.dev" class="bc-chip" target="_blank" rel="noreferrer">Docs</a>
+				<a
+					href="https://docs.btca.dev/guides/cli-reference"
+					class="bc-chip"
+					target="_blank"
+					rel="noreferrer">Read CLI docs</a
+				>
 			</div>
 		</div>
 	</section>

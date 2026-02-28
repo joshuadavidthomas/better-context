@@ -6,7 +6,7 @@
 	<title>btca | Web</title>
 	<meta
 		name="description"
-		content="The btca web app for researching technologies and saving your threads."
+		content="Use the btca web app to save grounded codebase research and revisit it later."
 	/>
 </svelte:head>
 
@@ -18,15 +18,16 @@
 		</div>
 
 		<h1 class="bc-h1 text-balance text-5xl sm:text-6xl">
-			Keep your best answers, and keep moving.
+			Save grounded codebase research and come back to it later.
 		</h1>
 		<p class="bc-prose max-w-2xl text-pretty text-base sm:text-lg">
-			The web app makes it easy to research technologies and save your threads.
+			Search repos in the cloud, save useful threads, and organize work by project - so your
+			codebase research stays reusable.
 		</p>
 
 		<div class="flex flex-col gap-3 sm:flex-row sm:items-center">
-			<a href="/app" class="bc-chip bc-btnPrimary justify-center">Open the app</a>
-			<a href="/pricing" class="bc-chip justify-center">See pricing</a>
+			<a href="/app" class="bc-chip bc-btnPrimary justify-center">Try the web app</a>
+			<a href="/pricing" class="bc-chip justify-center">View pricing</a>
 		</div>
 	</header>
 
@@ -36,7 +37,7 @@
 			<span>Product tour</span>
 		</div>
 		<p class="mt-2 max-w-2xl text-sm bc-prose">
-			A quick look at the chat experience in the web app.
+			The web app is built for longer-running research, saved threads, and cloud-indexed repos.
 		</p>
 
 		<div class="mt-4">
@@ -54,40 +55,54 @@
 		<ul class="mt-4 flex flex-col gap-2 text-sm bc-prose">
 			<li class="flex items-start gap-2">
 				<span class="bc-kickerDot mt-1.5 shrink-0"></span>
-				<span>Chat with AI grounded in real source code — not hallucinated docs</span>
+				<span><strong>Ask questions against selected repos, not random web context</strong></span>
 			</li>
 			<li class="flex items-start gap-2">
 				<span class="bc-kickerDot mt-1.5 shrink-0"></span>
-				<span>Save and resume threads to pick up where you left off</span>
+				<span><strong>Save and resume threads without losing the chain of reasoning</strong></span>
 			</li>
 			<li class="flex items-start gap-2">
 				<span class="bc-kickerDot mt-1.5 shrink-0"></span>
-				<span>Add any git repo as a searchable resource</span>
+				<span><strong>Add git repos to searchable projects</strong></span>
 			</li>
 			<li class="flex items-start gap-2">
 				<span class="bc-kickerDot mt-1.5 shrink-0"></span>
-				<span>Cloud sandbox indexes repos so answers stay up to date</span>
+				<span><strong>Use a cloud sandbox to keep repo answers current</strong></span>
 			</li>
 			<li class="flex items-start gap-2">
 				<span class="bc-kickerDot mt-1.5 shrink-0"></span>
-				<span>Built-in MCP server for connecting to your AI tools</span>
+				<span><strong>Connect btca to coding tools through Cloud MCP</strong></span>
 			</li>
 			<li class="flex items-start gap-2">
 				<span class="bc-kickerDot mt-1.5 shrink-0"></span>
-				<span>Organize work into projects with separate resources and threads</span>
+				<span><strong>Separate work by project, repo set, and thread history</strong></span>
 			</li>
 		</ul>
+	</section>
+
+	<section class="bc-card bc-ring p-6">
+		<div class="max-w-3xl">
+			<div class="text-sm font-semibold">Why use btca?</div>
+			<p class="mt-2 text-sm bc-prose">
+				Generic AI answers are often based on priors, stale docs, or incomplete context. btca
+				narrows the model to the repos and resources you choose, so answers are grounded in the
+				codebase you actually care about.
+			</p>
+		</div>
 	</section>
 
 	<section class="bc-card bc-ring p-6">
 		<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 			<div>
 				<div class="text-sm font-semibold">Ready to try it?</div>
-				<p class="mt-1 text-sm bc-prose">Jump into the app or explore pricing details.</p>
+				<p class="mt-1 text-sm bc-prose">
+					Start with a repo, ask a question, and keep the useful threads. Upgrade when you need more
+					usage and cloud workflow.
+				</p>
 			</div>
 			<div class="flex flex-wrap gap-3">
-				<a href="/app" class="bc-chip bc-btnPrimary">Open the app</a>
-				<a href="/pricing" class="bc-chip">See pricing</a>
+				<a href="/app" class="bc-chip bc-btnPrimary">Try the web app</a>
+				<a href="/pricing" class="bc-chip">View pricing</a>
 			</div>
 		</div>
 	</section>

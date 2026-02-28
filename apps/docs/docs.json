@@ -97,7 +97,7 @@
 		],
 		"primary": {
 			"type": "button",
-			"label": "Go to App",
+			"label": "Try the web app",
 			"href": "https://btca.dev/app"
 		}
 	},
