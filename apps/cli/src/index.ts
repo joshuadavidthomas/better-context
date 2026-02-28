@@ -17,6 +17,7 @@ import { telemetryCommand } from './commands/telemetry.ts';
 import { launchTui } from './commands/tui.ts';
 import { launchRepl } from './commands/repl.ts';
 import { wipeCommand } from './commands/wipe.ts';
+import { runEffectCli } from './effect/cli-app.ts';
 import { formatCliError } from './effect/errors.ts';
 import { createCliRuntime } from './effect/runtime.ts';
 import { setTelemetryContext } from './lib/telemetry.ts';
@@ -159,6 +160,13 @@ const token = unknownTopLevelCommand();
 
 if (token !== null) {
 	handleUnknownTopLevelCommand(token);
+}
+
+const migratedCommands = new Set(['clear', 'resources']);
+const directCommand = process.argv[2];
+if (typeof directCommand === 'string' && migratedCommands.has(directCommand)) {
+	await runEffectCli(process.argv, VERSION);
+	process.exit(0);
 }
 
 // Default action (no subcommand) → launch TUI or REPL
