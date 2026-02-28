@@ -105,7 +105,7 @@ export const getDefaultResourceNames: Effect.Effect<string[], never, ConfigServi
 
 export const reloadConfig: Effect.Effect<void, unknown, ConfigService> = Effect.flatMap(
 	configService,
-	(config) => Effect.tryPromise(() => config.reload())
+	(config) => config.reloadEffect()
 );
 
 export const listProviders: Effect.Effect<
@@ -140,26 +140,24 @@ export const updateModelConfig = (args: {
 	providerOptions?: Parameters<Config.Service['updateModel']>[2];
 }): Effect.Effect<Awaited<ReturnType<Config.Service['updateModel']>>, unknown, ConfigService> =>
 	Effect.flatMap(configService, (config) =>
-		Effect.tryPromise(() =>
-			config.updateModel(args.provider, args.model, args.providerOptions)
-		)
+		config.updateModelEffect(args.provider, args.model, args.providerOptions)
 	);
 
 export const addConfigResource = (
 	resource: ResourceDefinition
 ): Effect.Effect<ResourceDefinition, unknown, ConfigService> =>
-	Effect.flatMap(configService, (config) => Effect.tryPromise(() => config.addResource(resource)));
+	Effect.flatMap(configService, (config) => config.addResourceEffect(resource));
 
 export const removeConfigResource = (
 	name: string
 ): Effect.Effect<void, unknown, ConfigService> =>
-	Effect.flatMap(configService, (config) => Effect.tryPromise(() => config.removeResource(name)));
+	Effect.flatMap(configService, (config) => config.removeResourceEffect(name));
 
 export const clearConfigResources: Effect.Effect<
 	Awaited<ReturnType<Config.Service['clearResources']>>,
 	unknown,
 	ConfigService
-> = Effect.flatMap(configService, (config) => Effect.tryPromise(() => config.clearResources()));
+> = Effect.flatMap(configService, (config) => config.clearResourcesEffect());
 
 export const loadedResourceCollectionKey = (resourceNames: readonly string[]) =>
 	getCollectionKey(resourceNames);

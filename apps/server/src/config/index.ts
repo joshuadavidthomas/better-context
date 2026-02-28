@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
 import { Result } from 'better-result';
+import { Effect } from 'effect';
 import { z } from 'zod';
 
 import { CommonHints, type TaggedErrorOptions } from '../errors.ts';
@@ -142,10 +143,21 @@ export namespace Config {
 			model: string,
 			providerOptions?: ProviderOptionsConfig
 		) => Promise<{ provider: string; model: string; savedTo: ConfigScope }>;
+		updateModelEffect: (
+			provider: string,
+			model: string,
+			providerOptions?: ProviderOptionsConfig
+		) => Effect.Effect<{ provider: string; model: string; savedTo: ConfigScope }, unknown>;
 		addResource: (resource: ResourceDefinition) => Promise<ResourceDefinition>;
+		addResourceEffect: (
+			resource: ResourceDefinition
+		) => Effect.Effect<ResourceDefinition, unknown>;
 		removeResource: (name: string) => Promise<void>;
+		removeResourceEffect: (name: string) => Effect.Effect<void, unknown>;
 		clearResources: () => Promise<{ cleared: number }>;
+		clearResourcesEffect: () => Effect.Effect<{ cleared: number }, unknown>;
 		reload: () => Promise<void>;
+		reloadEffect: () => Effect.Effect<void, unknown>;
 	};
 
 	const expandHome = (path: string): string => {
@@ -835,7 +847,13 @@ export namespace Config {
 					resources: reloaded.resources.length,
 					configPath
 				});
-			}
+			},
+			updateModelEffect: (provider, model, providerOptions) =>
+				Effect.tryPromise(() => service.updateModel(provider, model, providerOptions)),
+			addResourceEffect: (resource) => Effect.tryPromise(() => service.addResource(resource)),
+			removeResourceEffect: (name) => Effect.tryPromise(() => service.removeResource(name)),
+			clearResourcesEffect: () => Effect.tryPromise(() => service.clearResources()),
+			reloadEffect: () => Effect.tryPromise(() => service.reload())
 		};
 
 		return service;
