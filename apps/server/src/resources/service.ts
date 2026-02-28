@@ -35,176 +35,179 @@ export const createAnonymousDirectoryKey = (reference: string): string => {
 
 const isAnonymousResource = (name: string): boolean => name.startsWith(ANON_PREFIX);
 
-export namespace Resources {
-	export type Service = {
-		load: (
-			name: string,
-			options?: {
-				quiet?: boolean;
-			}
-		) => Promise<BtcaFsResource>;
-		loadEffect: (
-			name: string,
-			options?: {
-				quiet?: boolean;
-			}
-		) => Effect.Effect<BtcaFsResource, ResourceError>;
-	};
+export type ResourcesService = {
+	load: (
+		name: string,
+		options?: {
+			quiet?: boolean;
+		}
+	) => Promise<BtcaFsResource>;
+	loadEffect: (
+		name: string,
+		options?: {
+			quiet?: boolean;
+		}
+	) => Effect.Effect<BtcaFsResource, ResourceError>;
+};
 
-	const normalizeSearchPaths = (definition: GitResource): string[] => {
-		const paths = [
-			...(definition.searchPaths ?? []),
-			...(definition.searchPath ? [definition.searchPath] : [])
-		];
-		return paths.filter((path) => path.trim().length > 0);
-	};
+const normalizeSearchPaths = (definition: GitResource): string[] => {
+	const paths = [
+		...(definition.searchPaths ?? []),
+		...(definition.searchPath ? [definition.searchPath] : [])
+	];
+	return paths.filter((path) => path.trim().length > 0);
+};
 
-	const definitionToGitArgs = (
-		definition: GitResource,
-		resourcesDirectory: string,
-		quiet: boolean
-	): BtcaGitResourceArgs => ({
-		type: 'git',
+const definitionToGitArgs = (
+	definition: GitResource,
+	resourcesDirectory: string,
+	quiet: boolean
+): BtcaGitResourceArgs => ({
+	type: 'git',
+	name: definition.name,
+	url: definition.url,
+	branch: definition.branch,
+	repoSubPaths: normalizeSearchPaths(definition),
+	resourcesDirectoryPath: resourcesDirectory,
+	specialAgentInstructions: definition.specialNotes ?? '',
+	quiet,
+	ephemeral: isAnonymousResource(definition.name),
+	localDirectoryKey: isAnonymousResource(definition.name)
+		? createAnonymousDirectoryKey(definition.url)
+		: undefined
+});
+
+const definitionToLocalArgs = (definition: LocalResource): BtcaLocalResourceArgs => ({
+	type: 'local',
+	name: definition.name,
+	path: definition.path,
+	specialAgentInstructions: definition.specialNotes ?? ''
+});
+
+const definitionToNpmArgs = (
+	definition: NpmResource,
+	resourcesDirectory: string
+): BtcaNpmResourceArgs => {
+	const reference = `${definition.package}${definition.version ? `@${definition.version}` : ''}`;
+	return {
+		type: 'npm',
 		name: definition.name,
-		url: definition.url,
-		branch: definition.branch,
-		repoSubPaths: normalizeSearchPaths(definition),
+		package: definition.package,
+		...(definition.version ? { version: definition.version } : {}),
 		resourcesDirectoryPath: resourcesDirectory,
 		specialAgentInstructions: definition.specialNotes ?? '',
-		quiet,
 		ephemeral: isAnonymousResource(definition.name),
 		localDirectoryKey: isAnonymousResource(definition.name)
-			? createAnonymousDirectoryKey(definition.url)
+			? createAnonymousDirectoryKey(reference)
 			: undefined
-	});
+	};
+};
 
-	const definitionToLocalArgs = (definition: LocalResource): BtcaLocalResourceArgs => ({
-		type: 'local',
-		name: definition.name,
-		path: definition.path,
-		specialAgentInstructions: definition.specialNotes ?? ''
-	});
+const loadLocalResource = (args: BtcaLocalResourceArgs): BtcaFsResource => ({
+	_tag: 'fs-based',
+	name: args.name,
+	fsName: resourceNameToKey(args.name),
+	type: 'local',
+	repoSubPaths: [],
+	specialAgentInstructions: args.specialAgentInstructions,
+	getAbsoluteDirectoryPath: async () => args.path
+});
 
-	const definitionToNpmArgs = (
-		definition: NpmResource,
-		resourcesDirectory: string
-	): BtcaNpmResourceArgs => {
-		const reference = `${definition.package}${definition.version ? `@${definition.version}` : ''}`;
+export const createAnonymousResource = (reference: string): ResourceDefinition | null => {
+	const npmReference = parseNpmReference(reference);
+	if (npmReference) {
 		return {
 			type: 'npm',
-			name: definition.name,
-			package: definition.package,
-			...(definition.version ? { version: definition.version } : {}),
-			resourcesDirectoryPath: resourcesDirectory,
-			specialAgentInstructions: definition.specialNotes ?? '',
-			ephemeral: isAnonymousResource(definition.name),
-			localDirectoryKey: isAnonymousResource(definition.name)
-				? createAnonymousDirectoryKey(reference)
-				: undefined
+			name: `${ANON_PREFIX}${npmReference.normalizedReference}`,
+			package: npmReference.packageName,
+			...(npmReference.version ? { version: npmReference.version } : {})
 		};
-	};
+	}
 
-	const loadLocalResource = (args: BtcaLocalResourceArgs): BtcaFsResource => ({
-		_tag: 'fs-based',
-		name: args.name,
-		fsName: resourceNameToKey(args.name),
-		type: 'local',
-		repoSubPaths: [],
-		specialAgentInstructions: args.specialAgentInstructions,
-		getAbsoluteDirectoryPath: async () => args.path
+	const gitUrlResult = validateGitUrl(reference);
+	if (gitUrlResult.valid) {
+		const normalizedUrl = gitUrlResult.value;
+		return {
+			type: 'git',
+			name: `${ANON_PREFIX}${normalizedUrl}`,
+			url: normalizedUrl,
+			branch: DEFAULT_ANON_BRANCH
+		};
+	}
+	return null;
+};
+
+export const resolveResourceDefinition = (
+	reference: string,
+	getResource: Config.Service['getResource']
+): ResourceDefinition => {
+	const definition = getResource(reference);
+	if (definition) return definition;
+
+	const anonymousDefinition = createAnonymousResource(reference);
+	if (anonymousDefinition) return anonymousDefinition;
+
+	throw new ResourceError({
+		message: `Resource "${reference}" not found in config`,
+		hint: `${CommonHints.LIST_RESOURCES} ${CommonHints.ADD_RESOURCE}`
 	});
+};
 
-	export const createAnonymousResource = (reference: string): ResourceDefinition | null => {
-		const npmReference = parseNpmReference(reference);
-		if (npmReference) {
-			return {
-				type: 'npm',
-				name: `${ANON_PREFIX}${npmReference.normalizedReference}`,
-				package: npmReference.packageName,
-				...(npmReference.version ? { version: npmReference.version } : {})
-			};
-		}
+export const createResourcesService = (config: Config.Service): ResourcesService => {
+	const loadEffect: ResourcesService['loadEffect'] = (name, options) =>
+		Effect.gen(function* () {
+			const quiet = options?.quiet ?? false;
+			const definition = yield* Effect.try({
+				try: () => resolveResourceDefinition(name, config.getResource),
+				catch: (cause) =>
+					cause instanceof ResourceError
+						? cause
+						: new ResourceError({
+								message: `Failed to resolve resource "${name}"`,
+								hint: `${CommonHints.LIST_RESOURCES} ${CommonHints.ADD_RESOURCE}`,
+								cause
+							})
+			});
 
-		const gitUrlResult = validateGitUrl(reference);
-		if (gitUrlResult.valid) {
-			const normalizedUrl = gitUrlResult.value;
-			return {
-				type: 'git',
-				name: `${ANON_PREFIX}${normalizedUrl}`,
-				url: normalizedUrl,
-				branch: DEFAULT_ANON_BRANCH
-			};
-		}
-		return null;
-	};
-
-	export const resolveResourceDefinition = (
-		reference: string,
-		getResource: Config.Service['getResource']
-	): ResourceDefinition => {
-		const definition = getResource(reference);
-		if (definition) return definition;
-
-		const anonymousDefinition = createAnonymousResource(reference);
-		if (anonymousDefinition) return anonymousDefinition;
-
-		throw new ResourceError({
-			message: `Resource "${reference}" not found in config`,
-			hint: `${CommonHints.LIST_RESOURCES} ${CommonHints.ADD_RESOURCE}`
-		});
-	};
-
-	export const create = (config: Config.Service): Service => {
-		const loadEffect: Service['loadEffect'] = (name, options) =>
-			Effect.gen(function* () {
-				const quiet = options?.quiet ?? false;
-				const definition = yield* Effect.try({
-					try: () => resolveResourceDefinition(name, config.getResource),
+			if (isGitResource(definition)) {
+				return yield* Effect.tryPromise({
+					try: () => loadGitResource(definitionToGitArgs(definition, config.resourcesDirectory, quiet)),
 					catch: (cause) =>
 						cause instanceof ResourceError
 							? cause
 							: new ResourceError({
-									message: `Failed to resolve resource "${name}"`,
-									hint: `${CommonHints.LIST_RESOURCES} ${CommonHints.ADD_RESOURCE}`,
+									message: `Failed to load git resource "${name}"`,
+									hint: CommonHints.CLEAR_CACHE,
 									cause
 								})
 				});
+			}
 
-				if (isGitResource(definition)) {
-					return yield* Effect.tryPromise({
-						try: () =>
-							loadGitResource(definitionToGitArgs(definition, config.resourcesDirectory, quiet)),
-						catch: (cause) =>
-							cause instanceof ResourceError
-								? cause
-								: new ResourceError({
-										message: `Failed to load git resource "${name}"`,
-										hint: CommonHints.CLEAR_CACHE,
-										cause
-									})
-					});
-				}
+			if (isNpmResource(definition)) {
+				return yield* Effect.tryPromise({
+					try: () => loadNpmResource(definitionToNpmArgs(definition, config.resourcesDirectory)),
+					catch: (cause) =>
+						cause instanceof ResourceError
+							? cause
+							: new ResourceError({
+									message: `Failed to load npm resource "${name}"`,
+									hint: CommonHints.CLEAR_CACHE,
+									cause
+								})
+				});
+			}
 
-				if (isNpmResource(definition)) {
-					return yield* Effect.tryPromise({
-						try: () => loadNpmResource(definitionToNpmArgs(definition, config.resourcesDirectory)),
-						catch: (cause) =>
-							cause instanceof ResourceError
-								? cause
-								: new ResourceError({
-										message: `Failed to load npm resource "${name}"`,
-										hint: CommonHints.CLEAR_CACHE,
-										cause
-									})
-					});
-				}
+			return loadLocalResource(definitionToLocalArgs(definition));
+		});
 
-				return loadLocalResource(definitionToLocalArgs(definition));
-			});
-
-		return {
-			load: (name, options) => Effect.runPromise(loadEffect(name, options)),
-			loadEffect
-		};
+	return {
+		load: (name, options) => Effect.runPromise(loadEffect(name, options)),
+		loadEffect
 	};
-}
+};
+
+export const Resources = {
+	create: createResourcesService,
+	createAnonymousResource,
+	resolveResourceDefinition
+} as const;

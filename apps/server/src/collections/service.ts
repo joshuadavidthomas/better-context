@@ -6,7 +6,7 @@ import { Config } from '../config/index.ts';
 import { Transaction } from '../context/transaction.ts';
 import { CommonHints, getErrorHint, getErrorMessage } from '../errors.ts';
 import { Metrics } from '../metrics/index.ts';
-import { Resources } from '../resources/service.ts';
+import { Resources, type ResourcesService } from '../resources/service.ts';
 import { isGitResource, isNpmResource } from '../resources/schema.ts';
 import { FS_RESOURCE_SYSTEM_NOTE, type BtcaFsResource } from '../resources/types.ts';
 import { parseNpmReference } from '../validation/index.ts';
@@ -102,7 +102,7 @@ export namespace Collections {
 		}
 	};
 
-	const loadResource = async (resources: Resources.Service, name: string, quiet: boolean) => {
+	const loadResource = async (resources: ResourcesService, name: string, quiet: boolean) => {
 		try {
 			return await resources.load(name, { quiet });
 		} catch (cause) {
@@ -268,7 +268,7 @@ export namespace Collections {
 
 	export const create = (args: {
 		config: Config.Service;
-		resources: Resources.Service;
+		resources: ResourcesService;
 	}): Service => {
 		const load: Service['load'] = ({ resourceNames, quiet = false }) =>
 			Transaction.run('collections.load', async () => {
