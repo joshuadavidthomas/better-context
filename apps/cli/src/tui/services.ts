@@ -1,4 +1,3 @@
-import { Result } from 'better-result';
 import { Effect } from 'effect';
 import type { BtcaStreamEvent } from 'btca-server/stream/types';
 
@@ -118,8 +117,9 @@ export const services = {
 				const chunksById = new Map<string, BtcaChunk>();
 				const chunkOrder: string[] = [];
 				let doneEvent: Extract<BtcaStreamEvent, { type: 'done' }> | undefined;
-				const streamResult = yield* Effect.tryPromise(() =>
-					Result.tryPromise(async () => {
+				try {
+					yield* Effect.tryPromise(() =>
+						(async () => {
 						for await (const event of parseSSEStream(response)) {
 							if (signal.aborted) break;
 							if (event.type === 'error') {
@@ -131,10 +131,9 @@ export const services = {
 							}
 							processStreamEvent(event, chunksById, chunkOrder, onChunkUpdate);
 						}
-					})
-				);
-				if (streamResult.isErr()) {
-					const error = streamResult.error;
+						})()
+					);
+				} catch (error) {
 					if (!(error instanceof Error && error.name === 'AbortError')) {
 						return yield* Effect.fail(error);
 					}

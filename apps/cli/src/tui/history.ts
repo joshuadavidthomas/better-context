@@ -1,6 +1,5 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { Result } from 'better-result';
 import type { InputState } from './types.ts';
 
 const HISTORY_FILE = join(homedir(), '.local', 'share', 'btca', 'input-history.json');
@@ -22,17 +21,23 @@ function getPlainText(state: InputState): string {
  */
 async function loadHistory(): Promise<InputState[]> {
 	const file = Bun.file(HISTORY_FILE);
-	const existsResult = await Result.tryPromise(() => file.exists());
-	if (existsResult.isErr() || !existsResult.value) {
+	let exists = false;
+	try {
+		exists = await file.exists();
+	} catch {
+		exists = false;
+	}
+	if (!exists) {
 		return [];
 	}
 
-	const dataResult = await Result.tryPromise(async () => (await file.json()) as HistoryData);
-	if (dataResult.isErr()) {
+	let data: HistoryData;
+	try {
+		data = (await file.json()) as HistoryData;
+	} catch {
 		return [];
 	}
 
-	const data = dataResult.value;
 	// Migrate old string-based format if needed
 	if (Array.isArray(data.entries) && data.entries.length > 0) {
 		if (typeof data.entries[0] === 'string') {
@@ -47,15 +52,16 @@ async function loadHistory(): Promise<InputState[]> {
  * Save history to disk
  */
 async function saveHistory(entries: InputState[]): Promise<void> {
-	const result = await Result.tryPromise(async () => {
+	try {
 		// Ensure directory exists (mkdir -p is idempotent)
 		const dir = join(homedir(), '.local', 'share', 'btca');
 		await Bun.$`mkdir -p ${dir}`.quiet();
 
 		const data: HistoryData = { entries };
 		await Bun.write(HISTORY_FILE, JSON.stringify(data, null, 2));
-	});
-	if (result.isErr()) return;
+	} catch {
+		return;
+	}
 }
 
 /**

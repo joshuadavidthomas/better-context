@@ -1,12 +1,16 @@
 import { useMemo, useState } from 'react';
 import { useKeyboard } from '@opentui/react';
-import { Result } from 'better-result';
+import { Effect } from 'effect';
 
 import { useConfigContext } from '../context/config-context.tsx';
 import { useMessagesContext } from '../context/messages-context.tsx';
 import { formatError } from '../lib/format-error.ts';
 import { services } from '../services.ts';
 import { colors } from '../theme.ts';
+
+function runModelSelectEffect<A>(effect: Effect.Effect<A, unknown>) {
+	return Effect.runPromise(effect);
+}
 
 const BLESSED_MODELS = [
 	{
@@ -56,15 +60,15 @@ export const BlessedModelSelect = (props: BlessedModelSelectProps) => {
 		const selectedModel = BLESSED_MODELS[selectedIndex];
 		if (!selectedModel) return;
 
-		const result = await Result.tryPromise(() =>
-			services.updateModel(selectedModel.provider, selectedModel.model)
-		);
-		if (result.isOk()) {
-			config.setProvider(result.value.provider);
-			config.setModel(result.value.model);
-			messages.addSystemMessage(`Model updated: ${result.value.provider}/${result.value.model}`);
-		} else {
-			messages.addSystemMessage(`Error: ${formatError(result.error)}`);
+		try {
+			const result = await runModelSelectEffect(
+				Effect.tryPromise(() => services.updateModel(selectedModel.provider, selectedModel.model))
+			);
+			config.setProvider(result.provider);
+			config.setModel(result.model);
+			messages.addSystemMessage(`Model updated: ${result.provider}/${result.model}`);
+		} catch (error) {
+			messages.addSystemMessage(`Error: ${formatError(error)}`);
 		}
 		props.onClose();
 	};
