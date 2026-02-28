@@ -1,5 +1,4 @@
 import { stripUserQuestionFromStart, extractCoreQuestion } from '@btca/shared';
-import { Result } from 'better-result';
 
 import { getErrorHint, getErrorMessage, getErrorTag } from '../errors.ts';
 import { Metrics } from '../metrics/index.ts';
@@ -101,7 +100,7 @@ export namespace StreamService {
 				emit(controller, args.meta);
 
 				(async () => {
-					const result = await Result.tryPromise(async () => {
+					try {
 						for await (const event of args.eventStream) {
 							switch (event.type) {
 								case 'text-delta': {
@@ -312,24 +311,19 @@ export namespace StreamService {
 								}
 							}
 						}
-					});
-
-					result.match({
-						ok: () => undefined,
-						err: (cause) => {
-							Metrics.error('stream.error', {
-								collectionKey: args.meta.collection.key,
-								error: Metrics.errorInfo(cause)
-							});
-							const err: BtcaStreamErrorEvent = {
-								type: 'error',
-								tag: getErrorTag(cause),
-								message: getErrorMessage(cause),
-								hint: getErrorHint(cause)
-							};
-							emit(controller, err);
-						}
-					});
+					} catch (cause) {
+						Metrics.error('stream.error', {
+							collectionKey: args.meta.collection.key,
+							error: Metrics.errorInfo(cause)
+						});
+						const err: BtcaStreamErrorEvent = {
+							type: 'error',
+							tag: getErrorTag(cause),
+							message: getErrorMessage(cause),
+							hint: getErrorHint(cause)
+						};
+						emit(controller, err);
+					}
 
 					{
 						Metrics.info('stream.closed', { collectionKey: args.meta.collection.key });
