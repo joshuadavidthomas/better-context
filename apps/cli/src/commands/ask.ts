@@ -8,6 +8,13 @@ import {
 	BtcaError
 } from '../client/index.ts';
 import { parseSSEStream } from '../client/stream.ts';
+import {
+	extractMentionTokens,
+	isGitUrlReference,
+	isNpmReference,
+	resolveConfiguredResourceName,
+	stripResolvedMentionTokens
+} from '../lib/resource-references.ts';
 import { setTelemetryContext, trackTelemetryEvent } from '../lib/telemetry.ts';
 
 /**
@@ -102,53 +109,7 @@ export function streamErrorToBtcaError(message: string, tag?: string, hint?: str
 	return new BtcaError(message, { hint: derivedHint, tag });
 }
 
-/**
- * Extract potential @mentions from query string (without modifying the query yet)
- */
-function extractMentions(query: string): string[] {
-	const mentionRegex = /(^|[^\w@])@([A-Za-z0-9._/-]+)/g;
-	const mentions: string[] = [];
-	let match;
-
-	while ((match = mentionRegex.exec(query)) !== null) {
-		if (match[2]) {
-			mentions.push(match[2]);
-		}
-	}
-
-	return mentions;
-}
-
-/**
- * Remove only the valid resource @mentions from the query, leaving others intact
- */
-function cleanQueryOfValidResources(query: string, validResources: string[]): string {
-	const validSet = new Set(validResources.map((r) => r.toLowerCase()));
-	return query
-		.replace(/(^|[^\w@])@([A-Za-z0-9._/-]+)/g, (match, prefix, mention) => {
-			return validSet.has(mention.toLowerCase()) ? prefix : match;
-		})
-		.replace(/\s+/g, ' ')
-		.trim();
-}
-
 type AvailableResource = { name: string };
-
-function resolveResourceName(input: string, available: AvailableResource[]): string | null {
-	const target = input.toLowerCase();
-	const direct = available.find((r) => r.name.toLowerCase() === target);
-	if (direct) return direct.name;
-
-	if (target.startsWith('@')) {
-		const withoutAt = target.slice(1);
-		const match = available.find((r) => r.name.toLowerCase() === withoutAt);
-		return match?.name ?? null;
-	}
-
-	const withAt = `@${target}`;
-	const match = available.find((r) => r.name.toLowerCase() === withAt);
-	return match?.name ?? null;
-}
 
 function normalizeResourceNames(
 	inputs: string[],
@@ -158,50 +119,13 @@ function normalizeResourceNames(
 	const invalid: string[] = [];
 
 	for (const input of inputs) {
-		const resolvedName = resolveResourceName(input, available);
+		const resolvedName = resolveConfiguredResourceName(input, available);
 		if (resolvedName) resolved.push(resolvedName);
 		else invalid.push(input);
 	}
 
 	return { names: [...new Set(resolved)], invalid };
 }
-
-function isGitUrl(input: string): boolean {
-	try {
-		const parsed = new URL(input);
-		return parsed.protocol === 'https:';
-	} catch {
-		return false;
-	}
-}
-
-function isNpmReference(input: string): boolean {
-	const trimmed = input.trim();
-	if (trimmed.startsWith('npm:')) {
-		const spec = trimmed.slice(4);
-		if (!spec || /\s/.test(spec)) return false;
-		if (spec.startsWith('@')) {
-			return /^@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*(?:@[^\s/]+)?$/.test(spec);
-		}
-		return /^[a-z0-9][a-z0-9._-]*(?:@[^\s/]+)?$/.test(spec);
-	}
-
-	try {
-		const parsed = new URL(trimmed);
-		const hostname = parsed.hostname.toLowerCase();
-		if (
-			parsed.protocol !== 'https:' ||
-			(hostname !== 'npmjs.com' && hostname !== 'www.npmjs.com')
-		) {
-			return false;
-		}
-		const segments = parsed.pathname.split('/').filter(Boolean);
-		return segments[0] === 'package' && segments.length >= 2;
-	} catch {
-		return false;
-	}
-}
-
 type SignalEvent = 'SIGINT' | 'SIGTERM' | 'exit';
 type ForwardedSignal = 'SIGINT' | 'SIGTERM';
 type SignalProcess = {
@@ -292,7 +216,7 @@ export const runAskCommand = async (args: {
 
 			const questionText = args.question;
 			const cliResources = args.resource ?? [];
-			const mentionedResources = extractMentions(questionText);
+			const mentionedResources = extractMentionTokens(questionText);
 			const hasExplicitResources = cliResources.length > 0;
 			const { resources } = resourcesResult;
 			const mentionResolution = normalizeResourceNames(mentionedResources, resources);
@@ -302,7 +226,7 @@ export const runAskCommand = async (args: {
 
 			for (const rawResource of cliResources) {
 				if (explicitResolution.invalid.includes(rawResource)) {
-					if (isGitUrl(rawResource) || isNpmReference(rawResource)) {
+					if (isGitUrlReference(rawResource) || isNpmReference(rawResource)) {
 						anonymousResources.push(rawResource);
 					} else {
 						unresolvedExplicit.push(rawResource);
@@ -348,7 +272,7 @@ export const runAskCommand = async (args: {
 				});
 			}
 
-			const cleanedQuery = cleanQueryOfValidResources(questionText, mentionResolution.names);
+			const cleanedQuery = stripResolvedMentionTokens(questionText, mentionResolution.names);
 			console.log('loading resources...');
 
 			const response = await askQuestionStream(server.url, {
