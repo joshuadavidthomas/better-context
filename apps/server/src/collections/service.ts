@@ -1,7 +1,6 @@
 import path from 'node:path';
 
 import { Effect } from 'effect';
-import { Result } from 'better-result';
 
 import { Config } from '../config/index.ts';
 import { Transaction } from '../context/transaction.ts';
@@ -84,82 +83,84 @@ export namespace Collections {
 	};
 
 	const ignoreErrors = async (action: () => Promise<unknown>) => {
-		const result = await Result.tryPromise(action);
-		result.match({
-			ok: () => undefined,
-			err: () => undefined
-		});
+		try {
+			await action();
+		} catch {
+			return;
+		}
 	};
 
-	const initVirtualRoot = (collectionPath: string, vfsId: string) =>
-		Result.tryPromise({
-			try: () => VirtualFs.mkdir(collectionPath, { recursive: true }, vfsId),
-			catch: (cause) =>
-				new CollectionError({
-					message: `Failed to initialize virtual collection root: "${collectionPath}"`,
-					hint: 'Check that the virtual filesystem is available.',
-					cause
-				})
-		});
+	const initVirtualRoot = async (collectionPath: string, vfsId: string) => {
+		try {
+			await VirtualFs.mkdir(collectionPath, { recursive: true }, vfsId);
+		} catch (cause) {
+			throw new CollectionError({
+				message: `Failed to initialize virtual collection root: "${collectionPath}"`,
+				hint: 'Check that the virtual filesystem is available.',
+				cause
+			});
+		}
+	};
 
-	const loadResource = (resources: Resources.Service, name: string, quiet: boolean) =>
-		Result.tryPromise({
-			try: () => resources.load(name, { quiet }),
-			catch: (cause) => {
-				const underlyingHint = getErrorHint(cause);
-				const underlyingMessage = getErrorMessage(cause);
-				return new CollectionError({
-					message: `Failed to load resource "${name}": ${underlyingMessage}`,
-					hint:
-						underlyingHint ??
-						`${CommonHints.CLEAR_CACHE} Check that the resource "${name}" is correctly configured.`,
-					cause
-				});
-			}
-		});
+	const loadResource = async (resources: Resources.Service, name: string, quiet: boolean) => {
+		try {
+			return await resources.load(name, { quiet });
+		} catch (cause) {
+			const underlyingHint = getErrorHint(cause);
+			const underlyingMessage = getErrorMessage(cause);
+			throw new CollectionError({
+				message: `Failed to load resource "${name}": ${underlyingMessage}`,
+				hint:
+					underlyingHint ??
+					`${CommonHints.CLEAR_CACHE} Check that the resource "${name}" is correctly configured.`,
+				cause
+			});
+		}
+	};
 
-	const resolveResourcePath = (resource: BtcaFsResource) =>
-		Result.tryPromise({
-			try: () => resource.getAbsoluteDirectoryPath(),
-			catch: (cause) =>
-				new CollectionError({
-					message: `Failed to get path for resource "${resource.name}"`,
-					hint: CommonHints.CLEAR_CACHE,
-					cause
-				})
-		});
+	const resolveResourcePath = async (resource: BtcaFsResource) => {
+		try {
+			return await resource.getAbsoluteDirectoryPath();
+		} catch (cause) {
+			throw new CollectionError({
+				message: `Failed to get path for resource "${resource.name}"`,
+				hint: CommonHints.CLEAR_CACHE,
+				cause
+			});
+		}
+	};
 
-	const virtualizeResource = (args: {
+	const virtualizeResource = async (args: {
 		resource: BtcaFsResource;
 		resourcePath: string;
 		virtualResourcePath: string;
 		vfsId: string;
-	}) =>
-		Result.tryPromise({
-			try: () =>
-				VirtualFs.importDirectoryFromDisk({
-					sourcePath: args.resourcePath,
-					destinationPath: args.virtualResourcePath,
-					vfsId: args.vfsId,
-					ignore: (relativePath) => {
-						const normalized = relativePath.split(path.sep).join('/');
-						return (
-							normalized === '.git' ||
-							normalized.startsWith('.git/') ||
-							normalized.includes('/.git/')
-						);
-					}
-				}),
-			catch: (cause) =>
-				new CollectionError({
-					message: `Failed to virtualize resource "${args.resource.name}"`,
-					hint: CommonHints.CLEAR_CACHE,
-					cause
-				})
-		});
+	}) => {
+		try {
+			await VirtualFs.importDirectoryFromDisk({
+				sourcePath: args.resourcePath,
+				destinationPath: args.virtualResourcePath,
+				vfsId: args.vfsId,
+				ignore: (relativePath) => {
+					const normalized = relativePath.split(path.sep).join('/');
+					return (
+						normalized === '.git' ||
+						normalized.startsWith('.git/') ||
+						normalized.includes('/.git/')
+					);
+				}
+			});
+		} catch (cause) {
+			throw new CollectionError({
+				message: `Failed to virtualize resource "${args.resource.name}"`,
+				hint: CommonHints.CLEAR_CACHE,
+				cause
+			});
+		}
+	};
 
 	const getGitHeadHash = async (resourcePath: string) => {
-		const result = await Result.tryPromise(async () => {
+		try {
 			const proc = Bun.spawn(['git', 'rev-parse', 'HEAD'], {
 				cwd: resourcePath,
 				stdout: 'pipe',
@@ -170,16 +171,13 @@ export namespace Collections {
 			if (exitCode !== 0) return undefined;
 			const trimmed = stdout.trim();
 			return trimmed.length > 0 ? trimmed : undefined;
-		});
-
-		return result.match({
-			ok: (value) => value,
-			err: () => undefined
-		});
+		} catch {
+			return undefined;
+		}
 	};
 
 	const getGitHeadBranch = async (resourcePath: string) => {
-		const result = await Result.tryPromise(async () => {
+		try {
 			const proc = Bun.spawn(['git', 'rev-parse', '--abbrev-ref', 'HEAD'], {
 				cwd: resourcePath,
 				stdout: 'pipe',
@@ -191,12 +189,9 @@ export namespace Collections {
 			const trimmed = stdout.trim();
 			if (!trimmed || trimmed === 'HEAD') return undefined;
 			return trimmed;
-		});
-
-		return result.match({
-			ok: (value) => value,
-			err: () => undefined
-		});
+		} catch {
+			return undefined;
+		}
 	};
 
 	const ANON_PREFIX = 'anonymous:';
@@ -208,25 +203,16 @@ export namespace Collections {
 		name.startsWith(NPM_ANON_PREFIX) ? name.slice(ANON_PREFIX.length) : undefined;
 
 	const readNpmMeta = async (resourcePath: string) => {
-		const result = await Result.gen(async function* () {
-			const content = yield* Result.await(
-				Result.tryPromise(() => Bun.file(path.join(resourcePath, NPM_META_FILE)).text())
-			);
-			const parsed = yield* Result.try(
-				() =>
-					JSON.parse(content) as {
-						packageName?: string;
-						resolvedVersion?: string;
-						packageUrl?: string;
-					}
-			);
-			return Result.ok(parsed);
-		});
-
-		return result.match({
-			ok: (value) => value,
-			err: () => null
-		});
+		try {
+			const content = await Bun.file(path.join(resourcePath, NPM_META_FILE)).text();
+			return JSON.parse(content) as {
+				packageName?: string;
+				resolvedVersion?: string;
+				packageUrl?: string;
+			};
+		} catch {
+			return null;
+		}
 	};
 
 	const buildVirtualMetadata = async (args: {
@@ -285,101 +271,102 @@ export namespace Collections {
 		resources: Resources.Service;
 	}): Service => {
 		const load: Service['load'] = ({ resourceNames, quiet = false }) =>
-				Transaction.run('collections.load', async () => {
-					const uniqueNames = Array.from(new Set(resourceNames));
-					if (uniqueNames.length === 0)
-						throw new CollectionError({
-							message: 'Cannot create collection with no resources',
-							hint: `${CommonHints.LIST_RESOURCES} ${CommonHints.ADD_RESOURCE}`
-						});
-
-					Metrics.info('collections.load', { resources: uniqueNames, quiet });
-
-					const sortedNames = [...uniqueNames].sort((a, b) => a.localeCompare(b));
-					const key = getCollectionKey(sortedNames);
-					const collectionPath = '/';
-					const vfsId = VirtualFs.create();
-					const cleanupVirtual = () => {
-						VirtualFs.dispose(vfsId);
-						clearVirtualCollectionMetadata(vfsId);
-					};
-					const cleanupResources = (resources: BtcaFsResource[]) =>
-						Promise.all(
-							resources.map(async (resource) => {
-								if (!resource.cleanup) return;
-								await ignoreErrors(() => resource.cleanup!());
-							})
-						);
-
-					const loadedResources: BtcaFsResource[] = [];
-					const result = await Result.gen(async function* () {
-						yield* Result.await(initVirtualRoot(collectionPath, vfsId));
-
-						for (const name of sortedNames) {
-							const resource = yield* Result.await(loadResource(args.resources, name, quiet));
-							loadedResources.push(resource);
-						}
-
-						const metadataResources: VirtualResourceMetadata[] = [];
-						const loadedAt = new Date().toISOString();
-						for (const resource of loadedResources) {
-							const resourcePath = yield* Result.await(resolveResourcePath(resource));
-							const virtualResourcePath = path.posix.join('/', resource.fsName);
-
-							await ignoreErrors(() =>
-								VirtualFs.rm(virtualResourcePath, { recursive: true, force: true }, vfsId)
-							);
-
-							yield* Result.await(
-								virtualizeResource({
-									resource,
-									resourcePath,
-									virtualResourcePath,
-									vfsId
-								})
-							);
-
-							const definition = args.config.getResource(resource.name);
-							const metadata = await buildVirtualMetadata({
-								resource,
-								resourcePath,
-								loadedAt,
-								definition
-							});
-							if (metadata) metadataResources.push(metadata);
-						}
-
-						setVirtualCollectionMetadata({
-							vfsId,
-							collectionKey: key,
-							createdAt: loadedAt,
-							resources: metadataResources
-						});
-
-						const metadataByName = new Map(
-							metadataResources.map((resource) => [resource.name, resource])
-						);
-						const instructionBlocks = loadedResources.map((resource) =>
-							createCollectionInstructionBlock(resource, metadataByName.get(resource.name))
-						);
-
-						return Result.ok({
-							path: collectionPath,
-							agentInstructions: instructionBlocks.join('\n\n'),
-							vfsId,
-							cleanup: async () => {
-								await cleanupResources(loadedResources);
-							}
-						});
+			Transaction.run('collections.load', async () => {
+				const uniqueNames = Array.from(new Set(resourceNames));
+				if (uniqueNames.length === 0)
+					throw new CollectionError({
+						message: 'Cannot create collection with no resources',
+						hint: `${CommonHints.LIST_RESOURCES} ${CommonHints.ADD_RESOURCE}`
 					});
 
-					if (!Result.isOk(result)) {
-						cleanupVirtual();
-						await cleanupResources(loadedResources);
-						throw result.error;
+				Metrics.info('collections.load', { resources: uniqueNames, quiet });
+
+				const sortedNames = [...uniqueNames].sort((a, b) => a.localeCompare(b));
+				const key = getCollectionKey(sortedNames);
+				const collectionPath = '/';
+				const vfsId = VirtualFs.create();
+				const cleanupVirtual = () => {
+					VirtualFs.dispose(vfsId);
+					clearVirtualCollectionMetadata(vfsId);
+				};
+				const cleanupResources = (resources: BtcaFsResource[]) =>
+					Promise.all(
+						resources.map(async (resource) => {
+							if (!resource.cleanup) return;
+							await ignoreErrors(() => resource.cleanup!());
+						})
+					);
+
+				const loadedResources: BtcaFsResource[] = [];
+
+				try {
+					await initVirtualRoot(collectionPath, vfsId);
+
+					for (const name of sortedNames) {
+						const resource = await loadResource(args.resources, name, quiet);
+						loadedResources.push(resource);
 					}
-					return result.value;
-				});
+
+					const metadataResources: VirtualResourceMetadata[] = [];
+					const loadedAt = new Date().toISOString();
+					for (const resource of loadedResources) {
+						const resourcePath = await resolveResourcePath(resource);
+						const virtualResourcePath = path.posix.join('/', resource.fsName);
+
+						await ignoreErrors(() =>
+							VirtualFs.rm(virtualResourcePath, { recursive: true, force: true }, vfsId)
+						);
+
+						await virtualizeResource({
+							resource,
+							resourcePath,
+							virtualResourcePath,
+							vfsId
+						});
+
+						const definition = args.config.getResource(resource.name);
+						const metadata = await buildVirtualMetadata({
+							resource,
+							resourcePath,
+							loadedAt,
+							definition
+						});
+						if (metadata) metadataResources.push(metadata);
+					}
+
+					setVirtualCollectionMetadata({
+						vfsId,
+						collectionKey: key,
+						createdAt: loadedAt,
+						resources: metadataResources
+					});
+
+					const metadataByName = new Map(
+						metadataResources.map((resource) => [resource.name, resource])
+					);
+					const instructionBlocks = loadedResources.map((resource) =>
+						createCollectionInstructionBlock(resource, metadataByName.get(resource.name))
+					);
+
+					return {
+						path: collectionPath,
+						agentInstructions: instructionBlocks.join('\n\n'),
+						vfsId,
+						cleanup: async () => {
+							await cleanupResources(loadedResources);
+						}
+					};
+				} catch (cause) {
+					cleanupVirtual();
+					await cleanupResources(loadedResources);
+					if (cause instanceof CollectionError) throw cause;
+					throw new CollectionError({
+						message: 'Failed to load resource collection',
+						hint: CommonHints.CLEAR_CACHE,
+						cause
+					});
+				}
+			});
 
 		const loadEffect: Service['loadEffect'] = ({ resourceNames, quiet }) =>
 			Effect.tryPromise({
