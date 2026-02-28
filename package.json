@@ -41,6 +41,7 @@
 		"check:shared": "turbo check --filter=@btca/shared",
 		"check:server": "turbo check --filter=btca-server",
 		"check:sandbox": "turbo check --filter=btca-sandbox",
+		"check:effectification": "bun run scripts/check-effectification.ts",
 		"format:all": "turbo format",
 		"format:cli": "turbo format --filter=btca",
 		"format:web": "turbo format --filter=@btca/web",
