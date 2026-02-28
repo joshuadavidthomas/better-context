@@ -1,7 +1,6 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
-import { Result } from 'better-result';
 import { z } from 'zod';
 
 import { CommonHints, type TaggedErrorOptions } from '../errors.ts';
@@ -194,19 +193,23 @@ const stripJsonc = (content: string): string => {
 
 const parseJsonc = (content: string): unknown => JSON.parse(stripJsonc(content));
 
-const readJsonFile = (filePath: string) =>
-	Result.gen(async function* () {
-		const content = yield* Result.await(Result.tryPromise(() => Bun.file(filePath).text()));
-		const parsed = yield* Result.try(() => JSON.parse(content));
-		return Result.ok(parsed);
-	});
+const readJsonFile = async (filePath: string) => {
+	try {
+		const content = await Bun.file(filePath).text();
+		return JSON.parse(content);
+	} catch {
+		return null;
+	}
+};
 
-const readJsoncFile = (filePath: string) =>
-	Result.gen(async function* () {
-		const content = yield* Result.await(Result.tryPromise(() => Bun.file(filePath).text()));
-		const parsed = yield* Result.try(() => parseJsonc(content));
-		return Result.ok(parsed);
-	});
+const readJsoncFile = async (filePath: string) => {
+	try {
+		const content = await Bun.file(filePath).text();
+		return parseJsonc(content);
+	} catch {
+		return null;
+	}
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Remote Config Namespace
@@ -232,14 +235,10 @@ export namespace RemoteConfigService {
 	 */
 	export async function isAuthenticated(): Promise<boolean> {
 		const authPath = getAuthPath();
-		const result = await readJsonFile(authPath);
-		return result.match({
-			ok: (parsed) => {
-				const authResult = RemoteAuthSchema.safeParse(parsed);
-				return authResult.success && !!authResult.data.apiKey;
-			},
-			err: () => false
-		});
+		const parsed = await readJsonFile(authPath);
+		if (!parsed) return false;
+		const authResult = RemoteAuthSchema.safeParse(parsed);
+		return authResult.success && !!authResult.data.apiKey;
 	}
 
 	/**
@@ -247,18 +246,14 @@ export namespace RemoteConfigService {
 	 */
 	export async function loadAuth(): Promise<RemoteAuth | null> {
 		const authPath = getAuthPath();
-		const result = await readJsonFile(authPath);
-		return result.match({
-			ok: (parsed) => {
-				const authResult = RemoteAuthSchema.safeParse(parsed);
-				if (!authResult.success) {
-					Metrics.error('remote.auth.invalid', { path: authPath, error: authResult.error.message });
-					return null;
-				}
-				return authResult.data;
-			},
-			err: () => null
-		});
+		const parsed = await readJsonFile(authPath);
+		if (!parsed) return null;
+		const authResult = RemoteAuthSchema.safeParse(parsed);
+		if (!authResult.success) {
+			Metrics.error('remote.auth.invalid', { path: authPath, error: authResult.error.message });
+			return null;
+		}
+		return authResult.data;
 	}
 
 	/**
@@ -267,48 +262,17 @@ export namespace RemoteConfigService {
 	export async function saveAuth(auth: RemoteAuth): Promise<void> {
 		const authPath = getAuthPath();
 		const configDir = path.dirname(authPath);
-
-		const result = await Result.gen(async function* () {
-			yield* Result.await(
-				Result.tryPromise({
-					try: () => fs.mkdir(configDir, { recursive: true }),
-					catch: (cause) =>
-						new RemoteConfigError({
-							message: `Failed to save remote auth to: "${authPath}"`,
-							hint: 'Check that you have write permissions to the config directory.',
-							cause
-						})
-				})
-			);
-
-			yield* Result.await(
-				Result.tryPromise({
-					try: () => Bun.write(authPath, JSON.stringify(auth, null, 2)),
-					catch: (cause) =>
-						new RemoteConfigError({
-							message: `Failed to save remote auth to: "${authPath}"`,
-							hint: 'Check that you have write permissions to the config directory.',
-							cause
-						})
-				})
-			);
-
-			yield* Result.await(
-				Result.tryPromise({
-					try: () => fs.chmod(authPath, 0o600),
-					catch: (cause) =>
-						new RemoteConfigError({
-							message: `Failed to save remote auth to: "${authPath}"`,
-							hint: 'Check that you have write permissions to the config directory.',
-							cause
-						})
-				})
-			);
-
-			return Result.ok(undefined);
-		});
-
-		if (!Result.isOk(result)) throw result.error;
+		try {
+			await fs.mkdir(configDir, { recursive: true });
+			await Bun.write(authPath, JSON.stringify(auth, null, 2));
+			await fs.chmod(authPath, 0o600);
+		} catch (cause) {
+			throw new RemoteConfigError({
+				message: `Failed to save remote auth to: "${authPath}"`,
+				hint: 'Check that you have write permissions to the config directory.',
+				cause
+			});
+		}
 		Metrics.info('remote.auth.saved', { path: authPath });
 	}
 
@@ -317,11 +281,12 @@ export namespace RemoteConfigService {
 	 */
 	export async function deleteAuth(): Promise<void> {
 		const authPath = getAuthPath();
-		const result = await Result.tryPromise(() => fs.unlink(authPath));
-		result.match({
-			ok: () => Metrics.info('remote.auth.deleted', { path: authPath }),
-			err: () => undefined
-		});
+		try {
+			await fs.unlink(authPath);
+			Metrics.info('remote.auth.deleted', { path: authPath });
+		} catch {
+			return;
+		}
 	}
 
 	/**
@@ -338,11 +303,7 @@ export namespace RemoteConfigService {
 	export async function loadConfig(cwd: string = process.cwd()): Promise<RemoteConfig | null> {
 		const configPath = getConfigPath(cwd);
 
-		const result = await readJsoncFile(configPath);
-		const parsed = result.match({
-			ok: (value) => value,
-			err: () => null
-		});
+		const parsed = await readJsoncFile(configPath);
 		if (!parsed) return null;
 
 		const parsedResult = RemoteConfigSchema.safeParse(parsed);
@@ -380,17 +341,15 @@ export namespace RemoteConfigService {
 			...config
 		};
 
-		const result = await Result.tryPromise({
-			try: () => Bun.write(configPath, JSON.stringify(toSave, null, '\t')),
-			catch: (cause) =>
-				new RemoteConfigError({
-					message: `Failed to save remote config to: "${configPath}"`,
-					hint: 'Check that you have write permissions to the directory.',
-					cause
-				})
-		});
-
-		if (!Result.isOk(result)) throw result.error;
+		try {
+			await Bun.write(configPath, JSON.stringify(toSave, null, '\t'));
+		} catch (cause) {
+			throw new RemoteConfigError({
+				message: `Failed to save remote config to: "${configPath}"`,
+				hint: 'Check that you have write permissions to the directory.',
+				cause
+			});
+		}
 		Metrics.info('remote.config.saved', {
 			path: configPath,
 			project: config.project,
