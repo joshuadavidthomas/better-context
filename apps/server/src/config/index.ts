@@ -1,7 +1,6 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
-import { Result } from 'better-result';
 import { Effect } from 'effect';
 import { z } from 'zod';
 
@@ -275,58 +274,59 @@ export namespace Config {
 
 	const parseJsonc = (content: string): unknown => JSON.parse(stripJsonc(content));
 
-	const readConfigText = (configPath: string) =>
-		Result.tryPromise({
-			try: () => Bun.file(configPath).text(),
-			catch: (cause) =>
-				new ConfigError({
-					message: `Failed to read config file: "${configPath}"`,
-					hint: 'Check that the file exists and you have read permissions.',
-					cause
-				})
-		});
+	const readConfigText = async (configPath: string) => {
+		try {
+			return await Bun.file(configPath).text();
+		} catch (cause) {
+			throw new ConfigError({
+				message: `Failed to read config file: "${configPath}"`,
+				hint: 'Check that the file exists and you have read permissions.',
+				cause
+			});
+		}
+	};
 
-	const parseConfigText = (configPath: string, content: string) =>
-		Result.try({
-			try: () => parseJsonc(content),
-			catch: (cause) =>
-				new ConfigError({
-					message: 'Failed to parse config file - invalid JSON syntax',
-					hint: `Check "${configPath}" for syntax errors like missing commas, brackets, or quotes.`,
-					cause
-				})
-		});
+	const parseConfigText = (configPath: string, content: string) => {
+		try {
+			return parseJsonc(content);
+		} catch (cause) {
+			throw new ConfigError({
+				message: 'Failed to parse config file - invalid JSON syntax',
+				hint: `Check "${configPath}" for syntax errors like missing commas, brackets, or quotes.`,
+				cause
+			});
+		}
+	};
 
-	const validateStoredConfig = (parsed: unknown) => {
+	const validateStoredConfig = (parsed: unknown): StoredConfig => {
 		const result = StoredConfigSchema.safeParse(parsed);
-		if (result.success) return Result.ok(result.data);
+		if (result.success) return result.data;
 		const issues = result.error.issues
 			.map((i) => `  - ${i.path.join('.')}: ${i.message}`)
 			.join('\n');
-		return Result.err(
-			new ConfigError({
-				message: `Invalid config structure:\n${issues}`,
-				hint: `${CommonHints.CHECK_CONFIG} Required fields: "resources" (array), "model" (string), "provider" (string).`,
-				cause: result.error
-			})
-		);
+		throw new ConfigError({
+			message: `Invalid config structure:\n${issues}`,
+			hint: `${CommonHints.CHECK_CONFIG} Required fields: "resources" (array), "model" (string), "provider" (string).`,
+			cause: result.error
+		});
 	};
 
-	const writeConfigFile = (
+	const writeConfigFile = async (
 		configPath: string,
 		stored: StoredConfig,
 		message: string,
 		hint: string
-	) =>
-		Result.tryPromise({
-			try: () => Bun.write(configPath, JSON.stringify(stored, null, 2)),
-			catch: (cause) =>
-				new ConfigError({
-					message,
-					hint,
-					cause
-				})
-		});
+	) => {
+		try {
+			await Bun.write(configPath, JSON.stringify(stored, null, 2));
+		} catch (cause) {
+			throw new ConfigError({
+				message,
+				hint,
+				cause
+			});
+		}
+	};
 
 	/**
 	 * Convert a legacy repo to a git resource
@@ -357,32 +357,20 @@ export namespace Config {
 
 		Metrics.info('config.legacy.found', { path: legacyPath });
 
-		const legacyResult = await Result.gen(async function* () {
-			const content = yield* Result.await(
-				Result.tryPromise({
-					try: () => Bun.file(legacyPath).text(),
-					catch: (cause) => ({
-						stage: 'read' as const,
-						cause
-					})
-				})
-			);
-			const parsed = yield* Result.try(() => JSON.parse(content)).mapError((cause) => ({
-				stage: 'parse' as const,
-				cause
-			}));
-			return Result.ok(parsed);
-		});
-
-		const parsed = legacyResult.match({
-			ok: (value) => value,
-			err: (error) => {
-				const event =
-					error.stage === 'read' ? 'config.legacy.read_failed' : 'config.legacy.parse_failed';
-				Metrics.error(event, { path: legacyPath, error: String(error.cause) });
-				return null;
-			}
-		});
+		let content: string;
+		try {
+			content = await Bun.file(legacyPath).text();
+		} catch (cause) {
+			Metrics.error('config.legacy.read_failed', { path: legacyPath, error: String(cause) });
+			return null;
+		}
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(content);
+		} catch (cause) {
+			Metrics.error('config.legacy.parse_failed', { path: legacyPath, error: String(cause) });
+			return null;
+		}
 
 		if (!parsed) return null;
 
@@ -455,33 +443,22 @@ export namespace Config {
 		migratedCount: number
 	): Promise<StoredConfig> => {
 		const configDir = newConfigPath.slice(0, newConfigPath.lastIndexOf('/'));
-		const result = await Result.gen(async function* () {
-			yield* Result.await(
-				Result.tryPromise({
-					try: () => fs.mkdir(configDir, { recursive: true }),
-					catch: (cause) =>
-						new ConfigError({
-							message: 'Failed to write migrated config',
-							hint: `Check that you have write permissions to "${configDir}".`,
-							cause
-						})
-				})
-			);
+		try {
+			await fs.mkdir(configDir, { recursive: true });
+		} catch (cause) {
+			throw new ConfigError({
+				message: 'Failed to write migrated config',
+				hint: `Check that you have write permissions to "${configDir}".`,
+				cause
+			});
+		}
 
-			yield* Result.await(
-				writeConfigFile(
-					newConfigPath,
-					migrated,
-					'Failed to write migrated config',
-					`Check that you have write permissions to "${configDir}".`
-				)
-			);
-
-			return Result.ok(migrated);
-		});
-
-		if (!Result.isOk(result)) throw result.error;
-		const saved = result.value;
+		await writeConfigFile(
+			newConfigPath,
+			migrated,
+			'Failed to write migrated config',
+			`Check that you have write permissions to "${configDir}".`
+		);
 
 		Metrics.info('config.legacy.migrated', {
 			newPath: newConfigPath,
@@ -490,28 +467,20 @@ export namespace Config {
 		});
 
 		// Rename the legacy file to mark it as migrated
-		const renameResult = await Result.tryPromise(() =>
-			fs.rename(legacyPath, `${legacyPath}.migrated`)
-		);
-		renameResult.match({
-			ok: () =>
-				Metrics.info('config.legacy.renamed', { from: legacyPath, to: `${legacyPath}.migrated` }),
-			err: () => Metrics.info('config.legacy.rename_skipped', { path: legacyPath })
-		});
+		try {
+			await fs.rename(legacyPath, `${legacyPath}.migrated`);
+			Metrics.info('config.legacy.renamed', { from: legacyPath, to: `${legacyPath}.migrated` });
+		} catch {
+			Metrics.info('config.legacy.rename_skipped', { path: legacyPath });
+		}
 
-		return saved;
+		return migrated;
 	};
 
 	const loadConfigFromPath = async (configPath: string): Promise<StoredConfig> => {
-		const result = await Result.gen(async function* () {
-			const content = yield* Result.await(readConfigText(configPath));
-			const parsed = yield* parseConfigText(configPath, content);
-			const stored = yield* validateStoredConfig(parsed);
-			return Result.ok(stored);
-		});
-
-		if (!Result.isOk(result)) throw result.error;
-		return result.value;
+		const content = await readConfigText(configPath);
+		const parsed = parseConfigText(configPath, content);
+		return validateStoredConfig(parsed);
 	};
 
 	const createDefaultConfig = async (configPath: string): Promise<StoredConfig> => {
@@ -526,41 +495,31 @@ export namespace Config {
 			maxSteps: DEFAULT_MAX_STEPS
 		};
 
-		const result = await Result.gen(async function* () {
-			yield* Result.await(
-				Result.tryPromise({
-					try: () => fs.mkdir(configDir, { recursive: true }),
-					catch: (cause) =>
-						new ConfigError({
-							message: `Failed to create config directory: "${configDir}"`,
-							hint: 'Check that you have write permissions to the parent directory.',
-							cause
-						})
-				})
-			);
-			yield* Result.await(
-				writeConfigFile(
-					configPath,
-					defaultStored,
-					`Failed to write default config to: "${configPath}"`,
-					'Check that you have write permissions to the config directory.'
-				)
-			);
-			return Result.ok(defaultStored);
-		});
-
-		if (!Result.isOk(result)) throw result.error;
-		return result.value;
+		try {
+			await fs.mkdir(configDir, { recursive: true });
+		} catch (cause) {
+			throw new ConfigError({
+				message: `Failed to create config directory: "${configDir}"`,
+				hint: 'Check that you have write permissions to the parent directory.',
+				cause
+			});
+		}
+		await writeConfigFile(
+			configPath,
+			defaultStored,
+			`Failed to write default config to: "${configPath}"`,
+			'Check that you have write permissions to the config directory.'
+		);
+		return defaultStored;
 	};
 
 	const saveConfig = async (configPath: string, stored: StoredConfig): Promise<void> => {
-		const result = await writeConfigFile(
+		await writeConfigFile(
 			configPath,
 			stored,
 			`Failed to save config to: "${configPath}"`,
 			'Check that you have write permissions and the disk is not full.'
 		);
-		if (!Result.isOk(result)) throw result.error;
 	};
 
 	/**
@@ -801,22 +760,20 @@ export namespace Config {
 				// Clear the resources directory
 				let clearedCount = 0;
 
-				const resourcesResult = await Result.tryPromise(() => fs.readdir(resourcesDirectory));
-				const resourcesDir = resourcesResult.match({
-					ok: (value) => value,
-					err: () => []
-				});
+				let resourcesDir: string[] = [];
+				try {
+					resourcesDir = await fs.readdir(resourcesDirectory);
+				} catch {
+					resourcesDir = [];
+				}
 
 				for (const item of resourcesDir) {
-					const removeResult = await Result.tryPromise(() =>
-						fs.rm(`${resourcesDirectory}/${item}`, { recursive: true, force: true })
-					);
-					const removed = removeResult.match({
-						ok: () => true,
-						err: () => false
-					});
-					if (!removed) break;
-					clearedCount++;
+					try {
+						await fs.rm(`${resourcesDirectory}/${item}`, { recursive: true, force: true });
+						clearedCount++;
+					} catch {
+						break;
+					}
 				}
 
 				Metrics.info('config.resources.cleared', { count: clearedCount });
@@ -905,10 +862,13 @@ export namespace Config {
 			// Migration: if no dataDirectory is set and legacy .btca exists, use it and update config
 			if (!projectConfig.dataDirectory) {
 				const legacyProjectDataDir = `${cwd}/.btca`;
-				const legacyExists = (await Result.tryPromise(() => fs.stat(legacyProjectDataDir))).match({
-					ok: () => true,
-					err: () => false
-				});
+				let legacyExists = false;
+				try {
+					await fs.stat(legacyProjectDataDir);
+					legacyExists = true;
+				} catch {
+					legacyExists = false;
+				}
 				if (legacyExists) {
 					Metrics.info('config.project.legacy_data_dir', {
 						path: legacyProjectDataDir,
