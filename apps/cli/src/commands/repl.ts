@@ -318,7 +318,6 @@ Examples:
 		activeServer.stop();
 	} catch (error) {
 		if (server) server.stop();
-		console.error(formatError(error));
-		process.exit(1);
+		throw error;
 	}
 }

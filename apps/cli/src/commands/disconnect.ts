@@ -76,8 +76,7 @@ export const runDisconnectCommand = async (args: {
 			));
 
 		if (!providers.connected.includes(provider)) {
-			console.error(`Provider "${provider}" is not connected.`);
-			process.exit(1);
+			throw new Error(`Provider "${provider}" is not connected.`);
 		}
 
 		const removed = await removeProviderAuth(provider);

@@ -49,8 +49,7 @@ const removeTarget = async (target: string) => {
 
 const confirmWipe = async (targets: { target: string; source: string }[]) => {
 	if (!process.stdin.isTTY || !process.stdout.isTTY) {
-		console.error('Refusing to run wipe in non-interactive mode without --yes.');
-		process.exit(1);
+		throw new Error('Refusing to run wipe in non-interactive mode without --yes.');
 	}
 
 	console.log(red('\nWARNING: this will permanently delete BTCA config files.'));
@@ -66,11 +65,12 @@ const confirmWipe = async (targets: { target: string; source: string }[]) => {
 		const answer = await promptInput(rl, `Type ${bold('WIPE')} to continue: `);
 		if (answer !== 'WIPE') {
 			console.log('Cancelled.');
-			process.exit(0);
+			return false;
 		}
 	} finally {
 		rl.close();
 	}
+	return true;
 };
 
 const runWipe = async () => {
@@ -122,7 +122,8 @@ const printReport = (result: Awaited<ReturnType<typeof runWipe>>) => {
 export const runWipeCommand = async (args: { yes?: boolean }) => {
 	const targets = listTargets();
 	if (!args.yes) {
-		await confirmWipe(targets);
+		const confirmed = await confirmWipe(targets);
+		if (!confirmed) return;
 	}
 
 	const wipeResult = await runWipe();

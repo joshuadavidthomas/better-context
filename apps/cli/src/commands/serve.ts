@@ -30,18 +30,22 @@ export const runServeCommand = async (options: { port?: number } = {}) => {
 		console.log(`btca server running at ${server.url}`);
 		console.log('Press Ctrl+C to stop');
 
+		let resolveShutdown: (() => void) | null = null;
+		const shutdownPromise = new Promise<void>((resolve) => {
+			resolveShutdown = resolve;
+		});
+
 		const shutdown = () => {
 			console.log('\nShutting down server...');
+			process.off('SIGINT', shutdown);
+			process.off('SIGTERM', shutdown);
 			server.stop();
-			process.exit(0);
+			resolveShutdown?.();
 		};
 
 		process.on('SIGINT', shutdown);
 		process.on('SIGTERM', shutdown);
-
-		await new Promise(() => {
-			// Never resolves - keeps the server running
-		});
+		await shutdownPromise;
 	} catch (error) {
 		const durationMs = Date.now() - startedAt;
 		const errorName = error instanceof Error ? error.name : 'UnknownError';

@@ -224,8 +224,7 @@ export const runConnectCommand = async (args: {
 						includeModel: false
 					});
 					if (!baseURL || !name) {
-						console.error('Error: Base URL and provider name are required.');
-						process.exit(1);
+						throw new Error('Base URL and provider name are required.');
 					}
 					if (apiKey) {
 						await saveProviderApiKey(args.provider, apiKey);
@@ -281,8 +280,7 @@ export const runConnectCommand = async (args: {
 				}
 				const success = await runBtcaAuth(provider);
 				if (!success) {
-					console.warn('\nAuthentication may have failed. Try again later with: opencode auth');
-					process.exit(1);
+					throw new Error('Authentication may have failed. Try again later with: opencode auth.');
 				}
 			}
 
@@ -294,8 +292,7 @@ export const runConnectCommand = async (args: {
 
 				const { baseURL, name, modelId, apiKey } = await promptOpenAICompatSetup();
 				if (!baseURL || !name || !modelId) {
-					console.error('Error: Base URL, provider name, and model ID are required.');
-					process.exit(1);
+					throw new Error('Base URL, provider name, and model ID are required.');
 				}
 				if (apiKey) {
 					await saveProviderApiKey(provider, apiKey);
@@ -336,8 +333,7 @@ export const runConnectCommand = async (args: {
 			}
 
 			if (!model) {
-				console.error('Error: Model ID is required.');
-				process.exit(1);
+				throw new Error('Model ID is required.');
 			}
 
 			const updated = await updateModel(server.url, provider, model);
@@ -348,15 +344,13 @@ export const runConnectCommand = async (args: {
 		}
 	} catch (error) {
 		if (error instanceof Error && error.message === 'Invalid selection') {
-			console.error('\nError: Invalid selection. Please try again.');
-			process.exit(1);
+			throw new Error('Invalid selection. Please try again.');
 		}
 		if (isPromptCancelled(error)) {
 			console.log('\nSelection cancelled.');
-			process.exit(0);
+			return;
 		}
-		console.error(formatError(error));
-		process.exit(1);
+		throw error;
 	}
 };
 

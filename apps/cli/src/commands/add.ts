@@ -279,9 +279,7 @@ async function addGitResourceWizard(
 ): Promise<void> {
 	const urlParts = parseGitHubUrl(url);
 	if (!urlParts) {
-		console.error('Error: Invalid GitHub URL.');
-		console.error('Expected format: https://github.com/owner/repo');
-		process.exit(1);
+		throw new Error('Invalid GitHub URL. Expected format: https://github.com/owner/repo');
 	}
 
 	const normalizedUrl = normalizeGitHubUrl(url);
@@ -320,7 +318,7 @@ async function addGitResourceWizard(
 
 		if (!confirmed) {
 			console.log('\nCancelled.');
-			process.exit(0);
+			return;
 		}
 
 		const server = await ensureServer({
@@ -390,7 +388,7 @@ async function addLocalResourceWizard(
 
 		if (!confirmed) {
 			console.log('\nCancelled.');
-			process.exit(0);
+			return;
 		}
 
 		const server = await ensureServer({
@@ -426,9 +424,9 @@ async function addNpmResourceWizard(
 ): Promise<void> {
 	const parsed = parseNpmReference(npmReference);
 	if (!parsed) {
-		console.error('Error: Invalid npm reference.');
-		console.error('Use an npm package (e.g. react, @types/node, npm:react, or npmjs package URL).');
-		process.exit(1);
+		throw new Error(
+			'Invalid npm reference. Use an npm package (e.g. react, @types/node, npm:react, or npmjs package URL).'
+		);
 	}
 
 	console.log('\n--- Add npm Resource ---\n');
@@ -459,7 +457,7 @@ async function addNpmResourceWizard(
 
 		if (!confirmed) {
 			console.log('\nCancelled.');
-			process.exit(0);
+			return;
 		}
 
 		const server = await ensureServer({
@@ -521,8 +519,7 @@ export const runAddCommand = async (args: {
 				const url = await promptInput(rl, 'GitHub URL');
 				rl.close();
 				if (!url) {
-					console.error('Error: URL is required.');
-					process.exit(1);
+					throw new Error('URL is required.');
 				}
 				await addGitResourceWizard(url, args, args.globalOpts);
 				return;
@@ -532,8 +529,7 @@ export const runAddCommand = async (args: {
 				const npmRef = await promptInput(rl, 'npm package (or npmjs URL)', 'react');
 				rl.close();
 				if (!npmRef) {
-					console.error('Error: npm package is required.');
-					process.exit(1);
+					throw new Error('npm package is required.');
 				}
 				await addNpmResourceWizard(npmRef, args, args.globalOpts);
 				return;
@@ -542,8 +538,7 @@ export const runAddCommand = async (args: {
 			const localPath = await promptInput(rl, 'Local path');
 			rl.close();
 			if (!localPath) {
-				console.error('Error: Path is required.');
-				process.exit(1);
+				throw new Error('Path is required.');
 			}
 			await addLocalResourceWizard(localPath, args, args.globalOpts);
 			return;
@@ -552,8 +547,7 @@ export const runAddCommand = async (args: {
 		let resourceType: 'git' | 'local' | 'npm';
 		if (args.type) {
 			if (args.type !== 'git' && args.type !== 'local' && args.type !== 'npm') {
-				console.error('Error: --type must be "git", "local", or "npm"');
-				process.exit(1);
+				throw new Error('--type must be "git", "local", or "npm"');
 			}
 			resourceType = args.type as 'git' | 'local' | 'npm';
 		} else {
@@ -613,11 +607,9 @@ export const runAddCommand = async (args: {
 		if (args.name && resourceType === 'npm') {
 			const parsed = parseNpmReference(args.reference);
 			if (!parsed) {
-				console.error('Error: Invalid npm reference.');
-				console.error(
-					'Use an npm package (e.g. react, @types/node, npm:react, or npmjs package URL).'
+				throw new Error(
+					'Invalid npm reference. Use an npm package (e.g. react, @types/node, npm:react, or npmjs package URL).'
 				);
-				process.exit(1);
 			}
 
 			const server = await ensureServer({
@@ -648,10 +640,8 @@ export const runAddCommand = async (args: {
 		}
 	} catch (error) {
 		if (error instanceof Error && error.message === 'Invalid selection') {
-			console.error('\nError: Invalid selection. Please try again.');
-			process.exit(1);
+			throw new Error('Invalid selection. Please try again.');
 		}
-		console.error(formatError(error));
-		process.exit(1);
+		throw error;
 	}
 };

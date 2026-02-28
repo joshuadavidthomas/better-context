@@ -187,10 +187,9 @@ export const runAskCommand = async (args: {
 
 	const rawArgs = process.argv;
 	if (rawArgs.includes('-t') || rawArgs.includes('--tech')) {
-		console.error('Error: The -t/--tech flag has been deprecated.');
-		console.error('Use -r/--resource instead: btca ask -r <resource> -q "your question"');
-		console.error('You can specify multiple resources: btca ask -r svelte -r effect -q "..."');
-		process.exit(1);
+		throw new BtcaError('The -t/--tech flag has been deprecated.', {
+			hint: 'Use -r/--resource instead: btca ask -r <resource> -q "your question". You can specify multiple resources: btca ask -r svelte -r effect -q "...".'
+		});
 	}
 
 	try {
@@ -346,7 +345,7 @@ export const runAskCommand = async (args: {
 				exitCode: 0
 			}
 		});
-		process.exit(0);
+		return;
 	} catch (error) {
 		const durationMs = Date.now() - startedAt;
 		const errorName = error instanceof Error ? error.name : 'UnknownError';
@@ -360,8 +359,7 @@ export const runAskCommand = async (args: {
 				exitCode: 1
 			}
 		});
-		console.error(formatError(error));
-		process.exit(1);
+		throw error;
 	}
 };
 
