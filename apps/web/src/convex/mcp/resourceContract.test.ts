@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { getAvailableMcpResourceNames, toMcpVisibleResources } from './resource-contract.ts';
+import { getAvailableMcpResourceNames, toMcpVisibleResources } from './resourceContract.ts';
 
 describe('mcp resource contract', () => {
 	test('exposes git and npm resources in list responses', () => {

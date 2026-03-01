@@ -9,7 +9,7 @@ import { action } from './_generated/server';
 import { AnalyticsEvents } from './analyticsEvents';
 import { instances } from './apiHelpers';
 import type { ApiKeyValidationResult } from './clerkApiKeys';
-import { getAvailableMcpResourceNames, toMcpVisibleResources } from './mcp/resource-contract.ts';
+import { getAvailableMcpResourceNames, toMcpVisibleResources } from './mcp/resourceContract.ts';
 import { withPrivateApiKey } from './privateWrappers';
 import { toWebError, type WebError } from '../lib/result/errors';
 
