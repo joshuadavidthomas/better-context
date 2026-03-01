@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useKeyboard } from '@opentui/react';
-import { Result } from 'better-result';
+import { Effect } from 'effect';
 
 import { usePaste } from '../opentui-hooks.ts';
+import { runCliEffect } from '../../effect/runtime.ts';
 import { useConfigContext } from '../context/config-context.tsx';
 import { useMessagesContext } from '../context/messages-context.tsx';
 import { formatError } from '../lib/format-error.ts';
@@ -254,41 +255,43 @@ export const AddResourceWizard = (props: AddResourceWizardProps) => {
 	const handleConfirm = async () => {
 		const vals = values;
 
-		const result = await Result.tryPromise(async () => {
-			if (vals.type === 'git') {
-				const resource = {
-					type: 'git' as const,
-					name: vals.name,
-					url: vals.url,
-					branch: vals.branch || 'main',
-					...(vals.searchPath && { searchPath: vals.searchPath }),
-					...(vals.notes && { specialNotes: vals.notes })
-				};
-				await services.addResource(resource);
-				const repo: Repo = {
-					name: resource.name,
-					type: 'git',
-					url: resource.url,
-					branch: resource.branch,
-					specialNotes: resource.specialNotes,
-					searchPath: resource.searchPath
-				};
-				config.addRepo(repo);
-				messages.addSystemMessage(`Added git resource: ${resource.name}`);
-			} else {
-				const resource = {
-					type: 'local' as const,
-					name: vals.name,
-					path: vals.path,
-					...(vals.notes && { specialNotes: vals.notes })
-				};
-				await services.addResource(resource);
-				messages.addSystemMessage(`Added local resource: ${resource.name}`);
-			}
-		});
-
-		if (result.isErr()) {
-			messages.addSystemMessage(`Error: ${formatError(result.error)}`);
+		try {
+			await runCliEffect(
+				Effect.tryPromise(async () => {
+					if (vals.type === 'git') {
+						const resource = {
+							type: 'git' as const,
+							name: vals.name,
+							url: vals.url,
+							branch: vals.branch || 'main',
+							...(vals.searchPath && { searchPath: vals.searchPath }),
+							...(vals.notes && { specialNotes: vals.notes })
+						};
+						await services.addResource(resource);
+						const repo: Repo = {
+							name: resource.name,
+							type: 'git',
+							url: resource.url,
+							branch: resource.branch,
+							specialNotes: resource.specialNotes,
+							searchPath: resource.searchPath
+						};
+						config.addRepo(repo);
+						messages.addSystemMessage(`Added git resource: ${resource.name}`);
+					} else {
+						const resource = {
+							type: 'local' as const,
+							name: vals.name,
+							path: vals.path,
+							...(vals.notes && { specialNotes: vals.notes })
+						};
+						await services.addResource(resource);
+						messages.addSystemMessage(`Added local resource: ${resource.name}`);
+					}
+				})
+			);
+		} catch (error) {
+			messages.addSystemMessage(`Error: ${formatError(error)}`);
 		}
 
 		props.onClose();

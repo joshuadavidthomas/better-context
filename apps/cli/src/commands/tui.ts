@@ -1,7 +1,9 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
+import { Effect } from 'effect';
 import { ensureServer, type ServerManager } from '../server/manager.ts';
 import { createClient, getConfig } from '../client/index.ts';
+import { runCliEffect } from '../effect/runtime.ts';
 import { setTelemetryContext, trackTelemetryEvent } from '../lib/telemetry.ts';
 
 // Store server reference globally so TUI can access it
@@ -62,21 +64,35 @@ export async function launchTui(options: TuiOptions): Promise<void> {
 	});
 
 	try {
-		const client = createClient(server.url);
-		const config = await getConfig(client);
-		setTelemetryContext({ provider: config.provider, model: config.model });
+		await runCliEffect(
+			Effect.gen(function* () {
+				const client = createClient(server.url);
+				const config = yield* Effect.tryPromise(() => getConfig(client));
+				yield* Effect.sync(() =>
+					setTelemetryContext({ provider: config.provider, model: config.model })
+				);
+			})
+		);
 	} catch {
 		// Ignore config failures for telemetry
 	}
 
-	await trackTelemetryEvent({
-		event: 'cli_started',
-		properties: { command: 'btca', mode: 'tui' }
-	});
-	await trackTelemetryEvent({
-		event: 'cli_tui_started',
-		properties: { command: 'btca', mode: 'tui' }
-	});
+	await runCliEffect(
+		Effect.gen(function* () {
+			yield* Effect.tryPromise(() =>
+				trackTelemetryEvent({
+					event: 'cli_started',
+					properties: { command: 'btca', mode: 'tui' }
+				})
+			);
+			yield* Effect.tryPromise(() =>
+				trackTelemetryEvent({
+					event: 'cli_tui_started',
+					properties: { command: 'btca', mode: 'tui' }
+				})
+			);
+		})
+	);
 
 	// Store server reference for TUI to use
 	globalThis.__BTCA_SERVER__ = server;
@@ -88,5 +104,5 @@ export async function launchTui(options: TuiOptions): Promise<void> {
 	ensureStandaloneTreeSitterWorkerPath();
 
 	// Import and run TUI (dynamic import to avoid loading TUI deps when not needed)
-	await import('../tui/App.tsx');
+	await runCliEffect(Effect.tryPromise(() => import('../tui/App.tsx')));
 }

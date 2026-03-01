@@ -1,5 +1,3 @@
-import { Result } from 'better-result';
-import { Command } from 'commander';
 import select from '@inquirer/select';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
@@ -57,9 +55,13 @@ async function promptSelect<T extends string>(
 
 async function isPatternInGitignore(dir: string, pattern: string): Promise<boolean> {
 	const gitignorePath = path.join(dir, '.gitignore');
-	const result = await Result.tryPromise(() => fs.readFile(gitignorePath, 'utf-8'));
-	if (Result.isError(result)) return false;
-	const lines = result.value.split('\n').map((line) => line.trim());
+	let content: string;
+	try {
+		content = await fs.readFile(gitignorePath, 'utf-8');
+	} catch {
+		return false;
+	}
+	const lines = content.split('\n').map((line) => line.trim());
 	const basePattern = pattern.replace(/\/$/, '');
 	const patterns = [basePattern, `${basePattern}/`, `${basePattern}/*`];
 
@@ -71,8 +73,12 @@ async function isPatternInGitignore(dir: string, pattern: string): Promise<boole
 
 async function addToGitignore(dir: string, pattern: string, comment?: string): Promise<void> {
 	const gitignorePath = path.join(dir, '.gitignore');
-	const contentResult = await Result.tryPromise(() => fs.readFile(gitignorePath, 'utf-8'));
-	let content = Result.isOk(contentResult) ? contentResult.value : '';
+	let content = '';
+	try {
+		content = await fs.readFile(gitignorePath, 'utf-8');
+	} catch {
+		content = '';
+	}
 	if (content && !content.endsWith('\n')) {
 		content += '\n';
 	}
@@ -86,21 +92,27 @@ async function addToGitignore(dir: string, pattern: string, comment?: string): P
 }
 
 async function isGitRepo(dir: string): Promise<boolean> {
-	const result = await Result.tryPromise(() => fs.access(path.join(dir, '.git')));
-	return Result.isOk(result);
+	try {
+		await fs.access(path.join(dir, '.git'));
+		return true;
+	} catch {
+		return false;
+	}
 }
 
 async function fileExists(filePath: string): Promise<boolean> {
-	const result = await Result.tryPromise(() => fs.access(filePath));
-	return Result.isOk(result);
+	try {
+		await fs.access(filePath);
+		return true;
+	} catch {
+		return false;
+	}
 }
 
 async function handleCliSetup(cwd: string, configPath: string, force?: boolean): Promise<void> {
 	if (await fileExists(configPath)) {
 		if (!force) {
-			console.error(`\nError: ${PROJECT_CONFIG_FILENAME} already exists.`);
-			console.error('Use --force to overwrite.');
-			process.exit(1);
+			throw new Error(`${PROJECT_CONFIG_FILENAME} already exists. Use --force to overwrite.`);
 		}
 		console.log(`\nOverwriting existing ${PROJECT_CONFIG_FILENAME}...`);
 	}
@@ -156,24 +168,8 @@ async function handleCliSetup(cwd: string, configPath: string, force?: boolean):
 	console.log("\nRun 'btca --help' for more options.");
 }
 
-export const initCommand = new Command('init')
-	.description('Initialize btca for this project')
-	.option('-f, --force', 'Overwrite existing configuration')
-	.action(async (options: { force?: boolean }) => {
-		const cwd = process.cwd();
-		const configPath = path.join(cwd, PROJECT_CONFIG_FILENAME);
-
-		const result = await Result.tryPromise(async () => {
-			await handleCliSetup(cwd, configPath, options.force);
-		});
-
-		if (Result.isError(result)) {
-			const error = result.error;
-			if (error instanceof Error && error.message === 'Invalid selection') {
-				console.error('\nError: Invalid selection. Please run btca init again.');
-				process.exit(1);
-			}
-			console.error('Error:', error instanceof Error ? error.message : String(error));
-			process.exit(1);
-		}
-	});
+export const runInitCommand = async (args: { force?: boolean }) => {
+	const cwd = process.cwd();
+	const configPath = path.join(cwd, PROJECT_CONFIG_FILENAME);
+	await handleCliSetup(cwd, configPath, args.force);
+};

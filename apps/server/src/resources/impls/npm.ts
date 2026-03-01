@@ -1,8 +1,6 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
-import { Result } from 'better-result';
-
 import { CommonHints } from '../../errors.ts';
 import { ResourceError, resourceNameToKey } from '../helpers.ts';
 import type { BtcaFsResource, BtcaNpmResourceArgs } from '../types.ts';
@@ -42,15 +40,20 @@ type NpmPackageVersion = {
 };
 
 const cleanupDirectory = async (pathToRemove: string) => {
-	await Result.tryPromise(() => fs.rm(pathToRemove, { recursive: true, force: true }));
+	try {
+		await fs.rm(pathToRemove, { recursive: true, force: true });
+	} catch {
+		return;
+	}
 };
 
 const directoryExists = async (directoryPath: string) => {
-	const result = await Result.tryPromise(() => fs.stat(directoryPath));
-	return result.match({
-		ok: (stat) => stat.isDirectory(),
-		err: () => false
-	});
+	try {
+		const stat = await fs.stat(directoryPath);
+		return stat.isDirectory();
+	} catch {
+		return false;
+	}
 };
 
 const encodePackagePath = (packageName: string) =>
@@ -80,64 +83,61 @@ const resolveRequestedVersion = (packument: NpmPackument, requestedVersion?: str
 };
 
 const fetchJson = async <T>(url: string, resourceName: string): Promise<T> => {
-	const response = await Result.tryPromise(() =>
-		fetch(url, {
+	let response: Response;
+	try {
+		response = await fetch(url, {
 			headers: {
 				accept: 'application/json'
 			}
-		})
-	);
-
-	if (!Result.isOk(response)) {
+		});
+	} catch (cause) {
 		throw new ResourceError({
 			message: `Failed to fetch npm metadata for "${resourceName}"`,
 			hint: CommonHints.CHECK_NETWORK,
-			cause: response.error
+			cause
 		});
 	}
 
-	if (!response.value.ok) {
+	if (!response.ok) {
 		throw new ResourceError({
-			message: `Failed to fetch npm metadata for "${resourceName}" (${response.value.status})`,
+			message: `Failed to fetch npm metadata for "${resourceName}" (${response.status})`,
 			hint:
-				response.value.status === 404
-					? 'Check that the npm package exists.'
-					: CommonHints.CHECK_NETWORK,
-			cause: new Error(`Unexpected status ${response.value.status}`)
+				response.status === 404 ? 'Check that the npm package exists.' : CommonHints.CHECK_NETWORK,
+			cause: new Error(`Unexpected status ${response.status}`)
 		});
 	}
 
-	const parsed = await Result.tryPromise(() => response.value.json() as Promise<T>);
-	if (!Result.isOk(parsed)) {
+	try {
+		return (await response.json()) as T;
+	} catch (cause) {
 		throw new ResourceError({
 			message: `Failed to parse npm metadata for "${resourceName}"`,
 			hint: 'Try again. If the issue persists, the npm registry may be returning malformed data.',
-			cause: parsed.error
+			cause
 		});
 	}
-
-	return parsed.value;
 };
 
 const fetchText = async (url: string, resourceName: string) => {
 	const fallbackContent = (reason: string) =>
 		`<!-- npm package page unavailable for "${resourceName}" (${reason}) -->`;
 
-	const response = await Result.tryPromise(() => fetch(url));
-	if (!Result.isOk(response)) {
+	let response: Response;
+	try {
+		response = await fetch(url);
+	} catch {
 		return fallbackContent('request failed');
 	}
 
-	if (!response.value.ok) {
-		return fallbackContent(`status ${response.value.status}`);
+	if (!response.ok) {
+		return fallbackContent(`status ${response.status}`);
 	}
 
-	const textResult = await Result.tryPromise(() => response.value.text());
-	if (!Result.isOk(textResult)) {
+	try {
+		return await response.text();
+	} catch {
 		return fallbackContent('response read failed');
 	}
-
-	return textResult.value;
 };
 
 const readProcessOutput = async (stream: ReadableStream<Uint8Array> | null) => {
@@ -243,18 +243,12 @@ const formatResourceOverview = (args: {
 };
 
 const readCacheMeta = async (localPath: string): Promise<NpmCacheMeta | null> => {
-	const result = await Result.gen(async function* () {
-		const content = yield* Result.await(
-			Result.tryPromise(() => Bun.file(path.join(localPath, NPM_CACHE_META_FILE)).text())
-		);
-		const parsed = yield* Result.try(() => JSON.parse(content) as NpmCacheMeta);
-		return Result.ok(parsed);
-	});
-
-	return result.match({
-		ok: (value) => value,
-		err: () => null
-	});
+	try {
+		const content = await Bun.file(path.join(localPath, NPM_CACHE_META_FILE)).text();
+		return JSON.parse(content) as NpmCacheMeta;
+	} catch {
+		return null;
+	}
 };
 
 const shouldReuseCache = async (
@@ -282,19 +276,18 @@ const installPackageFiles = async (args: {
 	const installDirectory = path.join(args.localPath, NPM_INSTALL_STAGING_DIR);
 	const packagePath = path.join(installDirectory, 'node_modules', ...args.packageName.split('/'));
 
-	const createInstallDirectory = await Result.tryPromise(() =>
-		fs.mkdir(installDirectory, { recursive: true })
-	);
-	if (!Result.isOk(createInstallDirectory)) {
+	try {
+		await fs.mkdir(installDirectory, { recursive: true });
+	} catch (cause) {
 		throw new ResourceError({
 			message: `Failed to prepare npm install workspace for "${args.packageName}"`,
 			hint: 'Check that the btca data directory is writable.',
-			cause: createInstallDirectory.error
+			cause
 		});
 	}
 
-	const writeManifest = await Result.tryPromise(() =>
-		Bun.write(
+	try {
+		await Bun.write(
 			path.join(installDirectory, 'package.json'),
 			JSON.stringify(
 				{
@@ -304,13 +297,12 @@ const installPackageFiles = async (args: {
 				null,
 				2
 			)
-		)
-	);
-	if (!Result.isOk(writeManifest)) {
+		);
+	} catch (cause) {
 		throw new ResourceError({
 			message: `Failed to prepare npm install workspace for "${args.packageName}"`,
 			hint: 'Check that the btca data directory is writable.',
-			cause: writeManifest.error
+			cause
 		});
 	}
 
@@ -329,14 +321,13 @@ const installPackageFiles = async (args: {
 			});
 		}
 
-		const copyResult = await Result.tryPromise(() =>
-			fs.cp(packagePath, args.localPath, { recursive: true, force: true })
-		);
-		if (!Result.isOk(copyResult)) {
+		try {
+			await fs.cp(packagePath, args.localPath, { recursive: true, force: true });
+		} catch (cause) {
 			throw new ResourceError({
 				message: `Failed to copy installed npm package files for "${args.packageName}"`,
 				hint: 'Check filesystem permissions and available disk space.',
-				cause: copyResult.error
+				cause
 			});
 		}
 	} finally {
@@ -431,27 +422,27 @@ const ensureNpmResource = async (config: BtcaNpmResourceArgs): Promise<string> =
 		: config.resourcesDirectoryPath;
 	const localPath = path.join(basePath, resourceKey);
 
-	const mkdirResult = await Result.tryPromise({
-		try: () => fs.mkdir(basePath, { recursive: true }),
-		catch: (cause) =>
-			new ResourceError({
-				message: 'Failed to create resources directory',
-				hint: 'Check that you have write permissions to the btca data directory.',
-				cause
-			})
-	});
-	if (!Result.isOk(mkdirResult)) throw mkdirResult.error;
+	try {
+		await fs.mkdir(basePath, { recursive: true });
+	} catch (cause) {
+		throw new ResourceError({
+			message: 'Failed to create resources directory',
+			hint: 'Check that you have write permissions to the btca data directory.',
+			cause
+		});
+	}
 
 	const canReuse = await shouldReuseCache(config, localPath);
 	if (canReuse) return localPath;
 
 	await cleanupDirectory(localPath);
-	const createResult = await Result.tryPromise(() => fs.mkdir(localPath, { recursive: true }));
-	if (!Result.isOk(createResult)) {
+	try {
+		await fs.mkdir(localPath, { recursive: true });
+	} catch (cause) {
 		throw new ResourceError({
 			message: `Failed to prepare npm resource directory for "${config.name}"`,
 			hint: 'Check that the btca data directory is writable.',
-			cause: createResult.error
+			cause
 		});
 	}
 

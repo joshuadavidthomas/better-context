@@ -1,12 +1,12 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { Result } from 'better-result';
-import { Command } from 'commander';
 import * as readline from 'readline';
+import { Effect } from 'effect';
 
-import { addResource, BtcaError } from '../client/index.ts';
+import { addResource } from '../client/index.ts';
 import { dim } from '../lib/utils/colors.ts';
-import { ensureServer } from '../server/manager.ts';
+import { withServerEffect } from '../server/manager.ts';
+import { effectFromPromise } from '../effect/errors.ts';
 
 interface GitHubUrlParts {
 	owner: string;
@@ -86,16 +86,21 @@ const splitNpmSpec = (spec: string): NpmReferenceParts | null => {
 };
 
 const safeDecodeUriComponent = (value: string) =>
-	Result.try(() => decodeURIComponent(value)).match({
-		ok: (decoded) => decoded,
-		err: () => null
-	});
+	(() => {
+		try {
+			return decodeURIComponent(value);
+		} catch {
+			return null;
+		}
+	})();
 
 const parseNpmFromUrl = (reference: string): NpmReferenceParts | null => {
-	const parsed = Result.try(() => new URL(reference)).match({
-		ok: (value) => value,
-		err: () => null
-	});
+	let parsed: URL;
+	try {
+		parsed = new URL(reference);
+	} catch {
+		return null;
+	}
 	if (!parsed) return null;
 
 	const hostname = parsed.hostname.toLowerCase();
@@ -149,31 +154,24 @@ const isLikelyPath = (value: string) =>
 	/^[a-zA-Z]:\\/.test(value);
 
 const isLikelyGitUrl = (value: string) =>
-	Result.try(() => new URL(value)).match({
-		ok: (parsed) => parsed.protocol === 'https:',
-		err: () => false
-	});
+	(() => {
+		try {
+			const parsed = new URL(value);
+			return parsed.protocol === 'https:';
+		} catch {
+			return false;
+		}
+	})();
 
 const isDirectory = async (value: string) => {
 	const resolved = path.isAbsolute(value) ? value : path.resolve(process.cwd(), value);
-	const result = await Result.tryPromise(() => fs.stat(resolved));
-	return result.match({
-		ok: (stat) => stat.isDirectory(),
-		err: () => false
-	});
-};
-
-/**
- * Format an error for display, including hint if available.
- */
-function formatError(error: unknown): string {
-	if (error instanceof BtcaError) {
-		let output = `Error: ${error.message}`;
-		if (error.hint) output += `\n\nHint: ${error.hint}`;
-		return output;
+	try {
+		const stat = await fs.stat(resolved);
+		return stat.isDirectory();
+	} catch {
+		return false;
 	}
-	return `Error: ${error instanceof Error ? error.message : String(error)}`;
-}
+};
 
 /**
  * Create a readline interface for prompts.
@@ -261,6 +259,21 @@ async function promptSelect<T extends string>(
 	});
 }
 
+const runWithServer = <A>(
+	globalOpts: { server?: string; port?: number } | undefined,
+	run: (serverUrl: string) => Promise<A>
+) =>
+	Effect.runPromise(
+		withServerEffect(
+			{
+				serverUrl: globalOpts?.server,
+				port: globalOpts?.port,
+				quiet: true
+			},
+			(server) => effectFromPromise(() => run(server.url))
+		)
+	);
+
 /**
  * Interactive wizard for adding a git resource.
  */
@@ -271,9 +284,7 @@ async function addGitResourceWizard(
 ): Promise<void> {
 	const urlParts = parseGitHubUrl(url);
 	if (!urlParts) {
-		console.error('Error: Invalid GitHub URL.');
-		console.error('Expected format: https://github.com/owner/repo');
-		process.exit(1);
+		throw new Error('Invalid GitHub URL. Expected format: https://github.com/owner/repo');
 	}
 
 	const normalizedUrl = normalizeGitHubUrl(url);
@@ -283,7 +294,7 @@ async function addGitResourceWizard(
 
 	const rl = createRl();
 
-	const result = await Result.tryPromise(async () => {
+	try {
 		const finalUrl = await promptInput(rl, 'URL', normalizedUrl);
 		const name = await promptInput(rl, 'Name', urlParts.repo);
 		const branch = await promptInput(rl, 'Branch', 'main');
@@ -312,26 +323,20 @@ async function addGitResourceWizard(
 
 		if (!confirmed) {
 			console.log('\nCancelled.');
-			process.exit(0);
+			return;
 		}
 
-		const server = await ensureServer({
-			serverUrl: globalOpts?.server,
-			port: globalOpts?.port,
-			quiet: true
-		});
-
-		const resource = await addResource(server.url, {
-			type: 'git',
-			name,
-			url: finalUrl,
-			branch,
-			...(searchPaths.length === 1 && { searchPath: searchPaths[0] }),
-			...(searchPaths.length > 1 && { searchPaths }),
-			...(notes && { specialNotes: notes })
-		});
-
-		server.stop();
+		const resource = await runWithServer(globalOpts, (serverUrl) =>
+			addResource(serverUrl, {
+				type: 'git',
+				name,
+				url: finalUrl,
+				branch,
+				...(searchPaths.length === 1 && { searchPath: searchPaths[0] }),
+				...(searchPaths.length > 1 && { searchPaths }),
+				...(notes && { specialNotes: notes })
+			})
+		);
 
 		console.log(`\nAdded resource: ${name}`);
 		if (resource.type === 'git' && resource.url !== finalUrl) {
@@ -339,11 +344,9 @@ async function addGitResourceWizard(
 		}
 		console.log('\nYou can now use this resource:');
 		console.log(`  btca ask -r ${name} -q "your question"`);
-	});
-
-	rl.close();
-
-	if (Result.isError(result)) throw result.error;
+	} finally {
+		rl.close();
+	}
 }
 
 /**
@@ -363,7 +366,7 @@ async function addLocalResourceWizard(
 
 	const rl = createRl();
 
-	const result = await Result.tryPromise(async () => {
+	try {
 		const finalPath = await promptInput(rl, 'Path', resolvedPath);
 		const name = await promptInput(rl, 'Name', path.basename(finalPath));
 		const notes = await promptInput(rl, 'Notes (optional)');
@@ -384,32 +387,24 @@ async function addLocalResourceWizard(
 
 		if (!confirmed) {
 			console.log('\nCancelled.');
-			process.exit(0);
+			return;
 		}
 
-		const server = await ensureServer({
-			serverUrl: globalOpts?.server,
-			port: globalOpts?.port,
-			quiet: true
-		});
-
-		await addResource(server.url, {
-			type: 'local',
-			name,
-			path: finalPath,
-			...(notes && { specialNotes: notes })
-		});
-
-		server.stop();
+		await runWithServer(globalOpts, (serverUrl) =>
+			addResource(serverUrl, {
+				type: 'local',
+				name,
+				path: finalPath,
+				...(notes && { specialNotes: notes })
+			})
+		);
 
 		console.log(`\nAdded resource: ${name}`);
 		console.log('\nYou can now use this resource:');
 		console.log(`  btca ask -r ${name} -q "your question"`);
-	});
-
-	rl.close();
-
-	if (Result.isError(result)) throw result.error;
+	} finally {
+		rl.close();
+	}
 }
 
 /**
@@ -422,9 +417,9 @@ async function addNpmResourceWizard(
 ): Promise<void> {
 	const parsed = parseNpmReference(npmReference);
 	if (!parsed) {
-		console.error('Error: Invalid npm reference.');
-		console.error('Use an npm package (e.g. react, @types/node, npm:react, or npmjs package URL).');
-		process.exit(1);
+		throw new Error(
+			'Invalid npm reference. Use an npm package (e.g. react, @types/node, npm:react, or npmjs package URL).'
+		);
 	}
 
 	console.log('\n--- Add npm Resource ---\n');
@@ -432,7 +427,7 @@ async function addNpmResourceWizard(
 
 	const rl = createRl();
 
-	const result = await Result.tryPromise(async () => {
+	try {
 		const packageName = await promptInput(rl, 'Package', parsed.packageName);
 		const versionInput = await promptInput(rl, 'Version/tag (optional)', parsed.version ?? '');
 		const name = await promptInput(rl, 'Name', packageName);
@@ -455,33 +450,25 @@ async function addNpmResourceWizard(
 
 		if (!confirmed) {
 			console.log('\nCancelled.');
-			process.exit(0);
+			return;
 		}
 
-		const server = await ensureServer({
-			serverUrl: globalOpts?.server,
-			port: globalOpts?.port,
-			quiet: true
-		});
-
-		await addResource(server.url, {
-			type: 'npm',
-			name,
-			package: packageName,
-			...(versionInput ? { version: versionInput } : {}),
-			...(notes ? { specialNotes: notes } : {})
-		});
-
-		server.stop();
+		await runWithServer(globalOpts, (serverUrl) =>
+			addResource(serverUrl, {
+				type: 'npm',
+				name,
+				package: packageName,
+				...(versionInput ? { version: versionInput } : {}),
+				...(notes ? { specialNotes: notes } : {})
+			})
+		);
 
 		console.log(`\nAdded resource: ${name}`);
 		console.log('\nYou can now use this resource:');
 		console.log(`  btca ask -r ${name} -q "your question"`);
-	});
-
-	rl.close();
-
-	if (Result.isError(result)) throw result.error;
+	} finally {
+		rl.close();
+	}
 }
 
 const inferResourceType = async (value: string): Promise<'git' | 'local' | 'npm'> => {
@@ -493,181 +480,140 @@ const inferResourceType = async (value: string): Promise<'git' | 'local' | 'npm'
 	return 'local';
 };
 
-export const addCommand = new Command('add')
-	.description('Add a resource (git repository, local directory, or npm package)')
-	.argument('[reference]', 'Repository URL, local path, or npm package reference')
-	.option('-g, --global', 'Add to global config instead of project config')
-	.option('-n, --name <name>', 'Resource name')
-	.option('-b, --branch <branch>', 'Git branch (default: main)')
-	.option('-s, --search-path <path...>', 'Search paths within repo (can specify multiple)')
-	.option('--notes <notes>', 'Special notes for the agent')
-	.option('-t, --type <type>', 'Resource type: git, local, or npm (auto-detected if not specified)')
-	.action(
-		async (
-			reference: string | undefined,
-			options: {
-				global?: boolean;
-				name?: string;
-				branch?: string;
-				searchPath?: string[];
-				notes?: string;
-				type?: string;
-			},
-			command
-		) => {
-			const globalOpts = command.parent?.opts() as { server?: string; port?: number } | undefined;
+export const runAddCommand = async (args: {
+	reference?: string;
+	global?: boolean;
+	name?: string;
+	branch?: string;
+	searchPath?: string[];
+	notes?: string;
+	type?: string;
+	globalOpts?: { server?: string; port?: number };
+}) => {
+	try {
+		if (!args.reference) {
+			const resourceType = await promptSelect<'git' | 'local' | 'npm'>(
+				'What type of resource do you want to add?',
+				[
+					{ label: 'Git repository', value: 'git' },
+					{ label: 'npm package', value: 'npm' },
+					{ label: 'Local directory', value: 'local' }
+				]
+			);
 
-			const result = await Result.tryPromise(async () => {
-				if (!reference) {
-					const resourceType = await promptSelect<'git' | 'local' | 'npm'>(
-						'What type of resource do you want to add?',
-						[
-							{ label: 'Git repository', value: 'git' },
-							{ label: 'npm package', value: 'npm' },
-							{ label: 'Local directory', value: 'local' }
-						]
-					);
-
-					const rl = createRl();
-					if (resourceType === 'git') {
-						const url = await promptInput(rl, 'GitHub URL');
-						rl.close();
-						if (!url) {
-							console.error('Error: URL is required.');
-							process.exit(1);
-						}
-						await addGitResourceWizard(url, options, globalOpts);
-						return;
-					}
-
-					if (resourceType === 'npm') {
-						const npmRef = await promptInput(rl, 'npm package (or npmjs URL)', 'react');
-						rl.close();
-						if (!npmRef) {
-							console.error('Error: npm package is required.');
-							process.exit(1);
-						}
-						await addNpmResourceWizard(npmRef, options, globalOpts);
-						return;
-					}
-
-					const localPath = await promptInput(rl, 'Local path');
-					rl.close();
-					if (!localPath) {
-						console.error('Error: Path is required.');
-						process.exit(1);
-					}
-					await addLocalResourceWizard(localPath, options, globalOpts);
-					return;
+			const rl = createRl();
+			if (resourceType === 'git') {
+				const url = await promptInput(rl, 'GitHub URL');
+				rl.close();
+				if (!url) {
+					throw new Error('URL is required.');
 				}
-
-				let resourceType: 'git' | 'local' | 'npm';
-				if (options.type) {
-					if (options.type !== 'git' && options.type !== 'local' && options.type !== 'npm') {
-						console.error('Error: --type must be "git", "local", or "npm"');
-						process.exit(1);
-					}
-					resourceType = options.type as 'git' | 'local' | 'npm';
-				} else {
-					resourceType = await inferResourceType(reference);
-				}
-
-				if (options.name && resourceType === 'git' && parseGitHubUrl(reference)) {
-					const normalizedUrl = normalizeGitHubUrl(reference);
-					const server = await ensureServer({
-						serverUrl: globalOpts?.server,
-						port: globalOpts?.port,
-						quiet: true
-					});
-
-					const searchPaths = options.searchPath ?? [];
-					const resource = await addResource(server.url, {
-						type: 'git',
-						name: options.name,
-						url: normalizedUrl,
-						branch: options.branch ?? 'main',
-						...(searchPaths.length === 1 && { searchPath: searchPaths[0] }),
-						...(searchPaths.length > 1 && { searchPaths }),
-						...(options.notes && { specialNotes: options.notes })
-					});
-
-					server.stop();
-
-					console.log(`Added git resource: ${options.name}`);
-					if (resource.type === 'git' && resource.url !== normalizedUrl) {
-						console.log(`  URL normalized: ${resource.url}`);
-					}
-					return;
-				}
-
-				if (options.name && resourceType === 'local') {
-					const resolvedPath = path.isAbsolute(reference)
-						? reference
-						: path.resolve(process.cwd(), reference);
-					const server = await ensureServer({
-						serverUrl: globalOpts?.server,
-						port: globalOpts?.port,
-						quiet: true
-					});
-
-					await addResource(server.url, {
-						type: 'local',
-						name: options.name,
-						path: resolvedPath,
-						...(options.notes && { specialNotes: options.notes })
-					});
-
-					server.stop();
-					console.log(`Added local resource: ${options.name}`);
-					return;
-				}
-
-				if (options.name && resourceType === 'npm') {
-					const parsed = parseNpmReference(reference);
-					if (!parsed) {
-						console.error('Error: Invalid npm reference.');
-						console.error(
-							'Use an npm package (e.g. react, @types/node, npm:react, or npmjs package URL).'
-						);
-						process.exit(1);
-					}
-
-					const server = await ensureServer({
-						serverUrl: globalOpts?.server,
-						port: globalOpts?.port,
-						quiet: true
-					});
-
-					await addResource(server.url, {
-						type: 'npm',
-						name: options.name,
-						package: parsed.packageName,
-						...(parsed.version ? { version: parsed.version } : {}),
-						...(options.notes ? { specialNotes: options.notes } : {})
-					});
-
-					server.stop();
-					console.log(`Added npm resource: ${options.name}`);
-					return;
-				}
-
-				if (resourceType === 'git') {
-					await addGitResourceWizard(reference, options, globalOpts);
-				} else if (resourceType === 'npm') {
-					await addNpmResourceWizard(reference, options, globalOpts);
-				} else {
-					await addLocalResourceWizard(reference, options, globalOpts);
-				}
-			});
-
-			if (Result.isError(result)) {
-				const error = result.error;
-				if (error instanceof Error && error.message === 'Invalid selection') {
-					console.error('\nError: Invalid selection. Please try again.');
-					process.exit(1);
-				}
-				console.error(formatError(error));
-				process.exit(1);
+				await addGitResourceWizard(url, args, args.globalOpts);
+				return;
 			}
+
+			if (resourceType === 'npm') {
+				const npmRef = await promptInput(rl, 'npm package (or npmjs URL)', 'react');
+				rl.close();
+				if (!npmRef) {
+					throw new Error('npm package is required.');
+				}
+				await addNpmResourceWizard(npmRef, args, args.globalOpts);
+				return;
+			}
+
+			const localPath = await promptInput(rl, 'Local path');
+			rl.close();
+			if (!localPath) {
+				throw new Error('Path is required.');
+			}
+			await addLocalResourceWizard(localPath, args, args.globalOpts);
+			return;
 		}
-	);
+
+		let resourceType: 'git' | 'local' | 'npm';
+		if (args.type) {
+			if (args.type !== 'git' && args.type !== 'local' && args.type !== 'npm') {
+				throw new Error('--type must be "git", "local", or "npm"');
+			}
+			resourceType = args.type as 'git' | 'local' | 'npm';
+		} else {
+			resourceType = await inferResourceType(args.reference);
+		}
+
+		if (args.name && resourceType === 'git' && parseGitHubUrl(args.reference)) {
+			const name = args.name;
+			const normalizedUrl = normalizeGitHubUrl(args.reference);
+			const searchPaths = args.searchPath ?? [];
+			const resource = await runWithServer(args.globalOpts, (serverUrl) =>
+				addResource(serverUrl, {
+					type: 'git',
+					name,
+					url: normalizedUrl,
+					branch: args.branch ?? 'main',
+					...(searchPaths.length === 1 && { searchPath: searchPaths[0] }),
+					...(searchPaths.length > 1 && { searchPaths }),
+					...(args.notes && { specialNotes: args.notes })
+				})
+			);
+
+			console.log(`Added git resource: ${name}`);
+			if (resource.type === 'git' && resource.url !== normalizedUrl) {
+				console.log(`  URL normalized: ${resource.url}`);
+			}
+			return;
+		}
+
+		if (args.name && resourceType === 'local') {
+			const name = args.name;
+			const resolvedPath = path.isAbsolute(args.reference)
+				? args.reference
+				: path.resolve(process.cwd(), args.reference);
+			await runWithServer(args.globalOpts, (serverUrl) =>
+				addResource(serverUrl, {
+					type: 'local',
+					name,
+					path: resolvedPath,
+					...(args.notes && { specialNotes: args.notes })
+				})
+			);
+			console.log(`Added local resource: ${name}`);
+			return;
+		}
+
+		if (args.name && resourceType === 'npm') {
+			const name = args.name;
+			const parsed = parseNpmReference(args.reference);
+			if (!parsed) {
+				throw new Error(
+					'Invalid npm reference. Use an npm package (e.g. react, @types/node, npm:react, or npmjs package URL).'
+				);
+			}
+
+			await runWithServer(args.globalOpts, (serverUrl) =>
+				addResource(serverUrl, {
+					type: 'npm',
+					name,
+					package: parsed.packageName,
+					...(parsed.version ? { version: parsed.version } : {}),
+					...(args.notes ? { specialNotes: args.notes } : {})
+				})
+			);
+			console.log(`Added npm resource: ${name}`);
+			return;
+		}
+
+		if (resourceType === 'git') {
+			await addGitResourceWizard(args.reference, args, args.globalOpts);
+		} else if (resourceType === 'npm') {
+			await addNpmResourceWizard(args.reference, args, args.globalOpts);
+		} else {
+			await addLocalResourceWizard(args.reference, args, args.globalOpts);
+		}
+	} catch (error) {
+		if (error instanceof Error && error.message === 'Invalid selection') {
+			throw new Error('Invalid selection. Please try again.');
+		}
+		throw error;
+	}
+};

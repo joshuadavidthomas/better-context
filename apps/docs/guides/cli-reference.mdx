@@ -161,6 +161,9 @@ Options:
 
 Behavior: When provider and model are provided, it updates the config directly. Otherwise, it walks an interactive provider selection (connected providers first), then model selection. If auth is required, it prompts for credentials.
 
+For `github-copilot`, model selection is best-effort. GitHub Copilot may reject model IDs that
+appear in public model catalogs depending on the specific API endpoint, account, or org policy.
+
 For `openai-compat`, the interactive flow additionally prompts for:
 
 - Base URL (required): root URL of your OpenAI-compatible server.

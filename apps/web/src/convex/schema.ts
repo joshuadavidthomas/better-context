@@ -86,8 +86,11 @@ export default defineSchema({
 		instanceId: v.id('instances'),
 		projectId: v.optional(v.id('projects')),
 		name: v.string(),
-		url: v.string(),
-		branch: v.string(),
+		type: v.optional(v.union(v.literal('git'), v.literal('npm'))),
+		url: v.optional(v.string()),
+		branch: v.optional(v.string()),
+		package: v.optional(v.string()),
+		version: v.optional(v.string()),
 		sizeBytes: v.optional(v.number()),
 		cachedAt: v.number(),
 		lastUsedAt: v.number()
@@ -110,17 +113,35 @@ export default defineSchema({
 		instanceId: v.id('instances'),
 		projectId: v.optional(v.id('projects')),
 		name: v.string(),
-		type: v.literal('git'),
-		url: v.string(),
-		branch: v.string(),
+		type: v.optional(v.union(v.literal('git'), v.literal('npm'))),
+		url: v.optional(v.string()),
+		branch: v.optional(v.string()),
+		package: v.optional(v.string()),
+		version: v.optional(v.string()),
 		searchPath: v.optional(v.string()),
 		specialNotes: v.optional(v.string()),
+		gitProvider: v.optional(v.union(v.literal('github'), v.literal('generic'))),
+		visibility: v.optional(v.union(v.literal('public'), v.literal('private'))),
+		authSource: v.optional(v.literal('clerk_github_oauth')),
 		createdAt: v.number()
 	})
 		.index('by_instance', ['instanceId'])
 		.index('by_project', ['projectId'])
 		.index('by_instance_and_name', ['instanceId', 'name'])
 		.index('by_project_and_name', ['projectId', 'name']),
+
+	githubConnections: defineTable({
+		instanceId: v.id('instances'),
+		clerkUserId: v.string(),
+		githubUserId: v.optional(v.number()),
+		githubLogin: v.optional(v.string()),
+		scopes: v.array(v.string()),
+		status: v.union(v.literal('connected'), v.literal('missing_scope'), v.literal('disconnected')),
+		connectedAt: v.optional(v.number()),
+		lastValidatedAt: v.number()
+	})
+		.index('by_instance', ['instanceId'])
+		.index('by_clerk_user_id', ['clerkUserId']),
 
 	threads: defineTable({
 		instanceId: v.id('instances'),

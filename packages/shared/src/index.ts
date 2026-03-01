@@ -5,6 +5,7 @@ export * from './thread.ts';
 export * from './stream-filter.ts';
 export * from './resources.ts';
 export * from './resourceValidation.ts';
+export * from './jsonc.ts';
 
 type BlessedModel = {
 	provider: string;

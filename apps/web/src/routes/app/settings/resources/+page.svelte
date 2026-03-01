@@ -10,18 +10,24 @@
 		Link,
 		Check,
 		X,
-		Layers
+		Layers,
+		Github,
+		RefreshCw,
+		Lock,
+		Package as PackageIcon
 	} from '@lucide/svelte';
 	import { useQuery, useConvexClient } from 'convex-svelte';
 	import { goto } from '$app/navigation';
 	import ResourceLogo from '$lib/components/ResourceLogo.svelte';
-	import { getAuthState } from '$lib/stores/auth.svelte';
+	import { getAuthState, openUserProfile, reconnectGitHub } from '$lib/stores/auth.svelte';
 	import { getProjectStore } from '$lib/stores/project.svelte';
 	import { api } from '../../../../convex/_generated/api';
 
 	const auth = getAuthState();
 	const client = useConvexClient();
 	const projectStore = getProjectStore();
+
+	type ResourceFormType = 'git' | 'npm';
 
 	// State for showing all projects toggle
 	let showAllProjects = $state(false);
@@ -35,6 +41,9 @@
 				)
 			: null
 	);
+	const githubConnectionQuery = $derived(
+		auth.instanceId ? useQuery(api.githubConnections.getMyConnection, {}) : null
+	);
 
 	// Quick add state
 	let quickAddUrl = $state('');
@@ -44,17 +53,78 @@
 	// Form state
 	let showAddForm = $state(false);
 	let showConfirmation = $state(false);
+	let formType = $state<ResourceFormType>('git');
 	let formName = $state('');
 	let formUrl = $state('');
 	let formBranch = $state('main');
+	let formPackage = $state('');
+	let formVersion = $state('');
 	let formSearchPath = $state('');
 	let formSpecialNotes = $state('');
 	let isSubmitting = $state(false);
 	let formError = $state<string | null>(null);
 	let addingGlobal = $state<string | null>(null);
 	let globalAddError = $state<string | null>(null);
+	let isSyncingGitHub = $state(false);
+	let isReauthorizingGitHub = $state(false);
+	let githubSyncError = $state<string | null>(null);
+	let githubSyncTriggered = $state(false);
 
 	const userResourceNames = $derived(new Set((userResourcesQuery?.data ?? []).map((r) => r.name)));
+	const githubConnection = $derived(githubConnectionQuery?.data ?? null);
+	const getNpmResourceUrl = (packageName?: string, version?: string) =>
+		packageName
+			? `https://www.npmjs.com/package/${packageName.split('/').map(encodeURIComponent).join('/')}${version ? `/v/${encodeURIComponent(version)}` : ''}`
+			: undefined;
+	const getResourceSummary = (resource: {
+		type: 'git' | 'npm';
+		branch?: string;
+		searchPath?: string;
+		package?: string;
+		version?: string;
+		visibility?: 'public' | 'private';
+	}) =>
+		resource.type === 'npm'
+			? `${resource.package ?? resource.type}${resource.version ? `@${resource.version}` : ''}`
+			: [
+					resource.visibility === 'private' ? 'private' : 'public',
+					resource.branch ?? 'main',
+					resource.searchPath
+				]
+					.filter(Boolean)
+					.join(' · ');
+
+	const getResourceLabel = (resource: {
+		type: 'git' | 'npm';
+		url?: string;
+		package?: string;
+		version?: string;
+	}) =>
+		resource.type === 'npm'
+			? `${resource.package ?? 'npm package'}${resource.version ? `@${resource.version}` : ''}`
+			: (resource.url?.replace(/^https?:\/\//, '') ?? 'git resource');
+
+	const resetForm = (nextType: ResourceFormType = formType) => {
+		formType = nextType;
+		formName = '';
+		formUrl = '';
+		formBranch = 'main';
+		formPackage = '';
+		formVersion = '';
+		formSearchPath = '';
+		formSpecialNotes = '';
+		formError = null;
+	};
+
+	const openAddForm = (nextType: ResourceFormType = formType) => {
+		resetForm(nextType);
+		showAddForm = true;
+	};
+
+	const closeAddForm = () => {
+		showAddForm = false;
+		resetForm('git');
+	};
 
 	/**
 	 * Parse a git URL and extract repo info
@@ -125,9 +195,12 @@
 			}
 
 			// Prefill the form
+			formType = 'git';
 			formName = parsed.name;
 			formUrl = parsed.url;
 			formBranch = parsed.branch;
+			formPackage = '';
+			formVersion = '';
 			formSearchPath = '';
 			formSpecialNotes = '';
 
@@ -141,12 +214,7 @@
 
 	function handleCancelConfirmation() {
 		showConfirmation = false;
-		formName = '';
-		formUrl = '';
-		formBranch = 'main';
-		formSearchPath = '';
-		formSpecialNotes = '';
-		formError = null;
+		resetForm('git');
 	}
 
 	async function handleConfirmAdd() {
@@ -162,10 +230,68 @@
 		}
 	});
 
+	$effect(() => {
+		if (!auth.isSignedIn) {
+			githubSyncTriggered = false;
+			return;
+		}
+		if (!githubSyncTriggered) {
+			githubSyncTriggered = true;
+			void syncGitHubConnection();
+		}
+	});
+
+	async function syncGitHubConnection() {
+		if (!auth.isSignedIn) return;
+		isSyncingGitHub = true;
+		githubSyncError = null;
+
+		try {
+			await client.action(api.githubAuth.syncMyConnection, {});
+		} catch (error) {
+			githubSyncError = error instanceof Error ? error.message : 'Failed to refresh GitHub status';
+		} finally {
+			isSyncingGitHub = false;
+		}
+	}
+
+	async function handleConnectGitHub() {
+		githubSyncError = null;
+
+		if (githubConnection?.status === 'missing_scope') {
+			isReauthorizingGitHub = true;
+
+			const reauthorized = await reconnectGitHub(['repo']);
+			isReauthorizingGitHub = false;
+
+			if (reauthorized) {
+				await syncGitHubConnection();
+				return;
+			}
+		}
+
+		openUserProfile({ github: ['repo'] });
+	}
+
+	async function handleRefreshGitHubAccess() {
+		githubSyncError = null;
+		isReauthorizingGitHub = true;
+
+		const reauthorized = await reconnectGitHub(['repo']);
+		isReauthorizingGitHub = false;
+
+		if (reauthorized) {
+			await syncGitHubConnection();
+			return;
+		}
+
+		openUserProfile({ github: ['repo'] });
+	}
+
 	async function handleAddResource() {
 		if (!auth.instanceId) return;
-		if (!formName.trim() || !formUrl.trim()) {
-			formError = 'Name and URL are required';
+		if (!formName.trim()) {
+			formError = 'Name is required';
 			return;
 		}
 
@@ -175,11 +301,22 @@
 			return;
 		}
 
-		// Basic URL validation
-		try {
-			new URL(formUrl);
-		} catch {
-			formError = 'Invalid URL format';
+		if (formType === 'git') {
+			if (!formUrl.trim()) {
+				formError = 'Git URL is required';
+				return;
+			}
+
+			try {
+				new URL(formUrl);
+			} catch {
+				formError = 'Invalid URL format';
+				return;
+			}
+		}
+
+		if (formType === 'npm' && !formPackage.trim()) {
+			formError = 'npm package is required';
 			return;
 		}
 
@@ -187,22 +324,19 @@
 		formError = null;
 
 		try {
-			await client.mutation(api.resources.addCustomResource, {
+			await client.action(api.resourceActions.addCustomResource, {
+				type: formType,
 				name: formName.trim(),
-				url: formUrl.trim(),
-				branch: formBranch.trim() || 'main',
-				searchPath: formSearchPath.trim() || undefined,
+				url: formType === 'git' ? formUrl.trim() : undefined,
+				branch: formType === 'git' ? formBranch.trim() || 'main' : undefined,
+				package: formType === 'npm' ? formPackage.trim() : undefined,
+				version: formType === 'npm' ? formVersion.trim() || undefined : undefined,
+				searchPath: formType === 'git' ? formSearchPath.trim() || undefined : undefined,
 				specialNotes: formSpecialNotes.trim() || undefined,
 				projectId: selectedProjectId
 			});
 
-			// Reset form
-			formName = '';
-			formUrl = '';
-			formBranch = 'main';
-			formSearchPath = '';
-			formSpecialNotes = '';
-			showAddForm = false;
+			closeAddForm();
 		} catch (error) {
 			formError = error instanceof Error ? error.message : 'Failed to add resource';
 		} finally {
@@ -229,7 +363,8 @@
 		globalAddError = null;
 		addingGlobal = resource.name;
 		try {
-			await client.mutation(api.resources.addCustomResource, {
+			await client.action(api.resourceActions.addCustomResource, {
+				type: 'git',
 				name: resource.name,
 				url: resource.url,
 				branch: resource.branch,
@@ -255,6 +390,80 @@
 			</p>
 		</div>
 
+		<section class="bc-card p-5">
+			<div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+				<div class="space-y-2">
+					<div class="flex items-center gap-2">
+						<Github size={18} />
+						<h2 class="text-lg font-medium">GitHub Private Repos</h2>
+					</div>
+					<p class="bc-muted text-sm">
+						Private GitHub repositories work only in the signed-in web app sandbox. Your local CLI
+						still uses the git auth on your own machine.
+					</p>
+					<div class="flex flex-wrap items-center gap-2 text-sm">
+						<span class="bc-chip px-2 py-1">
+							{#if githubConnection?.status === 'connected'}
+								Connected to @{githubConnection.githubLogin}
+							{:else if githubConnection?.status === 'missing_scope'}
+								GitHub connected, but private repo access is missing
+							{:else}
+								GitHub not connected
+							{/if}
+						</span>
+						{#if githubConnection?.status === 'connected'}
+							<span class="bc-muted">Scopes: {githubConnection.scopes.join(', ')}</span>
+						{/if}
+					</div>
+					<p class="bc-muted text-xs">
+						If GitHub is already connected without private repo access, btca will try a direct
+						reconnect first and fall back to the Clerk profile modal with the required scope. You
+						can also refresh GitHub access later if you need newly granted org access to show up.
+					</p>
+					{#if githubSyncError}
+						<div class="text-sm text-red-500">{githubSyncError}</div>
+					{/if}
+				</div>
+				<div class="flex flex-wrap gap-2">
+					{#if githubConnection?.status === 'connected'}
+						<button
+							type="button"
+							class="bc-btn text-sm"
+							onclick={handleRefreshGitHubAccess}
+							disabled={isReauthorizingGitHub}
+						>
+							{#if isReauthorizingGitHub}
+								<Loader2 size={16} class="animate-spin" />
+							{:else}
+								<RefreshCw size={16} />
+							{/if}
+							Refresh GitHub Access
+						</button>
+					{/if}
+					<button type="button" class="bc-btn text-sm" onclick={syncGitHubConnection}>
+						{#if isSyncingGitHub}
+							<Loader2 size={16} class="animate-spin" />
+						{:else}
+							<RefreshCw size={16} />
+						{/if}
+						Refresh Status
+					</button>
+					<button type="button" class="bc-btn bc-btn-primary text-sm" onclick={handleConnectGitHub}>
+						{#if isReauthorizingGitHub}
+							<Loader2 size={16} class="animate-spin" />
+						{:else}
+							<Github size={16} />
+						{/if}
+						{githubConnection?.status === 'missing_scope'
+							? 'Reconnect GitHub'
+							: githubConnection?.status === 'connected'
+								? 'Manage GitHub'
+								: 'Connect GitHub'}
+					</button>
+				</div>
+			</div>
+		</section>
+
 		<!-- User Resources -->
 		<section>
 			<div class="mb-4 flex items-center justify-between">
@@ -271,20 +480,26 @@
 					<button
 						type="button"
 						class="bc-btn bc-btn-primary text-sm"
-						onclick={() => (showAddForm = !showAddForm)}
+						onclick={() => (showAddForm ? closeAddForm() : openAddForm('git'))}
 					>
 						<Plus size={16} />
-						Add Manually
+						Add Resource
 					</button>
 				</div>
 			</div>
-			<p class="bc-muted mb-4 text-sm">Add your own git repositories as documentation resources.</p>
+			<p class="bc-muted mb-4 text-sm">
+				Add your own git repositories or npm packages as documentation resources.
+			</p>
+			<p class="bc-muted mb-4 text-xs">
+				Public repos can be added directly. Private GitHub repos require a connected GitHub account
+				with private repository access. npm packages can be added with an optional pinned version.
+			</p>
 
 			<!-- Quick Add Section -->
 			<div class="bc-card mb-4 p-4">
 				<div class="flex items-center gap-2 mb-3">
 					<Link size={16} />
-					<h3 class="font-medium">Quick Add from URL</h3>
+					<h3 class="font-medium">Quick Add Git Repo</h3>
 				</div>
 				<div class="flex gap-2">
 					<input
@@ -425,6 +640,31 @@
 					{/if}
 
 					<div class="grid gap-4">
+						<div class="grid gap-2 sm:grid-cols-2">
+							<button
+								type="button"
+								class="bc-resourceType {formType === 'git' ? 'bc-resourceType-active' : ''}"
+								onclick={() => resetForm('git')}
+							>
+								<div class="flex items-center gap-2">
+									<Link size={16} />
+									<span class="font-medium">Git Repository</span>
+								</div>
+								<span class="bc-muted text-xs">Repo URL, branch, and optional docs path.</span>
+							</button>
+							<button
+								type="button"
+								class="bc-resourceType {formType === 'npm' ? 'bc-resourceType-active' : ''}"
+								onclick={() => resetForm('npm')}
+							>
+								<div class="flex items-center gap-2">
+									<PackageIcon size={16} />
+									<span class="font-medium">npm Package</span>
+								</div>
+								<span class="bc-muted text-xs">Package name and an optional pinned version.</span>
+							</button>
+						</div>
+
 						<div>
 							<label for="name" class="mb-1 block text-sm font-medium">Name *</label>
 							<input
@@ -440,39 +680,66 @@
 							</p>
 						</div>
 
-						<div>
-							<label for="url" class="mb-1 block text-sm font-medium">Git URL *</label>
-							<input
-								id="url"
-								type="url"
-								class="bc-input w-full"
-								placeholder="https://github.com/owner/repo"
-								bind:value={formUrl}
-							/>
-						</div>
+						{#if formType === 'git'}
+							<div>
+								<label for="url" class="mb-1 block text-sm font-medium">Git URL *</label>
+								<input
+									id="url"
+									type="url"
+									class="bc-input w-full"
+									placeholder="https://github.com/owner/repo"
+									bind:value={formUrl}
+								/>
+							</div>
 
-						<div class="grid grid-cols-2 gap-4">
+							<div class="grid grid-cols-2 gap-4">
+								<div>
+									<label for="branch" class="mb-1 block text-sm font-medium">Branch</label>
+									<input
+										id="branch"
+										type="text"
+										class="bc-input w-full"
+										placeholder="main"
+										bind:value={formBranch}
+									/>
+								</div>
+								<div>
+									<label for="searchPath" class="mb-1 block text-sm font-medium">Search Path</label>
+									<input
+										id="searchPath"
+										type="text"
+										class="bc-input w-full"
+										placeholder="docs/"
+										bind:value={formSearchPath}
+									/>
+								</div>
+							</div>
+						{:else}
 							<div>
-								<label for="branch" class="mb-1 block text-sm font-medium">Branch</label>
+								<label for="package" class="mb-1 block text-sm font-medium">npm Package *</label>
 								<input
-									id="branch"
+									id="package"
 									type="text"
 									class="bc-input w-full"
-									placeholder="main"
-									bind:value={formBranch}
+									placeholder="react or @types/node"
+									bind:value={formPackage}
 								/>
 							</div>
+
 							<div>
-								<label for="searchPath" class="mb-1 block text-sm font-medium">Search Path</label>
+								<label for="version" class="mb-1 block text-sm font-medium">Version or Tag</label>
 								<input
-									id="searchPath"
+									id="version"
 									type="text"
 									class="bc-input w-full"
-									placeholder="docs/"
-									bind:value={formSearchPath}
+									placeholder="latest, 19.0.0, beta"
+									bind:value={formVersion}
 								/>
+								<p class="bc-muted mt-1 text-xs">
+									Leave blank to use the latest published version.
+								</p>
 							</div>
-						</div>
+						{/if}
 
 						<div>
 							<label for="notes" class="mb-1 block text-sm font-medium">Notes</label>
@@ -489,7 +756,7 @@
 							<button
 								type="button"
 								class="bc-btn text-sm"
-								onclick={() => (showAddForm = false)}
+								onclick={closeAddForm}
 								disabled={isSubmitting}
 							>
 								Cancel
@@ -504,7 +771,7 @@
 									<Loader2 size={16} class="animate-spin" />
 									Adding...
 								{:else}
-									Add Resource
+									Add {formType === 'git' ? 'Repository' : 'Package'}
 								{/if}
 							</button>
 						</div>
@@ -522,17 +789,33 @@
 					{#each userResourcesQuery.data as resource (resource._id)}
 						<div class="bc-card flex flex-col p-4">
 							<div class="mb-3 flex items-start justify-between gap-2">
-								<span class="font-medium">@{resource.name}</span>
+								<div class="flex flex-wrap items-center gap-2">
+									<span class="font-medium">@{resource.name}</span>
+									{#if resource.type === 'npm'}
+										<span class="bc-chip px-1.5 py-0.5 text-[11px]">
+											<PackageIcon size={10} />
+											npm
+										</span>
+									{/if}
+									{#if resource.visibility === 'private'}
+										<span class="bc-chip px-1.5 py-0.5 text-[11px]">
+											<Lock size={10} />
+											Private
+										</span>
+									{/if}
+								</div>
 								<div class="flex shrink-0 gap-1">
-									<a
-										href={resource.url}
-										target="_blank"
-										rel="noreferrer"
-										class="bc-chip p-1.5"
-										title="Open repository"
-									>
-										<ExternalLink size={12} />
-									</a>
+									{#if resource.url || resource.package}
+										<a
+											href={resource.url ?? getNpmResourceUrl(resource.package, resource.version)}
+											target="_blank"
+											rel="noreferrer"
+											class="bc-chip p-1.5"
+											title={resource.type === 'npm' ? 'Open npm package' : 'Open repository'}
+										>
+											<ExternalLink size={12} />
+										</a>
+									{/if}
 									<button
 										type="button"
 										class="bc-chip p-1.5 text-red-500"
@@ -544,14 +827,10 @@
 								</div>
 							</div>
 							<div class="bc-muted line-clamp-1 text-xs">
-								{resource.url.replace(/^https?:\/\//, '')}
+								{getResourceLabel(resource)}
 							</div>
 							<div class="bc-muted mt-1 text-xs">
-								{resource.branch}
-								{#if resource.searchPath}
-									<span class="mx-1">·</span>
-									{resource.searchPath}
-								{/if}
+								{getResourceSummary(resource)}
 							</div>
 							{#if resource.specialNotes}
 								<div class="bc-muted mt-2 line-clamp-2 text-xs italic">{resource.specialNotes}</div>
@@ -565,7 +844,7 @@
 					<button
 						type="button"
 						class="bc-btn bc-btn-primary mt-4 text-sm"
-						onclick={() => (showAddForm = true)}
+						onclick={() => openAddForm('git')}
 					>
 						<Plus size={16} />
 						Add Your First Resource
@@ -667,5 +946,29 @@
 	.bc-checkbox:focus {
 		outline: none;
 		box-shadow: 0 0 0 2px hsl(var(--bc-accent) / 0.3);
+	}
+
+	.bc-resourceType {
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+		padding: 0.9rem 1rem;
+		border: 1px solid hsl(var(--bc-border));
+		background: hsl(var(--bc-surface));
+		text-align: left;
+		transition:
+			border-color 0.15s,
+			background-color 0.15s,
+			transform 0.15s;
+	}
+
+	.bc-resourceType:hover {
+		border-color: hsl(var(--bc-fg) / 0.35);
+		transform: translateY(-1px);
+	}
+
+	.bc-resourceType-active {
+		border-color: hsl(var(--bc-accent));
+		background: hsl(var(--bc-accent) / 0.08);
 	}
 </style>

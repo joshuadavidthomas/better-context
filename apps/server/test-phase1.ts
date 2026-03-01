@@ -4,12 +4,22 @@
  * Run with: bun apps/server/test-phase1.ts
  */
 
-import { Auth } from './src/providers/auth.ts';
+import { getAuthenticatedProviders } from './src/providers/auth.ts';
 import { getSupportedProviders } from './src/providers/registry.ts';
-import { Model } from './src/providers/model.ts';
-import { ReadTool, GrepTool, GlobTool, ListTool } from './src/tools/index.ts';
-import { AgentLoop } from './src/agent/loop.ts';
-import { VirtualFs } from './src/vfs/virtual-fs.ts';
+import { getModel } from './src/providers/model.ts';
+import {
+	executeReadTool,
+	executeGrepTool,
+	executeGlobTool,
+	executeListTool
+} from './src/tools/index.ts';
+import { runAgentLoop } from './src/agent/loop.ts';
+import {
+	createVirtualFs,
+	disposeVirtualFs,
+	importDirectoryIntoVirtualFs,
+	mkdirVirtualFs
+} from './src/vfs/virtual-fs.ts';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -19,7 +29,7 @@ async function main() {
 
 	// 1. Test Auth
 	console.log('1. Testing Auth...');
-	const providers = await Auth.getAuthenticatedProviders();
+	const providers = await getAuthenticatedProviders();
 	console.log(`   Authenticated providers: ${providers.join(', ') || 'none'}`);
 
 	if (providers.length === 0) {
@@ -45,38 +55,38 @@ async function main() {
 	await fs.mkdir(path.join(testDir, 'subdir'));
 	await fs.writeFile(path.join(testDir, 'subdir', 'nested.ts'), 'export const foo = "bar";');
 
-	const vfsId = VirtualFs.create();
-	await VirtualFs.mkdir('/', { recursive: true }, vfsId);
-	await VirtualFs.importDirectoryFromDisk({
+	const vfsId = createVirtualFs();
+	await mkdirVirtualFs('/', { recursive: true }, vfsId);
+	await importDirectoryIntoVirtualFs({
 		sourcePath: testDir,
 		destinationPath: '/',
 		vfsId
 	});
 
 	// Test list
-	const listResult = await ListTool.execute({ path: '.' }, { basePath: '/', vfsId });
+	const listResult = await executeListTool({ path: '.' }, { basePath: '/', vfsId });
 	console.log(`   List result: ${listResult.output.split('\n').length} entries`);
 
 	// Test read
-	const readResult = await ReadTool.execute({ path: 'hello.txt' }, { basePath: '/', vfsId });
+	const readResult = await executeReadTool({ path: 'hello.txt' }, { basePath: '/', vfsId });
 	console.log(
 		`   Read result: ${readResult.output.includes('Hello, World!') ? 'content matches' : 'MISMATCH'}`
 	);
 
 	// Test glob
-	const globResult = await GlobTool.execute({ pattern: '**/*.ts' }, { basePath: '/', vfsId });
+	const globResult = await executeGlobTool({ pattern: '**/*.ts' }, { basePath: '/', vfsId });
 	console.log(
 		`   Glob result: ${globResult.output.includes('nested.ts') ? 'found .ts file' : 'NOT FOUND'}`
 	);
 
 	// Test grep
-	const grepResult = await GrepTool.execute({ pattern: 'foo' }, { basePath: '/', vfsId });
+	const grepResult = await executeGrepTool({ pattern: 'foo' }, { basePath: '/', vfsId });
 	console.log(
 		`   Grep result: ${grepResult.output.includes('nested.ts') ? 'found match' : 'NOT FOUND'}`
 	);
 
 	// Cleanup
-	VirtualFs.dispose(vfsId);
+	disposeVirtualFs(vfsId);
 	await fs.rm(testDir, { recursive: true });
 	console.log('   ✅ All tools working\n');
 
@@ -88,7 +98,7 @@ async function main() {
 	const testModelId = firstProvider === 'opencode' ? 'big-pickle' : 'claude-sonnet-4-20250514';
 	try {
 		// Just test that we can create a model - don't actually call it
-		const model = await Model.getModel(firstProvider, testModelId);
+		const model = await getModel(firstProvider, testModelId);
 		console.log(`   Created model for ${firstProvider}/${testModelId}`);
 		console.log('   ✅ Model creation working\n');
 	} catch (e) {
@@ -105,9 +115,9 @@ async function main() {
 			path.join(agentTestDir, 'README.md'),
 			'# Test Project\n\nThis project contains the secret code: ALPHA-123.'
 		);
-		const agentVfsId = VirtualFs.create();
-		await VirtualFs.mkdir('/', { recursive: true }, agentVfsId);
-		await VirtualFs.importDirectoryFromDisk({
+		const agentVfsId = createVirtualFs();
+		await mkdirVirtualFs('/', { recursive: true }, agentVfsId);
+		await importDirectoryIntoVirtualFs({
 			sourcePath: agentTestDir,
 			destinationPath: '/',
 			vfsId: agentVfsId
@@ -116,7 +126,7 @@ async function main() {
 		// For opencode, use big-pickle (free) - uses openai-compatible endpoint
 		const agentModelId = firstProvider === 'opencode' ? 'big-pickle' : 'claude-sonnet-4-20250514';
 		try {
-			const result = await AgentLoop.run({
+			const result = await runAgentLoop({
 				providerId: firstProvider,
 				modelId: agentModelId,
 				collectionPath: '/',
@@ -134,7 +144,7 @@ async function main() {
 			console.log(`   ❌ Agent loop failed: ${e}\n`);
 		}
 
-		VirtualFs.dispose(agentVfsId);
+		disposeVirtualFs(agentVfsId);
 		await fs.rm(agentTestDir, { recursive: true });
 	} else {
 		console.log('5. Skipping full agent loop test (run with --full to enable)\n');

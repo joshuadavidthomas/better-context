@@ -1,5 +1,5 @@
-import { Result } from 'better-result';
 import { startServer, type ServerInstance } from 'btca-server';
+import { Effect } from 'effect';
 
 export interface ServerManager {
 	url: string;
@@ -23,13 +23,17 @@ const waitForHealth = async (url: string, timeout: number): Promise<void> => {
 	const pollInterval = 100;
 
 	while (Date.now() - startTime < timeout) {
-		const result = await Result.tryPromise(async () => {
+		try {
 			const response = await fetch(`${url}/`);
-			if (!response.ok) return false;
+			if (!response.ok) {
+				await new Promise((resolve) => setTimeout(resolve, pollInterval));
+				continue;
+			}
 			const data = (await response.json()) as { ok?: boolean };
-			return Boolean(data.ok);
-		});
-		if (Result.isOk(result) && result.value) return;
+			if (data.ok) return;
+		} catch {
+			// keep polling until timeout
+		}
 		await new Promise((resolve) => setTimeout(resolve, pollInterval));
 	}
 
@@ -59,15 +63,28 @@ export async function ensureServer(options: EnsureServerOptions = {}): Promise<S
 	// Start the server in-process
 	// Use port 0 by default: OS assigns an available ephemeral port (avoids collisions).
 	const port = options.port ?? 0;
+	const quiet = options.quiet ?? true;
 
-	const result = await Result.tryPromise(() => startServer({ port, quiet: options.quiet }));
-	if (Result.isError(result)) {
-		throw new Error(`Failed to start server: ${result.error}`);
+	let server: ServerInstance;
+	try {
+		server = await startServer({ port, quiet });
+	} catch (error) {
+		throw new Error(`Failed to start server: ${error}`);
 	}
-	const server: ServerInstance = result.value;
 
 	return {
 		url: server.url,
 		stop: () => server.stop()
 	};
 }
+
+export const ensureServerEffect = (options: EnsureServerOptions = {}) =>
+	Effect.tryPromise(() => ensureServer(options));
+
+export const withServerEffect = <A>(
+	options: EnsureServerOptions,
+	use: (server: ServerManager) => Effect.Effect<A, unknown>
+): Effect.Effect<A, unknown> =>
+	Effect.acquireUseRelease(ensureServerEffect(options), use, (server) =>
+		Effect.sync(() => server.stop())
+	);

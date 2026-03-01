@@ -8,6 +8,7 @@ import {
 	requireThreadOwnershipResult,
 	unwrapAuthResult
 } from './authHelpers';
+import { WebValidationError } from '../lib/result/errors';
 
 // Shared validators
 const threadValidator = v.object({
@@ -193,6 +194,13 @@ export const create = mutation({
 	returns: v.id('threads'),
 	handler: async (ctx, args) => {
 		const instance = await unwrapAuthResult(await getAuthenticatedInstanceResult(ctx));
+
+		if (args.projectId) {
+			const project = await ctx.db.get(args.projectId);
+			if (!project || project.instanceId !== instance._id) {
+				throw new WebValidationError({ message: 'Project not found', field: 'projectId' });
+			}
+		}
 
 		const threadId = await ctx.db.insert('threads', {
 			instanceId: instance._id,

@@ -1,4 +1,3 @@
-import { Result } from 'better-result';
 import { z } from 'zod';
 
 import { LIMITS } from '../validation/index.ts';
@@ -21,11 +20,13 @@ const BRANCH_NAME_REGEX = /^[a-zA-Z0-9/_.-]+$/;
 const NPM_PACKAGE_SEGMENT_REGEX = /^[a-z0-9][a-z0-9._-]*$/;
 const NPM_VERSION_OR_TAG_REGEX = /^[^\s/]+$/;
 
-const parseUrl = (value: string) =>
-	Result.try(() => new URL(value)).match({
-		ok: (url) => url,
-		err: () => null
-	});
+const parseUrl = (value: string) => {
+	try {
+		return new URL(value);
+	} catch {
+		return null;
+	}
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Field Schemas

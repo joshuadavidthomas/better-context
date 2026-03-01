@@ -8,6 +8,8 @@ import {
 	useState,
 	type ReactNode
 } from 'react';
+import { Effect } from 'effect';
+import { runCliEffect } from '../../effect/runtime.ts';
 import type { Repo } from '../types.ts';
 import { services } from '../services.ts';
 
@@ -31,7 +33,12 @@ export const useConfigContext = () => {
 };
 
 const fetchInitialConfig = async () => {
-	const [reposList, modelConfig] = await Promise.all([services.getRepos(), services.getModel()]);
+	const [reposList, modelConfig] = await runCliEffect(
+		Effect.all([
+			Effect.tryPromise(() => services.getRepos()),
+			Effect.tryPromise(() => services.getModel())
+		])
+	);
 	return { repos: reposList, provider: modelConfig.provider, model: modelConfig.model };
 };
 

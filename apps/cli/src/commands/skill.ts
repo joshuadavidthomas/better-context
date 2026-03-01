@@ -1,5 +1,3 @@
-import { Command } from 'commander';
-
 const INSTALL_COMMAND = [
 	'bunx',
 	'skills',
@@ -9,15 +7,13 @@ const INSTALL_COMMAND = [
 	'btca-cli'
 ];
 
-export const skillCommand = new Command('skill')
-	.description('Install the btca CLI skill via skills.sh')
-	.action(async () => {
-		const subprocess = Bun.spawn(INSTALL_COMMAND, {
-			stdio: ['inherit', 'inherit', 'inherit']
-		});
-
-		const exitCode = await subprocess.exited;
-		if (exitCode !== 0) {
-			process.exit(exitCode);
-		}
+export async function runSkillCommand() {
+	const subprocess = Bun.spawn(INSTALL_COMMAND, {
+		stdio: ['inherit', 'inherit', 'inherit']
 	});
+
+	const exitCode = await subprocess.exited;
+	if (exitCode !== 0) {
+		throw new Error(`skills install command exited with code ${exitCode}`);
+	}
+}

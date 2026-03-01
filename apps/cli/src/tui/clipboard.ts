@@ -1,5 +1,4 @@
 import { spawn } from 'bun';
-import { Result } from 'better-result';
 
 const isWsl = async () => {
 	if (process.platform !== 'linux') return false;
@@ -33,32 +32,36 @@ export async function copyToClipboard(text: string) {
 		proc.stdin.end();
 		await proc.exited;
 	} else if (platform === 'linux') {
-		const runClipboard = (command: string[]) =>
-			Result.tryPromise(async () => {
+		const runClipboard = async (command: string[]) => {
+			try {
 				const proc = spawn(command, { stdin: 'pipe' });
 				proc.stdin.write(text);
 				proc.stdin.end();
 				await proc.exited;
-			});
+				return true;
+			} catch {
+				return false;
+			}
+		};
 
 		if (await isWsl()) {
 			const clipResult = await runClipboard(['clip.exe']);
-			if (!clipResult.isErr()) return;
+			if (clipResult) return;
 			const clipPathResult = await runClipboard(['/mnt/c/Windows/System32/clip.exe']);
-			if (!clipPathResult.isErr()) return;
+			if (clipPathResult) return;
 		}
 
 		if (isWayland()) {
 			const wlCopyResult = await runClipboard(['wl-copy']);
-			if (!wlCopyResult.isErr()) return;
+			if (wlCopyResult) return;
 		}
 
 		// Try xclip first, fall back to xsel
 		const xclipResult = await runClipboard(['xclip', '-selection', 'clipboard']);
-		if (xclipResult.isErr()) {
+		if (!xclipResult) {
 			const xselResult = await runClipboard(['xsel', '--clipboard', '--input']);
-			if (xselResult.isErr()) {
-				throw xselResult.error;
+			if (!xselResult) {
+				throw new Error('Failed to copy to clipboard: no compatible clipboard command succeeded.');
 			}
 		}
 	}

@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useKeyboard } from '@opentui/react';
-import { Result } from 'better-result';
 import { spawn } from 'bun';
+import { Effect } from 'effect';
 
 import { usePaste } from '../opentui-hooks.ts';
 import { colors } from '../theme.ts';
+import { runCliEffect } from '../../effect/runtime.ts';
 import { useMessagesContext } from '../context/messages-context.tsx';
 import { useConfigContext } from '../context/config-context.tsx';
 import { services } from '../services.ts';
@@ -16,6 +17,7 @@ import {
 	PROVIDER_AUTH_GUIDANCE,
 	PROVIDER_INFO,
 	PROVIDER_MODEL_DOCS,
+	PROVIDER_MODEL_WARNINGS,
 	PROVIDER_SETUP_LINKS
 } from '../../connect/constants.ts';
 import type { WizardStep } from '../types.ts';
@@ -135,6 +137,10 @@ export const ConnectWizard = (props: ConnectWizardProps) => {
 		() => PROVIDER_MODEL_DOCS[selectedProviderId],
 		[selectedProviderId]
 	);
+	const modelWarning = useMemo(
+		() => PROVIDER_MODEL_WARNINGS[selectedProviderId],
+		[selectedProviderId]
+	);
 
 	const showModelDocsLink = useMemo(() => {
 		return (
@@ -148,15 +154,17 @@ export const ConnectWizard = (props: ConnectWizardProps) => {
 
 	const loadProviders = async () => {
 		setStepSafe('loading');
-		const result = await Result.tryPromise(() => services.getProviders());
-		if (result.isErr()) {
-			const message = formatError(result.error);
+		let providersResult: Awaited<ReturnType<typeof services.getProviders>>;
+		try {
+			providersResult = await runCliEffect(Effect.tryPromise(() => services.getProviders()));
+		} catch (error) {
+			const message = formatError(error);
 			messages.addSystemMessage(`Error: ${message}`);
 			props.onClose();
 			return;
 		}
 
-		const { connected, all } = result.value;
+		const { connected, all } = providersResult;
 		const connectedSet = new Set(connected);
 
 		const connectedOptions: ProviderOption[] = connected.map((id) => {
@@ -194,19 +202,27 @@ export const ConnectWizard = (props: ConnectWizardProps) => {
 		setStepSafe('auth');
 		setBusy(true);
 		setStatusMessage(`Opening browser for ${providerId} authentication...`);
-		const result = await Result.tryPromise(async () => {
-			const proc = spawn(['opencode', 'auth', '--provider', providerId], {
-				stdin: 'inherit',
-				stdout: 'inherit',
-				stderr: 'inherit'
-			});
-			const exitCode = await proc.exited;
-			return exitCode === 0;
-		});
+		let didAuthSucceed = false;
+		let authError: unknown;
+		try {
+			didAuthSucceed = await runCliEffect(
+				Effect.tryPromise(async () => {
+					const proc = spawn(['opencode', 'auth', '--provider', providerId], {
+						stdin: 'inherit',
+						stdout: 'inherit',
+						stderr: 'inherit'
+					});
+					const exitCode = await proc.exited;
+					return exitCode === 0;
+				})
+			);
+		} catch (error) {
+			authError = error;
+		}
 		setBusy(false);
 
-		if (result.isErr() || !result.value) {
-			const message = result.isErr() ? formatError(result.error) : 'Authentication failed.';
+		if (authError || !didAuthSucceed) {
+			const message = authError ? formatError(authError) : 'Authentication failed.';
 			setError(message);
 			messages.addSystemMessage(`Error: ${message}`);
 			setStepSafe('provider');
@@ -302,19 +318,22 @@ export const ConnectWizard = (props: ConnectWizardProps) => {
 	) => {
 		if (!providerId || !modelId || busy) return;
 		setBusy(true);
-		const result = await Result.tryPromise(() =>
-			services.updateModel(providerId, modelId, providerOptions)
-		);
-		setBusy(false);
-		if (result.isErr()) {
-			const message = formatError(result.error);
+		let updateResult: Awaited<ReturnType<typeof services.updateModel>>;
+		try {
+			updateResult = await runCliEffect(
+				Effect.tryPromise(() => services.updateModel(providerId, modelId, providerOptions))
+			);
+		} catch (error) {
+			setBusy(false);
+			const message = formatError(error);
 			setError(message);
 			messages.addSystemMessage(`Error: ${message}`);
 			return;
 		}
-		config.setProvider(result.value.provider);
-		config.setModel(result.value.model);
-		messages.addSystemMessage(`Model configured: ${result.value.provider}/${result.value.model}`);
+		setBusy(false);
+		config.setProvider(updateResult.provider);
+		config.setModel(updateResult.model);
+		messages.addSystemMessage(`Model configured: ${updateResult.provider}/${updateResult.model}`);
 		props.onClose();
 	};
 
@@ -368,10 +387,15 @@ export const ConnectWizard = (props: ConnectWizardProps) => {
 			const providerId = selectedProviderId;
 			if (value) {
 				setBusy(true);
-				const result = await Result.tryPromise(() => saveProviderApiKey(providerId, value));
+				let saveError: unknown;
+				try {
+					await runCliEffect(Effect.tryPromise(() => saveProviderApiKey(providerId, value)));
+				} catch (error) {
+					saveError = error;
+				}
 				setBusy(false);
-				if (result.isErr()) {
-					const message = formatError(result.error);
+				if (saveError) {
+					const message = formatError(saveError);
 					setError(message);
 					messages.addSystemMessage(`Error: ${message}`);
 					return;
@@ -418,10 +442,15 @@ export const ConnectWizard = (props: ConnectWizardProps) => {
 			return;
 		}
 		setBusy(true);
-		const result = await Result.tryPromise(() => saveProviderApiKey(providerId, key));
+		let saveError: unknown;
+		try {
+			await runCliEffect(Effect.tryPromise(() => saveProviderApiKey(providerId, key)));
+		} catch (error) {
+			saveError = error;
+		}
 		setBusy(false);
-		if (result.isErr()) {
-			const message = formatError(result.error);
+		if (saveError) {
+			const message = formatError(saveError);
 			setError(message);
 			messages.addSystemMessage(`Error: ${message}`);
 			return;
@@ -555,6 +584,9 @@ export const ConnectWizard = (props: ConnectWizardProps) => {
 			) : null}
 			{showModelDocsLink && modelDocsLink ? (
 				<text fg={colors.textSubtle} content={` ${modelDocsLink.label}: ${modelDocsLink.url}`} />
+			) : null}
+			{(step === 'model' || step === 'model-input') && modelWarning ? (
+				<text fg={colors.info} content={` Heads-up: ${modelWarning}`} />
 			) : null}
 			{statusMessage.length > 0 ? (
 				<text fg={colors.textMuted} content={` ${statusMessage}`} />

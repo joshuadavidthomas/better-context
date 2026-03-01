@@ -44,6 +44,10 @@ required, and falls back to `opencode auth --provider <provider>` for other prov
 For `github-copilot`, btca uses device flow OAuth and opens a browser prompt to complete
 the sign-in.
 
+GitHub Copilot model availability can vary by endpoint, account, and organization policy. Public
+model catalogs may list models that the Copilot chat API still rejects for your specific token or
+plan, so treat Copilot model selection as best-effort rather than guaranteed.
+
 For `openai-compat`, `btca connect` also collects the required provider details:
 
 - **Base URL** (required): the root URL of your OpenAI-compatible server. The AI SDK appends its own

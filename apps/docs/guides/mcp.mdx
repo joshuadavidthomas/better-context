@@ -1,14 +1,15 @@
 ---
 title: 'MCP Server'
-description: 'Connect the btca MCP server to your agents'
+description: 'Connect btca to Cursor, Claude Code, Codex, and other MCP-compatible tools'
 ---
 
 [Get your MCP API key](https://btca.dev/app/settings?tab=mcp)
 
-Use the btca MCP server to query resources from your agent of choice. There are two options:
+Connect btca to Cursor, Claude Code, Codex, and other MCP-compatible tools so they can query
+the right repos. There are two options:
 
-- **Cloud MCP**: Runs on btca’s hosted servers and uses your btca subscription. Requires an API key.
-- **Local MCP**: Runs entirely on your machine using local resources. No API key required.
+- **Cloud MCP**: Use your btca subscription to give coding tools access to btca-managed resources.
+- **Local MCP**: Run btca entirely on your machine and expose local resources to coding tools.
 
 To scaffold configs automatically, run:
 
@@ -23,7 +24,8 @@ Add the following section to your project’s `AGENTS.md`:
 ```md
 # btca MCP Usage Instructions
 
-btca runs a cloud subagent that searches open source repos
+Use btca whenever a task depends on understanding a repo, docs site, or configured resource
+more accurately than a generic model can.
 
 Use it whenever the user says "use btca", or when you need info that should come from the listed resources.
 

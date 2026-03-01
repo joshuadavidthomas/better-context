@@ -128,6 +128,15 @@
 	const storagePercent = $derived.by(() => Math.min((storageUsed / storageLimitBytes) * 100, 100));
 
 	const displayedResources = $derived.by(() => instanceStore.cachedResources.slice(0, 4));
+	const getCachedResourceMeta = (resource: {
+		type?: 'git' | 'npm';
+		branch?: string;
+		package?: string;
+		version?: string;
+	}) =>
+		resource.type === 'npm' || resource.package
+			? `${resource.package ?? 'npm package'}${resource.version ? `@${resource.version}` : ''}`
+			: (resource.branch ?? 'main');
 
 	const updateSummary = $derived.by(() => {
 		const parts: string[] = [];
@@ -468,7 +477,7 @@
 								>
 									<div class="flex flex-wrap items-center gap-2">
 										<span class="bc-badge">@{resource.name}</span>
-										<span class="bc-muted">{resource.branch}</span>
+										<span class="bc-muted">{getCachedResourceMeta(resource)}</span>
 									</div>
 									<span class="bc-muted">
 										Last used: {formatDateTime(resource.lastUsedAt)}

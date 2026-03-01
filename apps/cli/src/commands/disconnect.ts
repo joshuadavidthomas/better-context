@@ -1,30 +1,10 @@
-import { Result } from 'better-result';
-import { Command } from 'commander';
 import select from '@inquirer/select';
 import * as readline from 'readline';
-import { ensureServer } from '../server/manager.ts';
-import { createClient, getProviders, BtcaError } from '../client/index.ts';
+import { Effect } from 'effect';
+import { withServerEffect } from '../server/manager.ts';
+import { createClient, getProviders } from '../client/index.ts';
+import { effectFromPromise } from '../effect/errors.ts';
 import { removeProviderAuth } from '../lib/opencode-oauth.ts';
-
-/**
- * Format an error for display, including hint if available.
- */
-function formatError(error: unknown): string {
-	if (error instanceof BtcaError) {
-		let output = `Error: ${error.message}`;
-		if (error.hint) {
-			output += `\n\nHint: ${error.hint}`;
-		}
-		return output;
-	}
-	return `Error: ${error instanceof Error ? error.message : String(error)}`;
-}
-
-const isPromptCancelled = (error: unknown) =>
-	error instanceof Error &&
-	(error.name === 'ExitPromptError' ||
-		error.message.toLowerCase().includes('canceled') ||
-		error.message.toLowerCase().includes('cancelled'));
 
 /**
  * Prompt for single selection from a list.
@@ -72,64 +52,61 @@ async function promptSelect<T extends string>(
 	return selection as T;
 }
 
-export const disconnectCommand = new Command('disconnect')
-	.description('Disconnect a provider and remove saved credentials')
-	.option('-p, --provider <id>', 'Provider ID to disconnect')
-	.action(async (options: { provider?: string }, command) => {
-		const globalOpts = command.parent?.opts() as { server?: string; port?: number } | undefined;
-
-		const result = await Result.tryPromise(async () => {
-			const server = await ensureServer({
-				serverUrl: globalOpts?.server,
-				port: globalOpts?.port,
+export const runDisconnectCommand = async (args: {
+	provider?: string;
+	globalOpts?: { server?: string; port?: number };
+}) => {
+	return Effect.runPromise(
+		withServerEffect(
+			{
+				serverUrl: args.globalOpts?.server,
+				port: args.globalOpts?.port,
 				quiet: true
-			});
+			},
+			(server) =>
+				Effect.gen(function* () {
+					const client = createClient(server.url);
+					const providers = yield* effectFromPromise(() => getProviders(client));
 
-			const client = createClient(server.url);
-			const providers = await getProviders(client);
+					if (args.provider && !providers.connected.includes(args.provider)) {
+						const hint =
+							providers.connected.length > 0
+								? `Connected providers: ${providers.connected.join(', ')}`
+								: 'No providers are currently connected.';
+						yield* Effect.fail(new Error(`Provider "${args.provider}" is not connected. ${hint}`));
+					}
 
-			if (providers.connected.length === 0) {
-				console.log('No providers are currently connected.');
-				server.stop();
-				return;
-			}
+					if (providers.connected.length === 0) {
+						yield* Effect.sync(() => console.log('No providers are currently connected.'));
+						return;
+					}
 
-			const provider =
-				options.provider ??
-				(await promptSelect(
-					'Select a connected provider to disconnect:',
-					providers.connected.map((id) => ({ label: id, value: id }))
-				));
+					const provider =
+						args.provider ??
+						(yield* effectFromPromise(() =>
+							promptSelect(
+								'Select a connected provider to disconnect:',
+								providers.connected.map((id) => ({ label: id, value: id }))
+							)
+						));
 
-			if (!providers.connected.includes(provider)) {
-				console.error(`Provider "${provider}" is not connected.`);
-				server.stop();
-				process.exit(1);
-			}
+					if (!providers.connected.includes(provider)) {
+						yield* Effect.fail(new Error(`Provider "${provider}" is not connected.`));
+					}
 
-			const removed = await removeProviderAuth(provider);
-			if (!removed) {
-				console.warn(
-					`No saved credentials found for "${provider}". If it's still connected, check env vars.`
-				);
-			} else {
-				console.log(`Disconnected "${provider}" and removed saved credentials.`);
-			}
-
-			server.stop();
-		});
-
-		if (Result.isError(result)) {
-			const error = result.error;
-			if (error instanceof Error && error.message === 'Invalid selection') {
-				console.error('\nError: Invalid selection. Please try again.');
-				process.exit(1);
-			}
-			if (isPromptCancelled(error)) {
-				console.log('\nSelection cancelled.');
-				process.exit(0);
-			}
-			console.error(formatError(error));
-			process.exit(1);
-		}
-	});
+					const removed = yield* effectFromPromise(() => removeProviderAuth(provider));
+					if (!removed) {
+						yield* Effect.sync(() =>
+							console.warn(
+								`No saved credentials found for "${provider}". If it's still connected, check env vars.`
+							)
+						);
+					} else {
+						yield* Effect.sync(() =>
+							console.log(`Disconnected "${provider}" and removed saved credentials.`)
+						);
+					}
+				})
+		)
+	);
+};

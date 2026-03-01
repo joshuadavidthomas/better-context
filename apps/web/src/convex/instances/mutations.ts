@@ -1,9 +1,9 @@
 import { v } from 'convex/values';
 
 import { internal } from '../_generated/api';
-import { mutation } from '../_generated/server';
 import { AnalyticsEvents } from '../analyticsEvents';
 import { instances } from '../apiHelpers';
+import { privateMutation } from '../privateWrappers';
 
 const instanceStateValidator = v.union(
 	v.literal('unprovisioned'),
@@ -16,7 +16,7 @@ const instanceStateValidator = v.union(
 	v.literal('error')
 );
 
-export const create = mutation({
+export const create = privateMutation({
 	args: { clerkId: v.string() },
 	returns: v.id('instances'),
 	handler: async (ctx, args) => {
@@ -45,7 +45,7 @@ export const create = mutation({
 	}
 });
 
-export const updateState = mutation({
+export const updateState = privateMutation({
 	args: {
 		instanceId: v.id('instances'),
 		state: instanceStateValidator
@@ -57,7 +57,7 @@ export const updateState = mutation({
 	}
 });
 
-export const setProvisioned = mutation({
+export const setProvisioned = privateMutation({
 	args: {
 		instanceId: v.id('instances'),
 		sandboxId: v.string(),
@@ -91,7 +91,7 @@ export const setProvisioned = mutation({
 	}
 });
 
-export const setServerUrl = mutation({
+export const setServerUrl = privateMutation({
 	args: {
 		instanceId: v.id('instances'),
 		serverUrl: v.string()
@@ -103,7 +103,7 @@ export const setServerUrl = mutation({
 	}
 });
 
-export const setError = mutation({
+export const setError = privateMutation({
 	args: {
 		instanceId: v.id('instances'),
 		errorMessage: v.string()
@@ -133,7 +133,7 @@ export const setError = mutation({
 	}
 });
 
-export const clearError = mutation({
+export const clearError = privateMutation({
 	args: { instanceId: v.id('instances') },
 	returns: v.null(),
 	handler: async (ctx, args) => {
@@ -142,7 +142,7 @@ export const clearError = mutation({
 	}
 });
 
-export const setVersions = mutation({
+export const setVersions = privateMutation({
 	args: {
 		instanceId: v.id('instances'),
 		btcaVersion: v.optional(v.string()),
@@ -172,7 +172,7 @@ export const setVersions = mutation({
 	}
 });
 
-export const touchActivity = mutation({
+export const touchActivity = privateMutation({
 	args: { instanceId: v.id('instances') },
 	returns: v.null(),
 	handler: async (ctx, args) => {
@@ -181,7 +181,7 @@ export const touchActivity = mutation({
 	}
 });
 
-export const updateStorageUsed = mutation({
+export const updateStorageUsed = privateMutation({
 	args: {
 		instanceId: v.id('instances'),
 		storageUsedBytes: v.number()
@@ -193,7 +193,7 @@ export const updateStorageUsed = mutation({
 	}
 });
 
-export const setSubscriptionState = mutation({
+export const setSubscriptionState = privateMutation({
 	args: {
 		instanceId: v.id('instances'),
 		plan: v.union(v.literal('pro'), v.literal('free'), v.literal('none')),
@@ -221,7 +221,7 @@ export const setSubscriptionState = mutation({
 	}
 });
 
-export const upsertCachedResources = mutation({
+export const upsertCachedResources = privateMutation({
 	args: {
 		instanceId: v.id('instances'),
 		resources: v.array(
@@ -268,7 +268,7 @@ export const upsertCachedResources = mutation({
 	}
 });
 
-export const scheduleSyncSandboxStatus = mutation({
+export const scheduleSyncSandboxStatus = privateMutation({
 	args: { instanceId: v.id('instances') },
 	returns: v.null(),
 	handler: async (ctx, args) => {
@@ -279,7 +279,7 @@ export const scheduleSyncSandboxStatus = mutation({
 	}
 });
 
-export const handleSandboxStopped = mutation({
+export const handleSandboxStopped = privateMutation({
 	args: { sandboxId: v.string() },
 	returns: v.union(
 		v.object({ updated: v.literal(false), reason: v.string() }),
@@ -320,7 +320,7 @@ export const handleSandboxStopped = mutation({
 	}
 });
 
-export const handleSandboxStarted = mutation({
+export const handleSandboxStarted = privateMutation({
 	args: { sandboxId: v.string() },
 	returns: v.union(
 		v.object({ updated: v.literal(false), reason: v.string() }),

@@ -1,6 +1,6 @@
 ---
 title: 'Quickstart'
-description: 'Install btca, initialize a project, and run your first query'
+description: 'Install btca, add a codebase, and ask your first grounded repo question'
 ---
 
 ## 1) Install the CLI
@@ -11,7 +11,7 @@ btca requires Bun.
 bun add -g btca
 ```
 
-## 2) Install the btca CLI skill (optional)
+## 2) Optional: install the btca CLI skill for guided setup
 
 ```bash
 btca skill
@@ -19,7 +19,7 @@ btca skill
 
 This runs the `skills.sh` installer (interactive) to install the skill.
 
-## 3) Initialize a project
+## 3) Initialize btca in your project
 
 From your repo root:
 
@@ -29,13 +29,13 @@ btca init
 
 The wizard creates `btca.config.jsonc` for local usage.
 
-## 4) Add a resource
+## 4) Add a repo
 
 ```bash
 btca add -n svelte-dev https://github.com/sveltejs/svelte.dev
 ```
 
-## 5) Ask a question
+## 5) Ask your first question
 
 ```bash
 btca ask -r svelte-dev -q "How do I define remote functions?"

@@ -1,9 +1,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
-import { Result } from 'better-result';
-
-import { Metrics } from '../../metrics/index.ts';
+import { metricsInfo, withMetricsSpan } from '../../metrics/index.ts';
 import { CommonHints } from '../../errors.ts';
 import { ResourceError, resourceNameToKey } from '../helpers.ts';
 import { GitResourceSchema } from '../schema.ts';
@@ -26,7 +24,11 @@ const isBranchNotFoundError = (cause: unknown) => {
 };
 
 const cleanupDirectory = async (pathToRemove: string) => {
-	await Result.tryPromise(() => fs.rm(pathToRemove, { recursive: true, force: true }));
+	try {
+		await fs.rm(pathToRemove, { recursive: true, force: true });
+	} catch {
+		return;
+	}
 };
 
 const validateGitUrl = (url: string): { success: true } | { success: false; error: string } => {
@@ -50,11 +52,12 @@ const validateSearchPath = (
 };
 
 const directoryExists = async (path: string): Promise<boolean> => {
-	const result = await Result.tryPromise(() => fs.stat(path));
-	return result.match({
-		ok: (stat) => stat.isDirectory(),
-		err: () => false
-	});
+	try {
+		const stat = await fs.stat(path);
+		return stat.isDirectory();
+	} catch {
+		return false;
+	}
 };
 
 /**
@@ -172,10 +175,11 @@ const runGitChecked = async (
 	options: { cwd?: string; quiet: boolean },
 	buildError: (result: GitRunResult) => ResourceError
 ) => {
-	const result = await Result.tryPromise(() => runGit(args, options));
-	return result.andThen((runResult) =>
-		runResult.exitCode === 0 ? Result.ok(runResult) : Result.err(buildError(runResult))
-	);
+	const runResult = await runGit(args, options);
+	if (runResult.exitCode !== 0) {
+		throw buildError(runResult);
+	}
+	return runResult;
 };
 
 const runGit = async (
@@ -268,62 +272,50 @@ const gitClone = async (args: {
 			]
 		: ['clone', '--depth', '1', '-b', args.repoBranch, args.repoUrl, args.localAbsolutePath];
 
-	const result = await Result.gen(async function* () {
-		yield* Result.await(
-			runGitChecked(cloneArgs, { quiet: args.quiet }, (cloneResult) => {
-				const errorType = detectGitErrorType(cloneResult.stderr);
-				const { message, hint } = getGitErrorDetails(errorType, {
-					operation: 'clone',
-					branch: args.repoBranch,
-					url: args.repoUrl
-				});
+	await runGitChecked(cloneArgs, { quiet: args.quiet }, (cloneResult) => {
+		const errorType = detectGitErrorType(cloneResult.stderr);
+		const { message, hint } = getGitErrorDetails(errorType, {
+			operation: 'clone',
+			branch: args.repoBranch,
+			url: args.repoUrl
+		});
 
-				return new ResourceError({
-					message,
-					hint,
-					cause: new Error(
-						`git clone failed with exit code ${cloneResult.exitCode}: ${cloneResult.stderr}`
-					)
-				});
-			})
-		);
-
-		if (needsSparseCheckout) {
-			yield* Result.await(
-				runGitChecked(
-					['sparse-checkout', 'set', ...args.repoSubPaths],
-					{ cwd: args.localAbsolutePath, quiet: args.quiet },
-					(sparseResult) =>
-						new ResourceError({
-							message: `Failed to set sparse-checkout path(s): "${args.repoSubPaths.join(', ')}"`,
-							hint: 'Verify the search paths exist in the repository. Check the repository structure to find the correct path.',
-							cause: new Error(
-								`git sparse-checkout failed with exit code ${sparseResult.exitCode}: ${sparseResult.stderr}`
-							)
-						})
-				)
-			);
-
-			yield* Result.await(
-				runGitChecked(
-					['checkout'],
-					{ cwd: args.localAbsolutePath, quiet: args.quiet },
-					(checkout) =>
-						new ResourceError({
-							message: 'Failed to checkout repository',
-							hint: CommonHints.CLEAR_CACHE,
-							cause: new Error(
-								`git checkout failed with exit code ${checkout.exitCode}: ${checkout.stderr}`
-							)
-						})
-				)
-			);
-		}
-
-		return Result.ok(undefined);
+		return new ResourceError({
+			message,
+			hint,
+			cause: new Error(
+				`git clone failed with exit code ${cloneResult.exitCode}: ${cloneResult.stderr}`
+			)
+		});
 	});
 
-	if (!Result.isOk(result)) throw result.error;
+	if (needsSparseCheckout) {
+		await runGitChecked(
+			['sparse-checkout', 'set', ...args.repoSubPaths],
+			{ cwd: args.localAbsolutePath, quiet: args.quiet },
+			(sparseResult) =>
+				new ResourceError({
+					message: `Failed to set sparse-checkout path(s): "${args.repoSubPaths.join(', ')}"`,
+					hint: 'Verify the search paths exist in the repository. Check the repository structure to find the correct path.',
+					cause: new Error(
+						`git sparse-checkout failed with exit code ${sparseResult.exitCode}: ${sparseResult.stderr}`
+					)
+				})
+		);
+
+		await runGitChecked(
+			['checkout'],
+			{ cwd: args.localAbsolutePath, quiet: args.quiet },
+			(checkout) =>
+				new ResourceError({
+					message: 'Failed to checkout repository',
+					hint: CommonHints.CLEAR_CACHE,
+					cause: new Error(
+						`git checkout failed with exit code ${checkout.exitCode}: ${checkout.stderr}`
+					)
+				})
+		);
+	}
 };
 
 const gitUpdate = async (args: {
@@ -332,80 +324,66 @@ const gitUpdate = async (args: {
 	repoSubPaths: readonly string[];
 	quiet: boolean;
 }) => {
-	const result = await Result.gen(async function* () {
-		yield* Result.await(
-			runGitChecked(
-				['fetch', '--depth', '1', 'origin', args.branch],
-				{ cwd: args.localAbsolutePath, quiet: args.quiet },
-				(fetchResult) => {
-					const errorType = detectGitErrorType(fetchResult.stderr);
-					const { message, hint } = getGitErrorDetails(errorType, {
-						operation: 'fetch',
-						branch: args.branch
-					});
+	await runGitChecked(
+		['fetch', '--depth', '1', 'origin', args.branch],
+		{ cwd: args.localAbsolutePath, quiet: args.quiet },
+		(fetchResult) => {
+			const errorType = detectGitErrorType(fetchResult.stderr);
+			const { message, hint } = getGitErrorDetails(errorType, {
+				operation: 'fetch',
+				branch: args.branch
+			});
 
-					return new ResourceError({
-						message,
-						hint,
-						cause: new Error(
-							`git fetch failed with exit code ${fetchResult.exitCode}: ${fetchResult.stderr}`
-						)
-					});
-				}
-			)
-		);
-
-		yield* Result.await(
-			runGitChecked(
-				['reset', '--hard', `origin/${args.branch}`],
-				{ cwd: args.localAbsolutePath, quiet: args.quiet },
-				(resetResult) =>
-					new ResourceError({
-						message: 'Failed to update local repository',
-						hint: `${CommonHints.CLEAR_CACHE} This will re-clone the repository from scratch.`,
-						cause: new Error(
-							`git reset failed with exit code ${resetResult.exitCode}: ${resetResult.stderr}`
-						)
-					})
-			)
-		);
-
-		if (args.repoSubPaths.length > 0) {
-			yield* Result.await(
-				runGitChecked(
-					['sparse-checkout', 'set', ...args.repoSubPaths],
-					{ cwd: args.localAbsolutePath, quiet: args.quiet },
-					(sparseResult) =>
-						new ResourceError({
-							message: `Failed to set sparse-checkout path(s): "${args.repoSubPaths.join(', ')}"`,
-							hint: 'Verify the search paths exist in the repository. Check the repository structure to find the correct path.',
-							cause: new Error(
-								`git sparse-checkout failed with exit code ${sparseResult.exitCode}: ${sparseResult.stderr}`
-							)
-						})
+			return new ResourceError({
+				message,
+				hint,
+				cause: new Error(
+					`git fetch failed with exit code ${fetchResult.exitCode}: ${fetchResult.stderr}`
 				)
-			);
-
-			yield* Result.await(
-				runGitChecked(
-					['checkout'],
-					{ cwd: args.localAbsolutePath, quiet: args.quiet },
-					(checkoutResult) =>
-						new ResourceError({
-							message: 'Failed to checkout repository',
-							hint: CommonHints.CLEAR_CACHE,
-							cause: new Error(
-								`git checkout failed with exit code ${checkoutResult.exitCode}: ${checkoutResult.stderr}`
-							)
-						})
-				)
-			);
+			});
 		}
+	);
 
-		return Result.ok(undefined);
-	});
+	await runGitChecked(
+		['reset', '--hard', `origin/${args.branch}`],
+		{ cwd: args.localAbsolutePath, quiet: args.quiet },
+		(resetResult) =>
+			new ResourceError({
+				message: 'Failed to update local repository',
+				hint: `${CommonHints.CLEAR_CACHE} This will re-clone the repository from scratch.`,
+				cause: new Error(
+					`git reset failed with exit code ${resetResult.exitCode}: ${resetResult.stderr}`
+				)
+			})
+	);
 
-	if (!Result.isOk(result)) throw result.error;
+	if (args.repoSubPaths.length > 0) {
+		await runGitChecked(
+			['sparse-checkout', 'set', ...args.repoSubPaths],
+			{ cwd: args.localAbsolutePath, quiet: args.quiet },
+			(sparseResult) =>
+				new ResourceError({
+					message: `Failed to set sparse-checkout path(s): "${args.repoSubPaths.join(', ')}"`,
+					hint: 'Verify the search paths exist in the repository. Check the repository structure to find the correct path.',
+					cause: new Error(
+						`git sparse-checkout failed with exit code ${sparseResult.exitCode}: ${sparseResult.stderr}`
+					)
+				})
+		);
+
+		await runGitChecked(
+			['checkout'],
+			{ cwd: args.localAbsolutePath, quiet: args.quiet },
+			(checkoutResult) =>
+				new ResourceError({
+					message: 'Failed to checkout repository',
+					hint: CommonHints.CLEAR_CACHE,
+					cause: new Error(
+						`git checkout failed with exit code ${checkoutResult.exitCode}: ${checkoutResult.stderr}`
+					)
+				})
+		);
+	}
 };
 
 /**
@@ -459,28 +437,27 @@ const ensureGitResource = async (config: BtcaGitResourceArgs): Promise<string> =
 		: config.resourcesDirectoryPath;
 	const localPath = path.join(basePath, resourceKey);
 
-	const mkdirResult = await Result.tryPromise({
-		try: () => fs.mkdir(basePath, { recursive: true }),
-		catch: (cause) =>
-			new ResourceError({
-				message: 'Failed to create resources directory',
-				hint: 'Check that you have write permissions to the btca data directory.',
-				cause
-			})
-	});
-	if (!Result.isOk(mkdirResult)) throw mkdirResult.error;
+	try {
+		await fs.mkdir(basePath, { recursive: true });
+	} catch (cause) {
+		throw new ResourceError({
+			message: 'Failed to create resources directory',
+			hint: 'Check that you have write permissions to the btca data directory.',
+			cause
+		});
+	}
 
 	if (config.ephemeral) {
 		await cleanupDirectory(localPath);
 	}
 
-	return Metrics.span(
+	return withMetricsSpan(
 		'resource.git.ensure',
 		async () => {
 			const exists = await directoryExists(localPath);
 
 			if (exists && !config.ephemeral) {
-				Metrics.info('resource.git.update', {
+				metricsInfo('resource.git.update', {
 					name: config.name,
 					branch: config.branch,
 					repoSubPaths: config.repoSubPaths
@@ -497,7 +474,7 @@ const ensureGitResource = async (config: BtcaGitResourceArgs): Promise<string> =
 				return localPath;
 			}
 
-			Metrics.info('resource.git.clone', {
+			metricsInfo('resource.git.clone', {
 				name: config.name,
 				branch: config.ephemeral ? 'fallback' : config.branch,
 				repoSubPaths: config.repoSubPaths

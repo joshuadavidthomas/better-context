@@ -1,19 +1,19 @@
-import { Result } from 'better-result';
-import { Hono } from 'hono';
-import type { Context as HonoContext, Next } from 'hono';
+import { Effect, Cause } from 'effect';
+import { HttpRouter, HttpServerRequest, HttpServerResponse } from 'effect/unstable/http';
 import { z } from 'zod';
 
-import { Agent } from './agent/service.ts';
-import { Collections } from './collections/service.ts';
-import { getCollectionKey } from './collections/types.ts';
-import { Config } from './config/index.ts';
-import { Context } from './context/index.ts';
-import { getErrorMessage, getErrorTag, getErrorHint } from './errors.ts';
-import { Metrics } from './metrics/index.ts';
-import { ModelsDevPricing } from './pricing/models-dev.ts';
-import { Resources } from './resources/service.ts';
+import { createAgentService } from './agent/service.ts';
+import { createCollectionsService } from './collections/service.ts';
+import { load as loadConfig } from './config/index.ts';
+import { runContext } from './context/index.ts';
+import { toHttpErrorPayload } from './effect/errors.ts';
+import { createServerRuntime } from './effect/runtime.ts';
+import * as ServerServices from './effect/services.ts';
+import { metricsError, metricsErrorInfo, metricsInfo, setQuietMetrics } from './metrics/index.ts';
+import { createModelsDevPricing } from './pricing/models-dev.ts';
+import { createResourcesService } from './resources/service.ts';
 import { GitResourceSchema, LocalResourceSchema, NpmResourceSchema } from './resources/schema.ts';
-import { StreamService } from './stream/service.ts';
+import { createSseStream } from './stream/service.ts';
 import type { BtcaStreamMetaEvent } from './stream/types.ts';
 import {
 	LIMITS,
@@ -23,46 +23,15 @@ import {
 	validateResourceReference
 } from './validation/index.ts';
 import { clearAllVirtualCollectionMetadata } from './collections/virtual-metadata.ts';
-import { VirtualFs } from './vfs/virtual-fs.ts';
-
-/**
- * BTCA Server API
- *
- * Endpoints:
- *
- * GET  /                  - Health check, returns { ok, service, version }
- * GET  /config            - Returns current configuration (provider, model, directories)
- * GET  /resources         - Lists all configured resources
- * POST /question          - Ask a question (non-streaming)
- * POST /question/stream   - Ask a question (streaming SSE response)
- */
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Configuration
-// ─────────────────────────────────────────────────────────────────────────────
+import { disposeAllVirtualFs } from './vfs/virtual-fs.ts';
 
 const DEFAULT_PORT = 8080;
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : DEFAULT_PORT;
+const modelsDevPricing = createModelsDevPricing();
 
-const modelsDevPricing = ModelsDevPricing.create();
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Request Schemas
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Resource name pattern: must start with a letter, alphanumeric and hyphens only.
- */
 const RESOURCE_NAME_REGEX = /^@?[a-zA-Z0-9][a-zA-Z0-9._-]*(\/[a-zA-Z0-9][a-zA-Z0-9._-]*)*$/;
-
-/**
- * Safe name pattern for provider/model names.
- */
 const SAFE_NAME_REGEX = /^[a-zA-Z0-9._+\-/:]+$/;
 
-/**
- * Validated resource name field for request schemas.
- */
 const ResourceNameField = z
 	.string()
 	.min(1, 'Resource name cannot be empty')
@@ -127,10 +96,6 @@ const UpdateModelRequestSchema = z.object({
 		.optional()
 });
 
-/**
- * Add resource request - uses the full resource schemas for validation.
- * This ensures all security checks (URL, branch, path traversal) are applied.
- */
 const AddGitResourceRequestSchema = z.object({
 	type: z.literal('git'),
 	name: GitResourceSchema.shape.name,
@@ -186,10 +151,6 @@ const RemoveResourceRequestSchema = z.object({
 	name: ResourceNameField
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Errors & Helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
 class RequestError extends Error {
 	readonly _tag = 'RequestError';
 
@@ -198,313 +159,274 @@ class RequestError extends Error {
 	}
 }
 
-const decodeJson = async <T>(req: Request, schema: z.ZodType<T>): Promise<T> => {
-	const bodyResult = await Result.tryPromise(() => req.json());
-	if (!Result.isOk(bodyResult)) {
-		throw new RequestError('Failed to parse request JSON', bodyResult.error);
-	}
+const decodeJson = <T>(
+	request: HttpServerRequest.HttpServerRequest,
+	schema: z.ZodType<T>
+): Effect.Effect<T, RequestError> =>
+	Effect.gen(function* () {
+		const body = yield* Effect.mapError(request.json, (cause) => {
+			return new RequestError('Failed to parse request JSON', cause);
+		});
+		const parsed = schema.safeParse(body);
+		if (!parsed.success) {
+			return yield* Effect.fail(new RequestError('Invalid request body', parsed.error));
+		}
+		return parsed.data;
+	});
 
-	const parsed = schema.safeParse(bodyResult.value);
-	if (!parsed.success) {
-		throw new RequestError('Invalid request body', parsed.error);
-	}
+const createApp = () => {
+	const withHttpErrorHandling = <R>(
+		effect: Effect.Effect<HttpServerResponse.HttpServerResponse, unknown, R>
+	): Effect.Effect<HttpServerResponse.HttpServerResponse, never, R> =>
+		Effect.catchCause(effect, (cause) => {
+			const error = Cause.squash(cause);
+			metricsError('http.error', { error: metricsErrorInfo(error) });
+			const payload = toHttpErrorPayload(error);
+			return Effect.succeed(
+				HttpServerResponse.jsonUnsafe(
+					{ error: payload.error, tag: payload.tag, ...(payload.hint && { hint: payload.hint }) },
+					{ status: payload.status }
+				)
+			);
+		});
 
-	return parsed.data;
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
-// App Factory
-// ─────────────────────────────────────────────────────────────────────────────
-
-const createApp = (deps: {
-	config: Config.Service;
-	resources: Resources.Service;
-	collections: Collections.Service;
-	agent: Agent.Service;
-}) => {
-	const { config, collections, agent } = deps;
-
-	const app = new Hono()
-		// ─────────────────────────────────────────────────────────────────────
-		// Middleware
-		// ─────────────────────────────────────────────────────────────────────
-		.use('*', async (c: HonoContext, next: Next) => {
-			const requestId = crypto.randomUUID();
-			return Context.run({ requestId, txDepth: 0 }, async () => {
-				Metrics.info('http.request', { method: c.req.method, path: c.req.path });
-				try {
-					await next();
-				} finally {
-					Metrics.info('http.response', {
-						path: c.req.path,
-						status: c.res.status
-					});
-				}
-			});
-		})
-		.onError((err: Error, c: HonoContext) => {
-			Metrics.error('http.error', { error: Metrics.errorInfo(err) });
-			const tag = getErrorTag(err);
-			const message = getErrorMessage(err);
-			const hint = getErrorHint(err);
-			const status =
-				tag === 'RequestError' ||
-				tag === 'CollectionError' ||
-				tag === 'ResourceError' ||
-				tag === 'ConfigError' ||
-				tag === 'InvalidProviderError' ||
-				tag === 'InvalidModelError' ||
-				tag === 'ProviderNotAuthenticatedError' ||
-				tag === 'ProviderAuthTypeError' ||
-				tag === 'ProviderNotFoundError' ||
-				tag === 'ProviderNotConnectedError' ||
-				tag === 'ProviderOptionsError'
-					? 400
-					: 500;
-			return c.json({ error: message, tag, ...(hint && { hint }) }, status);
-		})
-
-		// ─────────────────────────────────────────────────────────────────────
-		// Routes
-		// ─────────────────────────────────────────────────────────────────────
-
-		// GET / - Health check
-		.get('/', (c: HonoContext) => {
-			return c.json({
+	return HttpRouter.addAll([
+		HttpRouter.route(
+			'GET',
+			'/',
+			HttpServerResponse.jsonUnsafe({
 				ok: true,
 				service: 'btca-server',
 				version: '0.0.1'
-			});
-		})
-
-		// GET /config
-		.get('/config', (c: HonoContext) => {
-			return c.json({
-				provider: config.provider,
-				model: config.model,
-				providerTimeoutMs: config.providerTimeoutMs ?? null,
-				maxSteps: config.maxSteps,
-				resourcesDirectory: config.resourcesDirectory,
-				resourceCount: config.resources.length
-			});
-		})
-
-		// GET /resources
-		.get('/resources', (c: HonoContext) => {
-			return c.json({
-				resources: config.resources.map((r) => {
-					if (r.type === 'git') {
-						return {
-							name: r.name,
-							type: r.type,
-							url: r.url,
-							branch: r.branch,
-							searchPath: r.searchPath ?? null,
-							searchPaths: r.searchPaths ?? null,
-							specialNotes: r.specialNotes ?? null
-						};
-					}
-					if (r.type === 'local') {
-						return {
-							name: r.name,
-							type: r.type,
-							path: r.path,
-							specialNotes: r.specialNotes ?? null
-						};
-					}
-					return {
-						name: r.name,
-						type: r.type,
-						package: r.package,
-						version: r.version ?? null,
-						specialNotes: r.specialNotes ?? null
-					};
+			})
+		),
+		HttpRouter.route(
+			'GET',
+			'/config',
+			withHttpErrorHandling(
+				Effect.map(ServerServices.getConfigSnapshot, (snapshot) =>
+					HttpServerResponse.jsonUnsafe(snapshot)
+				)
+			)
+		),
+		HttpRouter.route(
+			'GET',
+			'/resources',
+			withHttpErrorHandling(
+				Effect.map(ServerServices.getResourcesSnapshot, (snapshot) =>
+					HttpServerResponse.jsonUnsafe(snapshot)
+				)
+			)
+		),
+		HttpRouter.route(
+			'GET',
+			'/providers',
+			withHttpErrorHandling(
+				Effect.gen(function* () {
+					const providers = yield* ServerServices.listProviders;
+					return HttpServerResponse.jsonUnsafe(providers);
 				})
-			});
-		})
+			)
+		),
+		HttpRouter.route(
+			'POST',
+			'/reload-config',
+			withHttpErrorHandling(
+				Effect.gen(function* () {
+					yield* ServerServices.reloadConfig;
+					const resources = yield* ServerServices.getDefaultResourceNames;
+					return HttpServerResponse.jsonUnsafe({
+						ok: true,
+						resources
+					});
+				})
+			)
+		),
+		HttpRouter.route('POST', '/question', (request) =>
+			withHttpErrorHandling(
+				Effect.gen(function* () {
+					const decoded = yield* decodeJson(request, QuestionRequestSchema);
+					const resourceNames = Array.from(
+						decoded.resources && decoded.resources.length > 0
+							? Array.from(new Set(decoded.resources.map(normalizeQuestionResourceReference)))
+							: yield* ServerServices.getDefaultResourceNames
+					);
 
-		// GET /providers
-		.get('/providers', async (c: HonoContext) => {
-			const providers = await agent.listProviders();
-			return c.json(providers);
-		})
+					const collectionKey = ServerServices.loadedResourceCollectionKey(resourceNames);
+					metricsInfo('question.received', {
+						stream: false,
+						quiet: decoded.quiet ?? false,
+						questionLength: decoded.question.length,
+						resources: resourceNames,
+						collectionKey
+					});
 
-		// POST /reload-config - Reload config from disk
-		.post('/reload-config', async (c: HonoContext) => {
-			await config.reload();
-			return c.json({
-				ok: true,
-				resources: config.resources.map((r) => r.name)
-			});
-		})
+					const collection = yield* ServerServices.loadCollection({
+						resourceNames,
+						quiet: decoded.quiet
+					});
+					metricsInfo('collection.ready', { collectionKey, path: collection.path });
 
-		// POST /question
-		.post('/question', async (c: HonoContext) => {
-			const decoded = await decodeJson(c.req.raw, QuestionRequestSchema);
-			const resourceNames =
-				decoded.resources && decoded.resources.length > 0
-					? Array.from(new Set(decoded.resources.map(normalizeQuestionResourceReference)))
-					: config.resources.map((r) => r.name);
+					const result = yield* ServerServices.askQuestion({
+						collection,
+						question: decoded.question
+					});
+					metricsInfo('question.done', {
+						collectionKey,
+						answerLength: result.answer.length,
+						model: result.model
+					});
 
-			const collectionKey = getCollectionKey(resourceNames);
-			Metrics.info('question.received', {
-				stream: false,
-				quiet: decoded.quiet ?? false,
-				questionLength: decoded.question.length,
-				resources: resourceNames,
-				collectionKey
-			});
+					return HttpServerResponse.jsonUnsafe({
+						answer: result.answer,
+						model: result.model,
+						resources: resourceNames,
+						collection: { key: collectionKey, path: collection.path }
+					});
+				})
+			)
+		),
+		HttpRouter.route('POST', '/question/stream', (request) =>
+			withHttpErrorHandling(
+				Effect.gen(function* () {
+					const requestStartMs = performance.now();
+					const decoded = yield* decodeJson(request, QuestionRequestSchema);
+					const resourceNames = Array.from(
+						decoded.resources && decoded.resources.length > 0
+							? Array.from(new Set(decoded.resources.map(normalizeQuestionResourceReference)))
+							: yield* ServerServices.getDefaultResourceNames
+					);
 
-			const collection = await collections.load({ resourceNames, quiet: decoded.quiet });
-			Metrics.info('collection.ready', { collectionKey, path: collection.path });
+					const collectionKey = ServerServices.loadedResourceCollectionKey(resourceNames);
+					metricsInfo('question.received', {
+						stream: true,
+						quiet: decoded.quiet ?? false,
+						questionLength: decoded.question.length,
+						resources: resourceNames,
+						collectionKey
+					});
 
-			const result = await agent.ask({ collection, question: decoded.question });
-			Metrics.info('question.done', {
-				collectionKey,
-				answerLength: result.answer.length,
-				model: result.model
-			});
+					const collection = yield* ServerServices.loadCollection({
+						resourceNames,
+						quiet: decoded.quiet
+					});
+					metricsInfo('collection.ready', { collectionKey, path: collection.path });
 
-			return c.json({
-				answer: result.answer,
-				model: result.model,
-				resources: resourceNames,
-				collection: { key: collectionKey, path: collection.path }
-			});
-		})
+					const { stream: eventStream, model } = yield* ServerServices.askQuestionStream({
+						collection,
+						question: decoded.question
+					});
 
-		// POST /question/stream
-		.post('/question/stream', async (c: HonoContext) => {
-			const requestStartMs = performance.now();
-			const decoded = await decodeJson(c.req.raw, QuestionRequestSchema);
-			const resourceNames =
-				decoded.resources && decoded.resources.length > 0
-					? Array.from(new Set(decoded.resources.map(normalizeQuestionResourceReference)))
-					: config.resources.map((r) => r.name);
+					const meta = {
+						type: 'meta',
+						model,
+						resources: resourceNames,
+						collection: {
+							key: collectionKey,
+							path: collection.path
+						}
+					} satisfies BtcaStreamMetaEvent;
 
-			const collectionKey = getCollectionKey(resourceNames);
-			Metrics.info('question.received', {
-				stream: true,
-				quiet: decoded.quiet ?? false,
-				questionLength: decoded.question.length,
-				resources: resourceNames,
-				collectionKey
-			});
+					metricsInfo('question.stream.start', { collectionKey });
+					modelsDevPricing.prefetch();
+					const stream = createSseStream({
+						meta,
+						eventStream,
+						question: decoded.question,
+						requestStartMs,
+						pricing: modelsDevPricing
+					});
 
-			const collection = await collections.load({ resourceNames, quiet: decoded.quiet });
-			Metrics.info('collection.ready', { collectionKey, path: collection.path });
-
-			const { stream: eventStream, model } = await agent.askStream({
-				collection,
-				question: decoded.question
-			});
-
-			const meta = {
-				type: 'meta',
-				model,
-				resources: resourceNames,
-				collection: {
-					key: collectionKey,
-					path: collection.path
-				}
-			} satisfies BtcaStreamMetaEvent;
-
-			Metrics.info('question.stream.start', { collectionKey });
-			modelsDevPricing.prefetch();
-			const stream = StreamService.createSseStream({
-				meta,
-				eventStream,
-				question: decoded.question,
-				requestStartMs,
-				pricing: modelsDevPricing
-			});
-
-			return new Response(stream, {
-				headers: {
-					'content-type': 'text/event-stream',
-					'cache-control': 'no-cache',
-					connection: 'keep-alive'
-				}
-			});
-		})
-
-		// PUT /config/model - Update model configuration
-		.put('/config/model', async (c: HonoContext) => {
-			const decoded = await decodeJson(c.req.raw, UpdateModelRequestSchema);
-			const result = await config.updateModel(
-				decoded.provider,
-				decoded.model,
-				decoded.providerOptions
-			);
-			return c.json(result);
-		})
-
-		// POST /config/resources - Add a new resource
-		// All validation (URL, branch, path traversal, etc.) is handled by the schema
-		// GitHub URLs are normalized to their base repository format
-		.post('/config/resources', async (c: HonoContext) => {
-			const decoded = await decodeJson(c.req.raw, AddResourceRequestSchema);
-
-			if (decoded.type === 'git') {
-				// Normalize GitHub URLs (e.g., /blob/main/file.txt → base repo URL)
-				const normalizedUrl = normalizeGitHubUrl(decoded.url);
-				const resource = {
-					type: 'git' as const,
-					name: decoded.name,
-					url: normalizedUrl,
-					branch: decoded.branch ?? 'main',
-					...(decoded.searchPath && { searchPath: decoded.searchPath }),
-					...(decoded.searchPaths && { searchPaths: decoded.searchPaths }),
-					...(decoded.specialNotes && { specialNotes: decoded.specialNotes })
-				};
-				const added = await config.addResource(resource);
-				return c.json(added, 201);
-			}
-			if (decoded.type === 'local') {
-				const resource = {
-					type: 'local' as const,
-					name: decoded.name,
-					path: decoded.path,
-					...(decoded.specialNotes && { specialNotes: decoded.specialNotes })
-				};
-				const added = await config.addResource(resource);
-				return c.json(added, 201);
-			}
-			const resource = {
-				type: 'npm' as const,
-				name: decoded.name,
-				package: decoded.package,
-				...(decoded.version ? { version: decoded.version } : {}),
-				...(decoded.specialNotes ? { specialNotes: decoded.specialNotes } : {})
-			};
-			const added = await config.addResource(resource);
-			return c.json(added, 201);
-		})
-
-		// DELETE /config/resources - Remove a resource
-		.delete('/config/resources', async (c: HonoContext) => {
-			const decoded = await decodeJson(c.req.raw, RemoveResourceRequestSchema);
-			await config.removeResource(decoded.name);
-			return c.json({ success: true, name: decoded.name });
-		})
-
-		// POST /clear - Clear all locally cloned resources
-		.post('/clear', async (c: HonoContext) => {
-			const result = await config.clearResources();
-			return c.json(result);
-		});
-
-	return app;
+					return HttpServerResponse.raw(
+						new Response(stream, {
+							headers: {
+								'content-type': 'text/event-stream',
+								'cache-control': 'no-cache',
+								connection: 'keep-alive'
+							}
+						})
+					);
+				})
+			)
+		),
+		HttpRouter.route('PUT', '/config/model', (request) =>
+			withHttpErrorHandling(
+				Effect.gen(function* () {
+					const decoded = yield* decodeJson(request, UpdateModelRequestSchema);
+					const result = yield* ServerServices.updateModelConfig({
+						provider: decoded.provider,
+						model: decoded.model,
+						providerOptions: decoded.providerOptions
+					});
+					return HttpServerResponse.jsonUnsafe(result);
+				})
+			)
+		),
+		HttpRouter.route('POST', '/config/resources', (request) =>
+			withHttpErrorHandling(
+				Effect.gen(function* () {
+					const decoded = yield* decodeJson(request, AddResourceRequestSchema);
+					if (decoded.type === 'git') {
+						const normalizedUrl = normalizeGitHubUrl(decoded.url);
+						const resource = {
+							type: 'git' as const,
+							name: decoded.name,
+							url: normalizedUrl,
+							branch: decoded.branch ?? 'main',
+							...(decoded.searchPath && { searchPath: decoded.searchPath }),
+							...(decoded.searchPaths && { searchPaths: decoded.searchPaths }),
+							...(decoded.specialNotes && { specialNotes: decoded.specialNotes })
+						};
+						const added = yield* ServerServices.addConfigResource(resource);
+						return HttpServerResponse.jsonUnsafe(added, { status: 201 });
+					}
+					if (decoded.type === 'local') {
+						const resource = {
+							type: 'local' as const,
+							name: decoded.name,
+							path: decoded.path,
+							...(decoded.specialNotes && { specialNotes: decoded.specialNotes })
+						};
+						const added = yield* ServerServices.addConfigResource(resource);
+						return HttpServerResponse.jsonUnsafe(added, { status: 201 });
+					}
+					const resource = {
+						type: 'npm' as const,
+						name: decoded.name,
+						package: decoded.package,
+						...(decoded.version ? { version: decoded.version } : {}),
+						...(decoded.specialNotes ? { specialNotes: decoded.specialNotes } : {})
+					};
+					const added = yield* ServerServices.addConfigResource(resource);
+					return HttpServerResponse.jsonUnsafe(added, { status: 201 });
+				})
+			)
+		),
+		HttpRouter.route('DELETE', '/config/resources', (request) =>
+			withHttpErrorHandling(
+				Effect.gen(function* () {
+					const decoded = yield* decodeJson(request, RemoveResourceRequestSchema);
+					yield* ServerServices.removeConfigResource(decoded.name);
+					return HttpServerResponse.jsonUnsafe({ success: true, name: decoded.name });
+				})
+			)
+		),
+		HttpRouter.route(
+			'POST',
+			'/clear',
+			withHttpErrorHandling(
+				Effect.gen(function* () {
+					const result = yield* ServerServices.clearConfigResources;
+					return HttpServerResponse.jsonUnsafe(result);
+				})
+			)
+		)
+	]);
 };
 
-// Export app type for Hono RPC client
-// We create a dummy app with null deps just to get the type
-type AppType = ReturnType<typeof createApp>;
-export type { AppType };
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Server
-// ─────────────────────────────────────────────────────────────────────────────
+export type AppType = {
+	readonly _tag: 'effect-http-app';
+};
 
 export interface ServerInstance {
 	port: number;
@@ -517,64 +439,64 @@ export interface StartServerOptions {
 	quiet?: boolean;
 }
 
-/**
- * Start the btca server programmatically.
- * Returns a ServerInstance with the port, url, and stop function.
- *
- * If port is 0, a random available port will be assigned by the OS.
- */
 export const startServer = async (options: StartServerOptions = {}): Promise<ServerInstance> => {
 	if (options.quiet) {
-		Metrics.setQuiet(true);
+		setQuietMetrics(true);
 	}
 
 	const requestedPort = options.port ?? PORT;
-	Metrics.info('server.starting', { port: requestedPort });
+	metricsInfo('server.starting', { port: requestedPort });
 
-	const config = await Config.load();
-	Metrics.info('config.ready', {
+	const config = await loadConfig();
+	metricsInfo('config.ready', {
 		provider: config.provider,
 		model: config.model,
 		maxSteps: config.maxSteps,
-		resources: config.resources.map((r) => r.name),
+		resources: config.resources.map((resource) => resource.name),
 		resourcesDirectory: config.resourcesDirectory
 	});
 
-	const resources = Resources.create(config);
-	const collections = Collections.create({ config, resources });
-	const agent = Agent.create(config);
-
-	const app = createApp({ config, resources, collections, agent });
+	const resources = createResourcesService(config);
+	const collections = createCollectionsService({ config, resources });
+	const agent = createAgentService(config);
+	const runtime = createServerRuntime({ config, collections, agent });
+	const appLayer = createApp();
+	const { handler, dispose } = HttpRouter.toWebHandler(appLayer, {
+		disableLogger: options.quiet === true
+	});
+	const requestContext = await runtime.services();
 
 	const server = Bun.serve({
 		port: requestedPort,
-		fetch: app.fetch,
+		fetch: (request) =>
+			runContext({ requestId: crypto.randomUUID(), txDepth: 0 }, () =>
+				handler(request, requestContext)
+			),
 		idleTimeout: 60
 	});
 
 	const actualPort = server.port ?? requestedPort;
-	Metrics.info('server.started', { port: actualPort });
+	metricsInfo('server.started', { port: actualPort });
 
 	return {
 		port: actualPort,
 		url: `http://localhost:${actualPort}`,
 		stop: () => {
-			VirtualFs.disposeAll();
+			disposeAllVirtualFs();
 			clearAllVirtualCollectionMetadata();
 			server.stop();
+			void dispose();
+			void runtime.dispose();
 		}
 	};
 };
 
-// Export all public types and interfaces for consumers
 export type { BtcaStreamEvent, BtcaStreamMetaEvent } from './stream/types.ts';
 
-// Auto-start when run directly (not imported)
-const isMainModule = import.meta.main;
-if (isMainModule) {
+if (import.meta.main) {
 	const server = await startServer({ port: PORT });
 	const shutdown = () => {
-		Metrics.info('server.shutdown', { reason: 'signal' });
+		metricsInfo('server.shutdown', { reason: 'signal' });
 		server.stop();
 		process.exit(0);
 	};

@@ -1,5 +1,3 @@
-import { Result } from 'better-result';
-import { Command } from 'commander';
 import { McpServer } from 'tmcp';
 import { StdioTransport } from '@tmcp/transport-stdio';
 import { ZodJsonSchemaAdapter } from '@tmcp/adapter-zod';
@@ -303,12 +301,12 @@ const configureEditor = async (editor: McpEditor) => {
 	throw new Error(`Unsupported editor: ${editor}`);
 };
 
-const runLocalServer = async (command: Command) => {
-	const globalOpts = command.parent?.opts() as { server?: string; port?: number } | undefined;
-
+export const runMcpServerCommand = async (args: {
+	globalOpts?: { server?: string; port?: number };
+}) => {
 	const serverManager = await ensureServer({
-		serverUrl: globalOpts?.server,
-		port: globalOpts?.port,
+		serverUrl: args.globalOpts?.server,
+		port: args.globalOpts?.port,
 		quiet: true
 	});
 
@@ -346,9 +344,12 @@ const runLocalServer = async (command: Command) => {
 			description: 'List all available local resources.'
 		},
 		async () => {
-			const resourcesResult = await Result.tryPromise(() => getResources(client));
-			if (Result.isError(resourcesResult)) return errorResult(resourcesResult.error);
-			return jsonResult(resourcesResult.value.resources);
+			try {
+				const resourcesResult = await getResources(client);
+				return jsonResult(resourcesResult.resources);
+			} catch (error) {
+				return errorResult(error);
+			}
 		}
 	);
 
@@ -361,15 +362,16 @@ const runLocalServer = async (command: Command) => {
 		},
 		async (args: AskInput) => {
 			const { question, resources } = args;
-			const answerResult = await Result.tryPromise(() =>
-				askQuestion(client, {
+			try {
+				const answerResult = await askQuestion(client, {
 					question,
 					resources,
 					quiet: true
-				})
-			);
-			if (Result.isError(answerResult)) return errorResult(answerResult.error);
-			return textResult(answerResult.value.answer);
+				});
+				return textResult(answerResult.answer);
+			} catch (error) {
+				return errorResult(error);
+			}
 		}
 	);
 
@@ -377,32 +379,15 @@ const runLocalServer = async (command: Command) => {
 	transport.listen();
 };
 
-const configureLocalMcp = new Command('local')
-	.description('Configure local MCP settings for your editor')
-	.action(async () => {
-		const result = await Result.tryPromise(async () => {
-			const editor = await promptEditor();
-			const filePath = await configureEditor(editor);
-			console.log(`\nLocal MCP configured for ${editor} in: ${filePath}\n`);
-		});
-
-		if (Result.isError(result)) {
-			if (result.error instanceof Error && result.error.message === 'Invalid selection') {
-				console.error('\nError: Invalid selection. Please try again.');
-			} else {
-				console.error(formatError(result.error));
-			}
-			process.exit(1);
+export const runMcpConfigureLocalCommand = async () => {
+	try {
+		const editor = await promptEditor();
+		const filePath = await configureEditor(editor);
+		console.log(`\nLocal MCP configured for ${editor} in: ${filePath}\n`);
+	} catch (error) {
+		if (error instanceof Error && error.message === 'Invalid selection') {
+			throw new Error('Invalid selection. Please try again.');
 		}
-	});
-
-export const mcpCommand = new Command('mcp')
-	.description('Run the local MCP server or configure editor MCP settings')
-	.action(async (_options, command) => {
-		const result = await Result.tryPromise(() => runLocalServer(command));
-		if (Result.isError(result)) {
-			console.error(formatError(result.error));
-			process.exit(1);
-		}
-	})
-	.addCommand(configureLocalMcp);
+		throw error;
+	}
+};

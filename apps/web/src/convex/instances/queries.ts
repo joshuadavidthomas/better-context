@@ -48,12 +48,42 @@ const cachedResourceValidator = v.object({
 	instanceId: v.id('instances'),
 	projectId: v.optional(v.id('projects')),
 	name: v.string(),
-	url: v.string(),
-	branch: v.string(),
+	type: v.union(v.literal('git'), v.literal('npm')),
+	url: v.optional(v.string()),
+	branch: v.optional(v.string()),
+	package: v.optional(v.string()),
+	version: v.optional(v.string()),
 	sizeBytes: v.optional(v.number()),
 	cachedAt: v.number(),
 	lastUsedAt: v.number()
 });
+
+const normalizeCachedResource = <
+	T extends {
+		_id: unknown;
+		_creationTime: number;
+		instanceId: unknown;
+		projectId?: unknown;
+		name: string;
+		type?: 'git' | 'npm';
+		url?: string;
+		branch?: string;
+		package?: string;
+		version?: string;
+		sizeBytes?: number;
+		cachedAt: number;
+		lastUsedAt: number;
+	}
+>(
+	resource: T
+) => {
+	const type = resource.type === 'npm' || resource.package ? 'npm' : 'git';
+	return {
+		...resource,
+		type,
+		...(type === 'git' ? { branch: resource.branch ?? 'main' } : {})
+	};
+};
 
 /**
  * Internal query to get instance by ID (for use by other internal functions)
@@ -170,7 +200,7 @@ export const getStatus = query({
 
 		return {
 			instance,
-			cachedResources
+			cachedResources: cachedResources.map((resource) => normalizeCachedResource(resource))
 		};
 	}
 });

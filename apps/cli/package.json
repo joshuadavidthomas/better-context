@@ -1,7 +1,7 @@
 {
 	"name": "btca",
 	"author": "Ben Davis",
-	"version": "1.0.962",
+	"version": "2.0.0",
 	"homepage": "https://btca.dev",
 	"description": "CLI tool for asking questions about technologies using btca server",
 	"type": "module",
@@ -57,14 +57,15 @@
 		"@types/react": "^19.2.13",
 		"@typescript/native-preview": "^7.0.0-dev.20260109.1",
 		"babel-plugin-react-compiler": "^1.0.0",
-		"better-result": "^2.6.0",
 		"btca-server": "workspace:*",
-		"commander": "^12.1.0",
-		"hono": "^4.7.11",
 		"prettier": "^3.7.4",
 		"react": "^19.2.4",
 		"tmcp": "^1.19.2",
 		"web-tree-sitter": "0.25.10",
 		"zod": "^4.3.6"
+	},
+	"dependencies": {
+		"@effect/platform-bun": "4.0.0-beta.20",
+		"effect": "4.0.0-beta.20"
 	}
 }

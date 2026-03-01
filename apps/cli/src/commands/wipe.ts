@@ -1,5 +1,3 @@
-import { Result } from 'better-result';
-import { Command } from 'commander';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -51,8 +49,7 @@ const removeTarget = async (target: string) => {
 
 const confirmWipe = async (targets: { target: string; source: string }[]) => {
 	if (!process.stdin.isTTY || !process.stdout.isTTY) {
-		console.error('Refusing to run wipe in non-interactive mode without --yes.');
-		process.exit(1);
+		throw new Error('Refusing to run wipe in non-interactive mode without --yes.');
 	}
 
 	console.log(red('\nWARNING: this will permanently delete BTCA config files.'));
@@ -68,11 +65,12 @@ const confirmWipe = async (targets: { target: string; source: string }[]) => {
 		const answer = await promptInput(rl, `Type ${bold('WIPE')} to continue: `);
 		if (answer !== 'WIPE') {
 			console.log('Cancelled.');
-			process.exit(0);
+			return false;
 		}
 	} finally {
 		rl.close();
 	}
+	return true;
 };
 
 const runWipe = async () => {
@@ -121,25 +119,14 @@ const printReport = (result: Awaited<ReturnType<typeof runWipe>>) => {
 	}
 };
 
-export const wipeCommand = new Command('wipe')
-	.description('Delete BTCA config files in the current directory and global config directory')
-	.option('-y, --yes', 'Skip confirmation prompt')
-	.action(async (options: { yes?: boolean }) => {
-		const result = await Result.tryPromise(async () => {
-			const targets = listTargets();
-			if (!options.yes) {
-				await confirmWipe(targets);
-			}
+export const runWipeCommand = async (args: { yes?: boolean }) => {
+	const targets = listTargets();
+	if (!args.yes) {
+		const confirmed = await confirmWipe(targets);
+		if (!confirmed) return;
+	}
 
-			const wipeResult = await runWipe();
-			printReport(wipeResult);
-			if (wipeResult.failed.length > 0) process.exitCode = 1;
-		});
-
-		if (Result.isError(result)) {
-			console.error(
-				`Error: ${result.error instanceof Error ? result.error.message : String(result.error)}`
-			);
-			process.exit(1);
-		}
-	});
+	const wipeResult = await runWipe();
+	printReport(wipeResult);
+	if (wipeResult.failed.length > 0) process.exitCode = 1;
+};

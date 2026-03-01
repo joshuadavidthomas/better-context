@@ -12,8 +12,8 @@
 					<Bot size={24} strokeWidth={2.25} />
 				</div>
 				<div class="leading-tight">
-					<div class="og-title">Better Context</div>
-					<div class="og-subtitle">btca CLI</div>
+					<div class="og-title">btca</div>
+					<div class="og-subtitle">grounded codebase answers</div>
 				</div>
 			</div>
 
@@ -24,13 +24,11 @@
 			<div class="og-pill">Search Agent</div>
 
 			<h1 class="og-headline">
-				Better Context for
-				<span class="og-accent">You and Your Agents</span>
+				Ask questions about any codebase
+				<span class="og-accent">and get answers grounded in the repo</span>
 			</h1>
 
-			<p class="og-lede">
-				Search real repos with the CLI or the web app, and get answers grounded in source code.
-			</p>
+			<p class="og-lede">Search source files, docs, and config with the CLI, web app, or MCP.</p>
 		</div>
 
 		<div class="og-footer">

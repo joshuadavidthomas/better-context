@@ -737,21 +737,6 @@ Response shape:
 }
 ```
 
-### 9.2 CLI API endpoints (cloud)
-
-- `GET /api/cli/status?project=<name>`
-  - Returns `{ instance, project? }`
-- `POST /api/cli/wake`
-  - Returns `{ serverUrl }`
-- `GET /api/cli/threads/:threadId`
-  - Returns `{ thread, messages }`
-- `GET /api/cli/threads?project=<name>`
-  - Returns `{ threads }`
-- `GET /api/cli/questions?project=<name>`
-  - Returns `{ questions }`
-- `GET /api/cli/projects`
-  - Returns `{ projects }`
-
 ---
 
 ## 10. Known Gaps / Audit Notes

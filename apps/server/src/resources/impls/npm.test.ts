@@ -3,7 +3,6 @@ import { promises as fs } from 'node:fs';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { Result } from 'better-result';
 
 import { loadNpmResource } from './npm.ts';
 import type { BtcaNpmResourceArgs } from '../types.ts';
@@ -209,12 +208,24 @@ describe('NPM Resource', () => {
 		expect(resource.cleanup).toBeDefined();
 
 		const resourcePath = await resource.getAbsoluteDirectoryPath();
-		const existsBefore = await Result.tryPromise(() => fs.stat(resourcePath));
-		expect(existsBefore.isOk()).toBe(true);
+		let existsBefore = false;
+		try {
+			await fs.stat(resourcePath);
+			existsBefore = true;
+		} catch {
+			existsBefore = false;
+		}
+		expect(existsBefore).toBe(true);
 
 		await resource.cleanup?.();
-		const existsAfter = await Result.tryPromise(() => fs.stat(resourcePath));
-		expect(existsAfter.isOk()).toBe(false);
+		let existsAfter = false;
+		try {
+			await fs.stat(resourcePath);
+			existsAfter = true;
+		} catch {
+			existsAfter = false;
+		}
+		expect(existsAfter).toBe(false);
 	});
 
 	it('uses readable fsName aliases for anonymous npm resources', async () => {

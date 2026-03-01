@@ -1,6 +1,7 @@
 import { v } from 'convex/values';
 import { mutation, query } from './_generated/server';
 import { requireThreadOwnershipResult, unwrapAuthResult } from './authHelpers';
+import { privateMutation, privateQuery } from './privateWrappers';
 
 // Stream session validator
 const streamSessionValidator = v.object({
@@ -57,7 +58,7 @@ export const create = mutation({
  * Complete a stream session by session ID
  * Note: This is typically called by internal server processes, uses session ID for auth
  */
-export const complete = mutation({
+export const complete = privateMutation({
 	args: {
 		sessionId: v.string()
 	},
@@ -82,7 +83,7 @@ export const complete = mutation({
  * Fail a stream session by session ID
  * Note: This is typically called by internal server processes, uses session ID for auth
  */
-export const fail = mutation({
+export const fail = privateMutation({
 	args: {
 		sessionId: v.string(),
 		error: v.string()
@@ -129,7 +130,7 @@ export const getActiveForThread = query({
  * Get stream session by session ID
  * Note: This uses the session ID itself as the auth mechanism
  */
-export const getBySessionId = query({
+export const getBySessionId = privateQuery({
 	args: {
 		sessionId: v.string()
 	},
@@ -145,7 +146,7 @@ export const getBySessionId = query({
 /**
  * Cleanup old stream sessions (internal maintenance)
  */
-export const cleanupOld = mutation({
+export const cleanupOld = privateMutation({
 	args: {},
 	returns: v.object({ deleted: v.number() }),
 	handler: async (ctx) => {
