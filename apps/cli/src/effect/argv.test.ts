@@ -24,6 +24,14 @@ describe('cli argv compatibility', () => {
 		]);
 	});
 
+	test('moves root server flags behind status subcommand', () => {
+		expect(normalizeCliArgv(['--server', 'http://localhost:9999', 'status'])).toEqual([
+			'status',
+			'--server',
+			'http://localhost:9999'
+		]);
+	});
+
 	test('moves ask compatibility flags behind ask subcommand', () => {
 		expect(normalizeCliArgv(['--no-thinking', '--no-tools', 'ask', '-q', 'hi'])).toEqual([
 			'ask',

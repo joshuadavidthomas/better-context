@@ -1,6 +1,6 @@
 import { BunServices } from '@effect/platform-bun';
 import { Cause, Effect, Exit, Option, pipe } from 'effect';
-import { Argument, Command, Flag } from 'effect/unstable/cli';
+import { Argument, CliOutput, Command, Flag } from 'effect/unstable/cli';
 import { runAddCommand } from '../commands/add.ts';
 import { runAskCommand } from '../commands/ask.ts';
 import { runClearCommand } from '../commands/clear.ts';
@@ -35,7 +35,7 @@ const resolveServerOptions = ({
 	server: Option.Option<string>;
 	port: Option.Option<number>;
 }) => ({
-	serverUrl: Option.getOrUndefined(server),
+	server: Option.getOrUndefined(server),
 	port: Option.getOrUndefined(port),
 	quiet: true
 });
@@ -103,7 +103,12 @@ const resources = Command.make(
 		Effect.tryPromise(() => runResourcesCommand(resolveServerOptions({ server, port })))
 );
 
-const status = Command.make('status', {}, () => Effect.tryPromise(() => runStatusCommand()));
+const status = Command.make(
+	'status',
+	{ server: serverFlag, port: portFlag },
+	({ server, port }) =>
+		Effect.tryPromise(() => runStatusCommand(resolveServerOptions({ server, port })))
+);
 const init = Command.make(
 	'init',
 	{
@@ -239,12 +244,30 @@ export const runEffectCli = async (
 	argv: ReadonlyArray<string>,
 	version: string
 ): Promise<number> => {
+	let hadCliErrors = false;
+	const defaultFormatter = CliOutput.defaultFormatter();
+	const formatter: ReturnType<typeof CliOutput.defaultFormatter> = {
+		...defaultFormatter,
+		formatError: (error) => {
+			hadCliErrors = true;
+			return defaultFormatter.formatError(error);
+		},
+		formatErrors: (errors) => {
+			if (errors.length > 0) hadCliErrors = true;
+			return defaultFormatter.formatErrors(errors);
+		}
+	};
+
 	const run = Command.runWith(root, { version });
-	const cliEffect = run(normalizeCliArgv(argv.slice(2))).pipe(Effect.provide(BunServices.layer));
+	const cliEffect = run(normalizeCliArgv(argv.slice(2))).pipe(
+		Effect.provide(CliOutput.layer(formatter)),
+		Effect.provide(BunServices.layer)
+	);
 	const exit = await Effect.runPromiseExit(cliEffect);
 	if (Exit.isFailure(exit)) {
 		console.error(formatCliCommandError(Cause.squash(exit.cause)));
 		return 1;
 	}
+	if (hadCliErrors) return 1;
 	return 0;
 };

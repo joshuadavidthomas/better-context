@@ -117,12 +117,16 @@ const printResourceList = (label: string, resources: string[] | null) => {
 	}
 };
 
-export const runStatusCommand = async () => {
+export const runStatusCommand = async (globalOpts?: { server?: string; port?: number }) => {
 	const projectPath = path.resolve(process.cwd(), PROJECT_CONFIG_FILENAME);
 
 	return Effect.runPromise(
 		withServerEffect(
-			{ quiet: true },
+			{
+				serverUrl: globalOpts?.server,
+				port: globalOpts?.port,
+				quiet: true
+			},
 			(server) =>
 				Effect.gen(function* () {
 					const client = createClient(server.url);
