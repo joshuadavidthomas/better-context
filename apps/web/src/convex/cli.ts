@@ -154,7 +154,10 @@ export const wakeInstance = action({
 		// Wake it if not running
 		if (instance.state !== 'running' || !instance.serverUrl) {
 			try {
-				const result = await ctx.runAction(instanceActions.wake, { instanceId });
+				const result = await ctx.runAction(instanceActions.wake, {
+					instanceId,
+					includePrivate: false
+				});
 				return { ok: true, serverUrl: result.serverUrl };
 			} catch (err) {
 				return {

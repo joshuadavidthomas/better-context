@@ -10,12 +10,15 @@
 		Link,
 		Check,
 		X,
-		Layers
+		Layers,
+		Github,
+		RefreshCw,
+		Lock
 	} from '@lucide/svelte';
 	import { useQuery, useConvexClient } from 'convex-svelte';
 	import { goto } from '$app/navigation';
 	import ResourceLogo from '$lib/components/ResourceLogo.svelte';
-	import { getAuthState } from '$lib/stores/auth.svelte';
+	import { getAuthState, openUserProfile, reconnectGitHub } from '$lib/stores/auth.svelte';
 	import { getProjectStore } from '$lib/stores/project.svelte';
 	import { api } from '../../../../convex/_generated/api';
 
@@ -35,6 +38,9 @@
 				)
 			: null
 	);
+	const githubConnectionQuery = $derived(
+		auth.instanceId ? useQuery(api.githubConnections.getMyConnection, {}) : null
+	);
 
 	// Quick add state
 	let quickAddUrl = $state('');
@@ -53,8 +59,40 @@
 	let formError = $state<string | null>(null);
 	let addingGlobal = $state<string | null>(null);
 	let globalAddError = $state<string | null>(null);
+	let isSyncingGitHub = $state(false);
+	let isReauthorizingGitHub = $state(false);
+	let githubSyncError = $state<string | null>(null);
+	let githubSyncTriggered = $state(false);
 
 	const userResourceNames = $derived(new Set((userResourcesQuery?.data ?? []).map((r) => r.name)));
+	const githubConnection = $derived(githubConnectionQuery?.data ?? null);
+	const getResourceSummary = (resource: {
+		type: 'git' | 'npm';
+		branch?: string;
+		searchPath?: string;
+		package?: string;
+		version?: string;
+		visibility?: 'public' | 'private';
+	}) =>
+		resource.type === 'npm'
+			? `${resource.package ?? resource.type}${resource.version ? `@${resource.version}` : ''}`
+			: [
+					resource.visibility === 'private' ? 'private' : 'public',
+					resource.branch ?? 'main',
+					resource.searchPath
+				]
+					.filter(Boolean)
+					.join(' · ');
+
+	const getResourceLabel = (resource: {
+		type: 'git' | 'npm';
+		url?: string;
+		package?: string;
+		version?: string;
+	}) =>
+		resource.type === 'npm'
+			? `${resource.package ?? 'npm package'}${resource.version ? `@${resource.version}` : ''}`
+			: (resource.url?.replace(/^https?:\/\//, '') ?? 'git resource');
 
 	/**
 	 * Parse a git URL and extract repo info
@@ -162,6 +200,64 @@
 		}
 	});
 
+	$effect(() => {
+		if (!auth.isSignedIn) {
+			githubSyncTriggered = false;
+			return;
+		}
+		if (!githubSyncTriggered) {
+			githubSyncTriggered = true;
+			void syncGitHubConnection();
+		}
+	});
+
+	async function syncGitHubConnection() {
+		if (!auth.isSignedIn) return;
+		isSyncingGitHub = true;
+		githubSyncError = null;
+
+		try {
+			await client.action(api.githubAuth.syncMyConnection, {});
+		} catch (error) {
+			githubSyncError = error instanceof Error ? error.message : 'Failed to refresh GitHub status';
+		} finally {
+			isSyncingGitHub = false;
+		}
+	}
+
+	async function handleConnectGitHub() {
+		githubSyncError = null;
+
+		if (githubConnection?.status === 'missing_scope') {
+			isReauthorizingGitHub = true;
+
+			const reauthorized = await reconnectGitHub(['repo']);
+			isReauthorizingGitHub = false;
+
+			if (reauthorized) {
+				await syncGitHubConnection();
+				return;
+			}
+		}
+
+		openUserProfile({ github: ['repo'] });
+	}
+
+	async function handleRefreshGitHubAccess() {
+		githubSyncError = null;
+		isReauthorizingGitHub = true;
+
+		const reauthorized = await reconnectGitHub(['repo']);
+		isReauthorizingGitHub = false;
+
+		if (reauthorized) {
+			await syncGitHubConnection();
+			return;
+		}
+
+		openUserProfile({ github: ['repo'] });
+	}
+
 	async function handleAddResource() {
 		if (!auth.instanceId) return;
 		if (!formName.trim() || !formUrl.trim()) {
@@ -187,7 +283,7 @@
 		formError = null;
 
 		try {
-			await client.mutation(api.resources.addCustomResource, {
+			await client.action(api.resourceActions.addCustomResource, {
 				name: formName.trim(),
 				url: formUrl.trim(),
 				branch: formBranch.trim() || 'main',
@@ -229,7 +325,7 @@
 		globalAddError = null;
 		addingGlobal = resource.name;
 		try {
-			await client.mutation(api.resources.addCustomResource, {
+			await client.action(api.resourceActions.addCustomResource, {
 				name: resource.name,
 				url: resource.url,
 				branch: resource.branch,
@@ -255,6 +351,80 @@
 			</p>
 		</div>
 
+		<section class="bc-card p-5">
+			<div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+				<div class="space-y-2">
+					<div class="flex items-center gap-2">
+						<Github size={18} />
+						<h2 class="text-lg font-medium">GitHub Private Repos</h2>
+					</div>
+					<p class="bc-muted text-sm">
+						Private GitHub repositories work only in the signed-in web app sandbox. Your local CLI
+						still uses the git auth on your own machine.
+					</p>
+					<div class="flex flex-wrap items-center gap-2 text-sm">
+						<span class="bc-chip px-2 py-1">
+							{#if githubConnection?.status === 'connected'}
+								Connected to @{githubConnection.githubLogin}
+							{:else if githubConnection?.status === 'missing_scope'}
+								GitHub connected, but private repo access is missing
+							{:else}
+								GitHub not connected
+							{/if}
+						</span>
+						{#if githubConnection?.status === 'connected'}
+							<span class="bc-muted">Scopes: {githubConnection.scopes.join(', ')}</span>
+						{/if}
+					</div>
+					<p class="bc-muted text-xs">
+						If GitHub is already connected without private repo access, btca will try a direct
+						reconnect first and fall back to the Clerk profile modal with the required scope. You
+						can also refresh GitHub access later if you need newly granted org access to show up.
+					</p>
+					{#if githubSyncError}
+						<div class="text-sm text-red-500">{githubSyncError}</div>
+					{/if}
+				</div>
+				<div class="flex flex-wrap gap-2">
+					{#if githubConnection?.status === 'connected'}
+						<button
+							type="button"
+							class="bc-btn text-sm"
+							onclick={handleRefreshGitHubAccess}
+							disabled={isReauthorizingGitHub}
+						>
+							{#if isReauthorizingGitHub}
+								<Loader2 size={16} class="animate-spin" />
+							{:else}
+								<RefreshCw size={16} />
+							{/if}
+							Refresh GitHub Access
+						</button>
+					{/if}
+					<button type="button" class="bc-btn text-sm" onclick={syncGitHubConnection}>
+						{#if isSyncingGitHub}
+							<Loader2 size={16} class="animate-spin" />
+						{:else}
+							<RefreshCw size={16} />
+						{/if}
+						Refresh Status
+					</button>
+					<button type="button" class="bc-btn bc-btn-primary text-sm" onclick={handleConnectGitHub}>
+						{#if isReauthorizingGitHub}
+							<Loader2 size={16} class="animate-spin" />
+						{:else}
+							<Github size={16} />
+						{/if}
+						{githubConnection?.status === 'missing_scope'
+							? 'Reconnect GitHub'
+							: githubConnection?.status === 'connected'
+								? 'Manage GitHub'
+								: 'Connect GitHub'}
+					</button>
+				</div>
+			</div>
+		</section>
+
 		<!-- User Resources -->
 		<section>
 			<div class="mb-4 flex items-center justify-between">
@@ -279,6 +449,10 @@
 				</div>
 			</div>
 			<p class="bc-muted mb-4 text-sm">Add your own git repositories as documentation resources.</p>
+			<p class="bc-muted mb-4 text-xs">
+				Public repos can be added directly. Private GitHub repos require a connected GitHub account
+				with private repository access.
+			</p>
 
 			<!-- Quick Add Section -->
 			<div class="bc-card mb-4 p-4">
@@ -522,17 +696,27 @@
 					{#each userResourcesQuery.data as resource (resource._id)}
 						<div class="bc-card flex flex-col p-4">
 							<div class="mb-3 flex items-start justify-between gap-2">
-								<span class="font-medium">@{resource.name}</span>
+								<div class="flex flex-wrap items-center gap-2">
+									<span class="font-medium">@{resource.name}</span>
+									{#if resource.visibility === 'private'}
+										<span class="bc-chip px-1.5 py-0.5 text-[11px]">
+											<Lock size={10} />
+											Private
+										</span>
+									{/if}
+								</div>
 								<div class="flex shrink-0 gap-1">
-									<a
-										href={resource.url}
-										target="_blank"
-										rel="noreferrer"
-										class="bc-chip p-1.5"
-										title="Open repository"
-									>
-										<ExternalLink size={12} />
-									</a>
+									{#if resource.url}
+										<a
+											href={resource.url}
+											target="_blank"
+											rel="noreferrer"
+											class="bc-chip p-1.5"
+											title="Open repository"
+										>
+											<ExternalLink size={12} />
+										</a>
+									{/if}
 									<button
 										type="button"
 										class="bc-chip p-1.5 text-red-500"
@@ -544,14 +728,10 @@
 								</div>
 							</div>
 							<div class="bc-muted line-clamp-1 text-xs">
-								{resource.url.replace(/^https?:\/\//, '')}
+								{getResourceLabel(resource)}
 							</div>
 							<div class="bc-muted mt-1 text-xs">
-								{resource.branch}
-								{#if resource.searchPath}
-									<span class="mx-1">·</span>
-									{resource.searchPath}
-								{/if}
+								{getResourceSummary(resource)}
 							</div>
 							{#if resource.specialNotes}
 								<div class="bc-muted mt-2 line-clamp-2 text-xs italic">{resource.specialNotes}</div>

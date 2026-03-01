@@ -1,5 +1,5 @@
 import type { Clerk } from '@clerk/clerk-js';
-import type { SessionResource, UserResource } from '@clerk/types';
+import type { OAuthScope, SessionResource, UserResource } from '@clerk/types';
 import type { Id } from '../../convex/_generated/dataModel';
 
 // Auth state
@@ -116,8 +116,24 @@ export function openSignUp(redirectUrl?: string) {
 /**
  * Open the user profile modal
  */
-export function openUserProfile() {
+export function openUserProfile(additionalOAuthScopes?: Partial<Record<'github', OAuthScope[]>>) {
 	if (clerk) {
-		clerk.openUserProfile();
+		clerk.openUserProfile(additionalOAuthScopes ? { additionalOAuthScopes } : undefined);
+	}
+}
+
+export async function reconnectGitHub(scopes: OAuthScope[] = ['repo']) {
+	const githubAccount = user?.externalAccounts.find((account) => account.provider === 'github');
+	if (!githubAccount) return false;
+
+	try {
+		await githubAccount.reauthorize({
+			additionalScopes: scopes,
+			redirectUrl: globalThis.location?.href
+		});
+		return true;
+	} catch (error) {
+		console.error('Failed to reauthorize GitHub account:', error);
+		return false;
 	}
 }

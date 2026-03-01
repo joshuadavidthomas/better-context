@@ -1,7 +1,7 @@
 import { GLOBAL_RESOURCES, getResourceNameError } from '@btca/shared';
 import { v } from 'convex/values';
 import { Result } from 'better-result';
-import { internalQuery, mutation, query } from './_generated/server';
+import { internalMutation, internalQuery, mutation, query } from './_generated/server';
 
 import { internal } from './_generated/api';
 import { AnalyticsEvents } from './analyticsEvents';
@@ -28,6 +28,115 @@ const throwResourceError = (error: WebError): never => {
 	throw error;
 };
 
+const getGitProvider = (url?: string): 'github' | 'generic' => {
+	if (!url) return 'generic';
+	try {
+		return new URL(url).hostname.toLowerCase() === 'github.com' ? 'github' : 'generic';
+	} catch {
+		return 'generic';
+	}
+};
+
+const shouldIncludeResource = (
+	resource: {
+		visibility?: 'public' | 'private';
+		authSource?: 'clerk_github_oauth';
+	},
+	includePrivate: boolean
+) =>
+	includePrivate ||
+	resource.visibility !== 'private' ||
+	resource.authSource !== 'clerk_github_oauth';
+
+const getStoredResourceType = (resource: { type?: 'git' | 'npm'; package?: string }) =>
+	resource.type === 'npm' || resource.package ? 'npm' : 'git';
+
+const normalizeUserResource = <
+	T extends {
+		_id: unknown;
+		_creationTime: number;
+		instanceId: unknown;
+		projectId?: unknown;
+		name: string;
+		type?: 'git' | 'npm';
+		url?: string;
+		branch?: string;
+		package?: string;
+		version?: string;
+		searchPath?: string;
+		specialNotes?: string;
+		gitProvider?: 'github' | 'generic';
+		visibility?: 'public' | 'private';
+		authSource?: 'clerk_github_oauth';
+		createdAt: number;
+	}
+>(
+	resource: T
+) => {
+	const type = getStoredResourceType(resource);
+	return {
+		...resource,
+		type,
+		...(type === 'git'
+			? {
+					gitProvider: resource.gitProvider ?? getGitProvider(resource.url),
+					visibility: resource.visibility ?? 'public',
+					authSource: resource.authSource
+				}
+			: {}),
+		...(type === 'git' ? { branch: resource.branch ?? 'main' } : {})
+	};
+};
+
+const toCustomResource = (resource: {
+	name: string;
+	type?: 'git' | 'npm';
+	url?: string;
+	branch?: string;
+	package?: string;
+	version?: string;
+	searchPath?: string;
+	specialNotes?: string;
+	gitProvider?: 'github' | 'generic';
+	visibility?: 'public' | 'private';
+	authSource?: 'clerk_github_oauth';
+}): {
+	name: string;
+	displayName: string;
+	type: 'git' | 'npm';
+	url?: string;
+	branch?: string;
+	package?: string;
+	version?: string;
+	searchPath?: string;
+	specialNotes?: string;
+	gitProvider?: 'github' | 'generic';
+	visibility?: 'public' | 'private';
+	authSource?: 'clerk_github_oauth';
+	isGlobal: false;
+} => {
+	const type = getStoredResourceType(resource);
+	return {
+		name: resource.name,
+		displayName: resource.name,
+		type,
+		...(resource.url ? { url: resource.url } : {}),
+		...(type === 'git' ? { branch: resource.branch ?? 'main' } : {}),
+		...(resource.package ? { package: resource.package } : {}),
+		...(resource.version ? { version: resource.version } : {}),
+		...(resource.searchPath ? { searchPath: resource.searchPath } : {}),
+		...(resource.specialNotes ? { specialNotes: resource.specialNotes } : {}),
+		...(type === 'git'
+			? {
+					gitProvider: resource.gitProvider ?? getGitProvider(resource.url),
+					visibility: resource.visibility ?? 'public',
+					authSource: resource.authSource
+				}
+			: {}),
+		isGlobal: false as const
+	};
+};
+
 // Resource validators
 const globalResourceValidator = v.object({
 	name: v.string(),
@@ -43,11 +152,16 @@ const globalResourceValidator = v.object({
 const customResourceValidator = v.object({
 	name: v.string(),
 	displayName: v.string(),
-	type: v.literal('git'),
-	url: v.string(),
-	branch: v.string(),
+	type: v.union(v.literal('git'), v.literal('npm')),
+	url: v.optional(v.string()),
+	branch: v.optional(v.string()),
+	package: v.optional(v.string()),
+	version: v.optional(v.string()),
 	searchPath: v.optional(v.string()),
 	specialNotes: v.optional(v.string()),
+	gitProvider: v.optional(v.union(v.literal('github'), v.literal('generic'))),
+	visibility: v.optional(v.union(v.literal('public'), v.literal('private'))),
+	authSource: v.optional(v.literal('clerk_github_oauth')),
 	isGlobal: v.literal(false)
 });
 
@@ -57,11 +171,16 @@ const userResourceValidator = v.object({
 	instanceId: v.id('instances'),
 	projectId: v.optional(v.id('projects')),
 	name: v.string(),
-	type: v.literal('git'),
-	url: v.string(),
-	branch: v.string(),
+	type: v.union(v.literal('git'), v.literal('npm')),
+	url: v.optional(v.string()),
+	branch: v.optional(v.string()),
+	package: v.optional(v.string()),
+	version: v.optional(v.string()),
 	searchPath: v.optional(v.string()),
 	specialNotes: v.optional(v.string()),
+	gitProvider: v.optional(v.union(v.literal('github'), v.literal('generic'))),
+	visibility: v.optional(v.union(v.literal('public'), v.literal('private'))),
+	authSource: v.optional(v.literal('clerk_github_oauth')),
 	createdAt: v.number()
 });
 
@@ -104,7 +223,9 @@ export const listUserResources = query({
 				.query('userResources')
 				.withIndex('by_project', (q) => q.eq('projectId', args.projectId))
 				.collect();
-			return resources.filter((r) => r.instanceId === instance._id);
+			return resources
+				.filter((r) => r.instanceId === instance._id)
+				.map((resource) => normalizeUserResource(resource));
 		}
 
 		const allResources = await ctx.db
@@ -113,11 +234,13 @@ export const listUserResources = query({
 			.collect();
 
 		const seen = new Set<string>();
-		return allResources.filter((r) => {
-			if (seen.has(r.name)) return false;
-			seen.add(r.name);
-			return true;
-		});
+		return allResources
+			.filter((r) => {
+				if (seen.has(r.name)) return false;
+				seen.add(r.name);
+				return true;
+			})
+			.map((resource) => normalizeUserResource(resource));
 	}
 });
 
@@ -149,16 +272,7 @@ export const listAvailable = query({
 			isGlobal: true as const
 		}));
 
-		const custom = userResources.map((r) => ({
-			name: r.name,
-			displayName: r.name,
-			type: r.type,
-			url: r.url,
-			branch: r.branch,
-			searchPath: r.searchPath,
-			specialNotes: r.specialNotes,
-			isGlobal: false as const
-		}));
+		const custom = userResources.map((r) => toCustomResource(r));
 
 		return { global, custom };
 	}
@@ -192,10 +306,11 @@ export const listByProject = internalQuery({
 	},
 	returns: v.array(userResourceValidator),
 	handler: async (ctx, args) => {
-		return await ctx.db
+		const resources = await ctx.db
 			.query('userResources')
 			.withIndex('by_project', (q) => q.eq('projectId', args.projectId))
 			.collect();
+		return resources.map((resource) => normalizeUserResource(resource));
 	}
 });
 
@@ -204,7 +319,10 @@ export const listByProject = internalQuery({
  * This is needed for server-side operations that run without user auth context
  */
 export const listAvailableInternal = internalQuery({
-	args: { instanceId: v.id('instances') },
+	args: {
+		instanceId: v.id('instances'),
+		includePrivate: v.optional(v.boolean())
+	},
 	returns: v.object({
 		global: v.array(globalResourceValidator),
 		custom: v.array(customResourceValidator)
@@ -214,6 +332,7 @@ export const listAvailableInternal = internalQuery({
 			.query('userResources')
 			.withIndex('by_instance', (q) => q.eq('instanceId', args.instanceId))
 			.collect();
+		const includePrivate = args.includePrivate ?? false;
 
 		const global = GLOBAL_RESOURCES.map((resource) => ({
 			name: resource.name,
@@ -226,16 +345,9 @@ export const listAvailableInternal = internalQuery({
 			isGlobal: true as const
 		}));
 
-		const custom = userResources.map((r) => ({
-			name: r.name,
-			displayName: r.name,
-			type: r.type,
-			url: r.url,
-			branch: r.branch,
-			searchPath: r.searchPath,
-			specialNotes: r.specialNotes,
-			isGlobal: false as const
-		}));
+		const custom = userResources
+			.filter((resource) => shouldIncludeResource(resource, includePrivate))
+			.map((r) => toCustomResource(r));
 
 		return { global, custom };
 	}
@@ -247,7 +359,8 @@ export const listAvailableInternal = internalQuery({
  */
 export const listAvailableForProject = internalQuery({
 	args: {
-		projectId: v.id('projects')
+		projectId: v.id('projects'),
+		includePrivate: v.optional(v.boolean())
 	},
 	returns: v.object({
 		global: v.array(globalResourceValidator),
@@ -258,6 +371,7 @@ export const listAvailableForProject = internalQuery({
 			.query('userResources')
 			.withIndex('by_project', (q) => q.eq('projectId', args.projectId))
 			.collect();
+		const includePrivate = args.includePrivate ?? false;
 
 		const global = GLOBAL_RESOURCES.map((resource) => ({
 			name: resource.name,
@@ -270,16 +384,9 @@ export const listAvailableForProject = internalQuery({
 			isGlobal: true as const
 		}));
 
-		const custom = userResources.map((r) => ({
-			name: r.name,
-			displayName: r.name,
-			type: r.type,
-			url: r.url,
-			branch: r.branch,
-			searchPath: r.searchPath,
-			specialNotes: r.specialNotes,
-			isGlobal: false as const
-		}));
+		const custom = userResources
+			.filter((resource) => shouldIncludeResource(resource, includePrivate))
+			.map((r) => toCustomResource(r));
 
 		return { global, custom };
 	}
@@ -314,11 +421,14 @@ export const addCustomResource = mutation({
 			branch: args.branch,
 			searchPath: args.searchPath,
 			specialNotes: args.specialNotes,
+			gitProvider: getGitProvider(args.url),
+			visibility: 'public',
 			createdAt: Date.now()
 		});
 
 		await ctx.scheduler.runAfter(0, instances.internalActions.syncResources, {
-			instanceId: instance._id
+			instanceId: instance._id,
+			projectId: args.projectId
 		});
 
 		await ctx.scheduler.runAfter(0, internal.analytics.trackEvent, {
@@ -329,6 +439,7 @@ export const addCustomResource = mutation({
 				resourceId,
 				resourceName: args.name,
 				resourceUrl: args.url,
+				resourceVisibility: 'public',
 				hasBranch: args.branch !== 'main',
 				hasSearchPath: !!args.searchPath,
 				hasNotes: !!args.specialNotes
@@ -353,7 +464,8 @@ export const removeCustomResource = mutation({
 		await ctx.db.delete(args.resourceId);
 
 		await ctx.scheduler.runAfter(0, instances.internalActions.syncResources, {
-			instanceId: resource.instanceId
+			instanceId: resource.instanceId,
+			projectId: resource.projectId
 		});
 
 		await ctx.scheduler.runAfter(0, internal.analytics.trackEvent, {
@@ -367,5 +479,37 @@ export const removeCustomResource = mutation({
 		});
 
 		return null;
+	}
+});
+
+export const addCustomResourceInternal = internalMutation({
+	args: {
+		instanceId: v.id('instances'),
+		projectId: v.optional(v.id('projects')),
+		name: v.string(),
+		url: v.string(),
+		branch: v.string(),
+		searchPath: v.optional(v.string()),
+		specialNotes: v.optional(v.string()),
+		gitProvider: v.optional(v.union(v.literal('github'), v.literal('generic'))),
+		visibility: v.optional(v.union(v.literal('public'), v.literal('private'))),
+		authSource: v.optional(v.literal('clerk_github_oauth'))
+	},
+	returns: v.id('userResources'),
+	handler: async (ctx, args) => {
+		return await ctx.db.insert('userResources', {
+			instanceId: args.instanceId,
+			projectId: args.projectId,
+			name: args.name,
+			type: 'git',
+			url: args.url,
+			branch: args.branch,
+			searchPath: args.searchPath,
+			specialNotes: args.specialNotes,
+			gitProvider: args.gitProvider ?? getGitProvider(args.url),
+			visibility: args.visibility ?? 'public',
+			authSource: args.authSource,
+			createdAt: Date.now()
+		});
 	}
 });

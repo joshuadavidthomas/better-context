@@ -144,6 +144,11 @@ type InstanceRecord = {
 	sandboxId?: string | null;
 };
 
+type InstanceServerAccess = {
+	serverUrl: string;
+	previewToken?: string;
+};
+
 type StreamEventPayload =
 	| { type: 'status'; status: 'starting' | 'ready' }
 	| { type: 'session'; sessionId: string }
@@ -362,16 +367,19 @@ const chatStream = httpAction(async (ctx, request) => {
 
 				sendEvent({ type: 'session', sessionId } as StreamEventPayload);
 
-				const serverUrlResult = await ensureServerUrlResult(ctx, instance, sendEvent);
-				if (Result.isError(serverUrlResult)) {
-					throw serverUrlResult.error;
+				const serverAccessResult = await ensureServerUrlResult(ctx, instance, sendEvent);
+				if (Result.isError(serverAccessResult)) {
+					throw serverAccessResult.error;
 				}
-				const serverUrl = serverUrlResult.value;
+				const serverAccess = serverAccessResult.value;
 
-				const response = await fetch(`${serverUrl}/question/stream`, {
+				const response = await fetch(`${serverAccess.serverUrl}/question/stream`, {
 					method: 'POST',
 					headers: {
-						'Content-Type': 'application/json'
+						'Content-Type': 'application/json',
+						...(serverAccess.previewToken
+							? { 'x-daytona-preview-token': serverAccess.previewToken }
+							: {})
 					},
 					body: JSON.stringify({
 						question: questionWithHistory,
@@ -879,7 +887,7 @@ async function ensureServerUrlResult(
 	ctx: ActionCtx,
 	instance: InstanceRecord,
 	sendEvent: (payload: StreamEventPayload) => void
-): Promise<HttpFlowResult<string>> {
+): Promise<HttpFlowResult<InstanceServerAccess>> {
 	if (instance.state === 'error') {
 		return Result.err(new WebUnhandledError({ message: 'Instance is in an error state' }));
 	}
@@ -889,8 +897,15 @@ async function ensureServerUrlResult(
 	}
 
 	if (instance.state === 'running' && instance.serverUrl) {
+		if (!instance.sandboxId) {
+			return Result.err(new WebUnhandledError({ message: 'Instance does not have a sandbox' }));
+		}
+
+		const previewAccess = await ctx.runAction(internal.instances.actions.getPreviewAccess, {
+			instanceId: instance._id
+		});
 		sendEvent({ type: 'status', status: 'ready' });
-		return Result.ok(instance.serverUrl);
+		return Result.ok(previewAccess);
 	}
 
 	if (!instance.sandboxId) {
@@ -910,9 +925,12 @@ async function ensureServerUrlResult(
 		if (!serverUrl) {
 			return Result.err(new WebUnhandledError({ message: 'Instance did not return a server URL' }));
 		}
+		const previewAccess = await ctx.runAction(internal.instances.actions.getPreviewAccess, {
+			instanceId: instance._id
+		});
 
 		sendEvent({ type: 'status', status: 'ready' });
-		return Result.ok(serverUrl);
+		return Result.ok(previewAccess);
 	} catch (error) {
 		if (error instanceof Error) {
 			return Result.err(new WebUnhandledError({ message: error.message, cause: error }));

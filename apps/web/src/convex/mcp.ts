@@ -197,7 +197,10 @@ export const ask = action({
 		const availableResources: {
 			global: { name: string }[];
 			custom: { name: string }[];
-		} = await ctx.runQuery(internal.resources.listAvailableForProject, { projectId });
+		} = await ctx.runQuery(internal.resources.listAvailableForProject, {
+			projectId,
+			includePrivate: false
+		});
 		const allResourceNames: string[] = [
 			...availableResources.global.map((r: { name: string }) => r.name),
 			...availableResources.custom.map((r: { name: string }) => r.name)
@@ -237,7 +240,11 @@ export const ask = action({
 				return { ok: false as const, error: 'Instance does not have a sandbox' };
 			}
 			// Pass projectId to wake so it uses project-specific resources
-			const wakeResult = await ctx.runAction(instanceActions.wake, { instanceId, projectId });
+			const wakeResult = await ctx.runAction(instanceActions.wake, {
+				instanceId,
+				projectId,
+				includePrivate: false
+			});
 			serverUrl = wakeResult.serverUrl;
 			if (!serverUrl) {
 				await trackAskFailure('Failed to wake instance', projectProperties);
@@ -245,13 +252,25 @@ export const ask = action({
 			}
 		} else {
 			// Sandbox is already running - sync project-specific resources and reload config
-			await ctx.runAction(internal.instances.actions.syncResources, { instanceId, projectId });
+			await ctx.runAction(internal.instances.actions.syncResources, {
+				instanceId,
+				projectId,
+				includePrivate: false
+			});
 		}
 
+		const previewAccess = await ctx.runAction(internal.instances.actions.getPreviewAccess, {
+			instanceId
+		});
 		const startedAt = Date.now();
-		const response = await fetch(`${serverUrl}/question`, {
+		const response = await fetch(`${previewAccess.serverUrl}/question`, {
 			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
+			headers: {
+				'Content-Type': 'application/json',
+				...(previewAccess.previewToken
+					? { 'x-daytona-preview-token': previewAccess.previewToken }
+					: {})
+			},
 			body: JSON.stringify({
 				question,
 				resources,
@@ -302,11 +321,13 @@ type ListResourcesResult =
 			resources: {
 				name: string;
 				displayName: string;
-				type: string;
-				url: string;
-				branch: string;
-				searchPath: string | undefined;
-				specialNotes: string | undefined;
+				type: 'git' | 'npm';
+				url?: string;
+				branch?: string;
+				package?: string;
+				version?: string;
+				searchPath?: string;
+				specialNotes?: string;
 				isGlobal: false;
 			}[];
 	  };
@@ -330,9 +351,11 @@ export const listResources = action({
 				v.object({
 					name: v.string(),
 					displayName: v.string(),
-					type: v.string(),
-					url: v.string(),
-					branch: v.string(),
+					type: v.union(v.literal('git'), v.literal('npm')),
+					url: v.optional(v.string()),
+					branch: v.optional(v.string()),
+					package: v.optional(v.string()),
+					version: v.optional(v.string()),
 					searchPath: v.optional(v.string()),
 					specialNotes: v.optional(v.string()),
 					isGlobal: v.literal(false)
@@ -363,10 +386,25 @@ export const listResources = action({
 
 		// Return project-specific resources
 		const { custom } = await ctx.runQuery(internal.resources.listAvailableForProject, {
-			projectId
+			projectId,
+			includePrivate: false
 		});
 
-		return { ok: true as const, resources: custom };
+		return {
+			ok: true as const,
+			resources: custom
+				.filter((resource) => resource.type === 'git' && !!resource.url && !!resource.branch)
+				.map((resource) => ({
+					name: resource.name,
+					displayName: resource.displayName,
+					type: resource.type,
+					url: resource.url!,
+					branch: resource.branch!,
+					searchPath: resource.searchPath,
+					specialNotes: resource.specialNotes,
+					isGlobal: false as const
+				}))
+		};
 	}
 });
 
@@ -609,9 +647,11 @@ export const sync = action({
 		const projectId = projectIdResult.value;
 
 		// Get current resources for this project
-		const existingResources = await ctx.runQuery(internal.resources.listByProject, {
-			projectId
-		});
+		const existingResources = (
+			await ctx.runQuery(internal.resources.listByProject, {
+				projectId
+			})
+		).filter((resource) => resource.visibility !== 'private');
 
 		const synced: string[] = [];
 		const errors: string[] = [];
@@ -620,14 +660,15 @@ export const sync = action({
 		// Process each resource in the config
 		for (const localResource of config.resources) {
 			const existingResource = existingResources.find(
-				(r: { name: string; url: string; branch: string }) =>
-					r.name.toLowerCase() === localResource.name.toLowerCase()
+				(r) => r.name.toLowerCase() === localResource.name.toLowerCase()
 			);
 
-			if (existingResource) {
+			if (existingResource && existingResource.url) {
+				const existingBranch = existingResource.branch ?? 'main';
+
 				// Check for conflicts
 				const urlMatch = existingResource.url === localResource.url;
-				const branchMatch = existingResource.branch === localResource.branch;
+				const branchMatch = existingBranch === localResource.branch;
 
 				if (!urlMatch || !branchMatch) {
 					if (force) {
@@ -646,7 +687,7 @@ export const sync = action({
 						conflicts.push({
 							name: localResource.name,
 							local: { url: localResource.url, branch: localResource.branch },
-							remote: { url: existingResource.url, branch: existingResource.branch }
+							remote: { url: existingResource.url, branch: existingBranch }
 						});
 					}
 				}

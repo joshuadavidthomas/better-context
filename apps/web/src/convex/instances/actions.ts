@@ -10,6 +10,7 @@ import type { Doc, Id } from '../_generated/dataModel';
 import { action, internalAction, type ActionCtx } from '../_generated/server';
 import { AnalyticsEvents } from '../analyticsEvents';
 import { instances } from '../apiHelpers';
+import { inspectGitHubConnectionForClerkUser } from '../githubAuth';
 import {
 	WebAuthError,
 	WebConfigMissingError,
@@ -31,15 +32,31 @@ const instanceArgs = { instanceId: v.id('instances') };
 
 type ResourceConfig = {
 	name: string;
-	type: 'git';
-	url: string;
-	branch: string;
-	searchPath?: string;
 	specialNotes?: string;
-};
+} & (
+	| {
+			type: 'git';
+			url: string;
+			branch: string;
+			searchPath?: string;
+			gitProvider?: 'github' | 'generic';
+			visibility?: 'public' | 'private';
+			authSource?: 'clerk_github_oauth';
+	  }
+	| {
+			type: 'npm';
+			package: string;
+			version?: string;
+	  }
+);
 
 type InstalledVersions = {
 	btcaVersion?: string;
+};
+
+type PreviewAccess = {
+	serverUrl: string;
+	previewToken?: string;
 };
 
 let daytonaInstance: Daytona | null = null;
@@ -94,14 +111,24 @@ function generateBtcaConfig(resources: ResourceConfig[]): string {
 	return JSON.stringify(
 		{
 			$schema: 'https://btca.dev/btca.schema.json',
-			resources: resources.map((resource) => ({
-				name: resource.name,
-				type: resource.type,
-				url: resource.url,
-				branch: resource.branch,
-				searchPath: resource.searchPath,
-				specialNotes: resource.specialNotes
-			})),
+			resources: resources.map((resource) =>
+				resource.type === 'git'
+					? {
+							name: resource.name,
+							type: resource.type,
+							url: resource.url,
+							branch: resource.branch || 'main',
+							searchPath: resource.searchPath,
+							specialNotes: resource.specialNotes
+						}
+					: {
+							name: resource.name,
+							type: resource.type,
+							package: resource.package,
+							version: resource.version,
+							specialNotes: resource.specialNotes
+						}
+			),
 			model: DEFAULT_MODEL,
 			provider: DEFAULT_PROVIDER
 		},
@@ -223,23 +250,40 @@ const formatUserMessage = (operation: string, step: string | undefined, detail?:
 async function getResourceConfigs(
 	ctx: ActionCtx,
 	instanceId: Id<'instances'>,
-	projectId?: Id<'projects'>
+	projectId?: Id<'projects'>,
+	includePrivate = true
 ): Promise<ResourceConfig[]> {
 	// If projectId is provided, get project-specific resources
 	// Otherwise fall back to instance-level resources (for backwards compatibility)
 	const resources = projectId
-		? await ctx.runQuery(internal.resources.listAvailableForProject, { projectId })
-		: await ctx.runQuery(internal.resources.listAvailableInternal, { instanceId });
+		? await ctx.runQuery(internal.resources.listAvailableForProject, { projectId, includePrivate })
+		: await ctx.runQuery(internal.resources.listAvailableInternal, { instanceId, includePrivate });
 
 	const merged = new Map<string, ResourceConfig>();
 	for (const resource of [...resources.global, ...resources.custom]) {
+		if (resource.type === 'npm' && resource.package) {
+			merged.set(resource.name, {
+				name: resource.name,
+				type: 'npm',
+				package: resource.package,
+				version: resource.version ?? undefined,
+				specialNotes: resource.specialNotes ?? undefined
+			});
+			continue;
+		}
+
+		if (!resource.url) continue;
+
 		merged.set(resource.name, {
 			name: resource.name,
 			type: 'git',
 			url: resource.url,
-			branch: resource.branch,
+			branch: resource.branch ?? 'main',
 			searchPath: resource.searchPath ?? undefined,
-			specialNotes: resource.specialNotes ?? undefined
+			specialNotes: resource.specialNotes ?? undefined,
+			gitProvider: 'gitProvider' in resource ? (resource.gitProvider ?? undefined) : undefined,
+			visibility: 'visibility' in resource ? (resource.visibility ?? undefined) : undefined,
+			authSource: 'authSource' in resource ? (resource.authSource ?? undefined) : undefined
 		});
 	}
 	return [...merged.values()];
@@ -267,6 +311,46 @@ async function requireInstanceResult(
 async function uploadBtcaConfig(sandbox: Sandbox, resources: ResourceConfig[]): Promise<void> {
 	const config = generateBtcaConfig(resources);
 	await sandbox.fs.uploadFile(Buffer.from(config), '/root/btca.config.jsonc');
+}
+
+const requiresGitHubAuth = (resources: ResourceConfig[]) =>
+	resources.some(
+		(resource) =>
+			resource.type === 'git' &&
+			resource.gitProvider === 'github' &&
+			resource.visibility === 'private' &&
+			resource.authSource === 'clerk_github_oauth'
+	);
+
+async function syncGitHubAuth(sandbox: Sandbox, clerkUserId: string, resources: ResourceConfig[]) {
+	if (!requiresGitHubAuth(resources)) {
+		await sandbox.process.executeCommand('rm -f /root/.netrc');
+		return;
+	}
+
+	const connection = await inspectGitHubConnectionForClerkUser(clerkUserId);
+	if (connection.status === 'disconnected') {
+		throw new WebAuthError({
+			message: 'Connect GitHub in your profile before using private GitHub repositories.',
+			code: 'UNAUTHORIZED'
+		});
+	}
+
+	if (connection.status === 'missing_scope') {
+		throw new WebAuthError({
+			message: 'Reconnect GitHub with private repository access before using private repos.',
+			code: 'FORBIDDEN'
+		});
+	}
+
+	const netrc = [
+		`machine github.com`,
+		`login x-access-token`,
+		`password ${connection.token}`,
+		''
+	].join('\n');
+	await sandbox.fs.uploadFile(Buffer.from(netrc), '/root/.netrc');
+	await sandbox.process.executeCommand('chmod 600 /root/.netrc');
 }
 
 async function getBtcaLogTail(sandbox: Sandbox, lines = 80) {
@@ -304,7 +388,7 @@ async function waitForBtcaServer(sandbox: Sandbox, maxRetries = 15) {
 	return { ok: false, attempts: maxRetries, lastStatus, lastError };
 }
 
-async function startBtcaServer(sandbox: Sandbox): Promise<string> {
+async function startBtcaServer(sandbox: Sandbox): Promise<PreviewAccess> {
 	try {
 		await sandbox.process.createSession(BTCA_SERVER_SESSION);
 	} catch {
@@ -333,7 +417,10 @@ async function startBtcaServer(sandbox: Sandbox): Promise<string> {
 
 	try {
 		const previewInfo = await sandbox.getPreviewLink(BTCA_SERVER_PORT);
-		return previewInfo.url;
+		return {
+			serverUrl: previewInfo.url,
+			previewToken: previewInfo.token || undefined
+		};
 	} catch (error) {
 		throw attachErrorContext(error, { step: 'start_btca' });
 	}
@@ -415,12 +502,16 @@ export const provision = action({
 							NODE_ENV: 'production',
 							OPENCODE_API_KEY: requireEnv('OPENCODE_API_KEY')
 						},
-						public: true
+						public: false
 					})
 				)
 			);
 			sandbox = createdSandbox;
 
+			step = 'upload_config';
+			unwrapInstance(
+				await withStep(step, () => syncGitHubAuth(createdSandbox, instance.clerkId, resources))
+			);
 			step = 'upload_config';
 			unwrapInstance(await withStep(step, () => uploadBtcaConfig(createdSandbox, resources)));
 
@@ -513,10 +604,12 @@ export const provision = action({
 export const wake = action({
 	args: {
 		instanceId: v.id('instances'),
-		projectId: v.optional(v.id('projects'))
+		projectId: v.optional(v.id('projects')),
+		includePrivate: v.optional(v.boolean())
 	},
 	returns: v.object({ serverUrl: v.string() }),
-	handler: async (ctx, args) => wakeInstanceInternal(ctx, args.instanceId, args.projectId)
+	handler: async (ctx, args) =>
+		wakeInstanceInternal(ctx, args.instanceId, args.projectId, args.includePrivate ?? true)
 });
 
 export const stop = action({
@@ -629,12 +722,15 @@ async function requireAuthenticatedInstanceResult(
 async function createSandboxFromScratch(
 	ctx: ActionCtx,
 	instanceId: Id<'instances'>,
-	instance: Doc<'instances'>
+	instance: Doc<'instances'>,
+	includePrivate = true
 ): Promise<{ sandbox: Sandbox; serverUrl: string }> {
 	requireEnv('OPENCODE_API_KEY');
 
 	let step = 'load_resources';
-	const resources = unwrapInstance(await withStep(step, () => getResourceConfigs(ctx, instanceId)));
+	const resources = unwrapInstance(
+		await withStep(step, () => getResourceConfigs(ctx, instanceId, undefined, includePrivate))
+	);
 	const daytona = getDaytona();
 	step = 'create_sandbox';
 	const sandbox = unwrapInstance(
@@ -646,15 +742,17 @@ async function createSandboxFromScratch(
 					NODE_ENV: 'production',
 					OPENCODE_API_KEY: requireEnv('OPENCODE_API_KEY')
 				},
-				public: true
+				public: false
 			})
 		)
 	);
 
 	step = 'upload_config';
+	unwrapInstance(await withStep(step, () => syncGitHubAuth(sandbox, instance.clerkId, resources)));
+	step = 'upload_config';
 	unwrapInstance(await withStep(step, () => uploadBtcaConfig(sandbox, resources)));
 	step = 'start_btca';
-	const serverUrl = unwrapInstance(await withStep(step, () => startBtcaServer(sandbox)));
+	const serverUrl = unwrapInstance(await withStep(step, () => startBtcaServer(sandbox))).serverUrl;
 	step = 'get_versions';
 	const versions = unwrapInstance(await withStep(step, () => getInstalledVersions(sandbox)));
 
@@ -681,7 +779,8 @@ async function createSandboxFromScratch(
 async function wakeInstanceInternal(
 	ctx: ActionCtx,
 	instanceId: Id<'instances'>,
-	projectId?: Id<'projects'>
+	projectId?: Id<'projects'>,
+	includePrivate = true
 ): Promise<{ serverUrl: string }> {
 	const instance = await requireInstance(ctx, instanceId);
 	const wakeStartedAt = Date.now();
@@ -707,14 +806,14 @@ async function wakeInstanceInternal(
 
 		if (!instance.sandboxId) {
 			step = 'create_sandbox';
-			const result = await createSandboxFromScratch(ctx, instanceId, instance);
+			const result = await createSandboxFromScratch(ctx, instanceId, instance, includePrivate);
 			serverUrl = result.serverUrl;
 			sandboxId = result.sandbox.id;
 		} else {
 			// Use project-specific resources if projectId is provided
 			step = 'load_resources';
 			const resources = unwrapInstance(
-				await withStep(step, () => getResourceConfigs(ctx, instanceId, projectId))
+				await withStep(step, () => getResourceConfigs(ctx, instanceId, projectId, includePrivate))
 			);
 			const daytona = getDaytona();
 			step = 'get_sandbox';
@@ -723,9 +822,13 @@ async function wakeInstanceInternal(
 			step = 'start_sandbox';
 			unwrapInstance(await withStep(step, () => ensureSandboxStarted(sandbox)));
 			step = 'upload_config';
+			unwrapInstance(
+				await withStep(step, () => syncGitHubAuth(sandbox, instance.clerkId, resources))
+			);
+			step = 'upload_config';
 			unwrapInstance(await withStep(step, () => uploadBtcaConfig(sandbox, resources)));
 			step = 'start_btca';
-			serverUrl = unwrapInstance(await withStep(step, () => startBtcaServer(sandbox)));
+			serverUrl = unwrapInstance(await withStep(step, () => startBtcaServer(sandbox))).serverUrl;
 			sandboxId = instance.sandboxId;
 		}
 
@@ -814,6 +917,10 @@ async function updateInstanceInternal(
 
 		await updatePackages(sandbox);
 		step = 'upload_config';
+		unwrapInstance(
+			await withStep(step, () => syncGitHubAuth(sandbox, instance.clerkId, resources))
+		);
+		step = 'upload_config';
 		unwrapInstance(await withStep(step, () => uploadBtcaConfig(sandbox, resources)));
 		step = 'get_versions';
 		const versions = unwrapInstance(await withStep(step, () => getInstalledVersions(sandbox)));
@@ -840,7 +947,7 @@ async function updateInstanceInternal(
 			await sandbox.process.executeCommand('pkill -f "btca serve" || true');
 			const serverUrl = unwrapInstance(
 				await withStep('start_btca', () => startBtcaServer(sandbox))
-			);
+			).serverUrl;
 			await ctx.runMutation(instanceMutations.setServerUrl, { instanceId, serverUrl });
 			await ctx.runMutation(instanceMutations.updateState, { instanceId, state: 'running' });
 			return { serverUrl };
@@ -986,7 +1093,8 @@ export const resetMyInstance = action({
 export const syncResources = internalAction({
 	args: {
 		instanceId: v.id('instances'),
-		projectId: v.optional(v.id('projects'))
+		projectId: v.optional(v.id('projects')),
+		includePrivate: v.optional(v.boolean())
 	},
 	returns: v.object({ synced: v.boolean() }),
 	handler: async (ctx, args): Promise<{ synced: boolean }> => {
@@ -997,7 +1105,12 @@ export const syncResources = internalAction({
 
 		try {
 			// Get project-specific resources if projectId is provided
-			const resources = await getResourceConfigs(ctx, args.instanceId, args.projectId);
+			const resources = await getResourceConfigs(
+				ctx,
+				args.instanceId,
+				args.projectId,
+				args.includePrivate ?? true
+			);
 			const daytona = getDaytona();
 			const sandbox = await daytona.get(instance.sandboxId);
 
@@ -1006,12 +1119,17 @@ export const syncResources = internalAction({
 			}
 
 			// Upload the config and reload the server
+			await syncGitHubAuth(sandbox, instance.clerkId, resources);
 			await uploadBtcaConfig(sandbox, resources);
+			const previewInfo = await sandbox.getPreviewLink(BTCA_SERVER_PORT);
 
 			// Tell the btca server to reload its config
-			const reloadResponse = await fetch(`${instance.serverUrl}/reload-config`, {
+			const reloadResponse = await fetch(`${previewInfo.url}/reload-config`, {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json' }
+				headers: {
+					'Content-Type': 'application/json',
+					...(previewInfo.token ? { 'x-daytona-preview-token': previewInfo.token } : {})
+				}
 			});
 
 			if (!reloadResponse.ok) {
@@ -1024,6 +1142,29 @@ export const syncResources = internalAction({
 			console.error('Failed to sync resources:', getErrorMessage(error));
 			return { synced: false };
 		}
+	}
+});
+
+export const getPreviewAccess = internalAction({
+	args: instanceArgs,
+	returns: v.object({
+		serverUrl: v.string(),
+		previewToken: v.optional(v.string())
+	}),
+	handler: async (ctx, args): Promise<PreviewAccess> => {
+		const instance = await requireInstance(ctx, args.instanceId);
+		if (!instance.sandboxId) {
+			throw new WebUnhandledError({ message: 'Instance does not have a sandbox' });
+		}
+
+		const daytona = getDaytona();
+		const sandbox = await daytona.get(instance.sandboxId);
+		const previewInfo = await sandbox.getPreviewLink(BTCA_SERVER_PORT);
+
+		return {
+			serverUrl: previewInfo.url,
+			previewToken: previewInfo.token || undefined
+		};
 	}
 });
 

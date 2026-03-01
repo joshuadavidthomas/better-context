@@ -107,6 +107,8 @@ export const addResourceInternal = internalMutation({
 			branch: args.branch,
 			searchPath: args.searchPath,
 			specialNotes: args.specialNotes,
+			gitProvider: 'github',
+			visibility: 'public',
 			createdAt: Date.now()
 		});
 	}
@@ -148,7 +150,10 @@ export const updateResourceInternal = internalMutation({
 			url: args.url,
 			branch: args.branch,
 			searchPath: args.searchPath,
-			specialNotes: args.specialNotes
+			specialNotes: args.specialNotes,
+			gitProvider: 'github',
+			visibility: 'public',
+			authSource: undefined
 		});
 		return null;
 	}
