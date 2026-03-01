@@ -19,7 +19,8 @@ const serverAwareSubcommands = new Set([
 	'disconnect',
 	'mcp',
 	'remove',
-	'resources'
+	'resources',
+	'status'
 ]);
 
 const askCompatibilityFlags = new Set([

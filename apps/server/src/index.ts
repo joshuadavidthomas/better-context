@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { createAgentService } from './agent/service.ts';
 import { createCollectionsService } from './collections/service.ts';
 import { load as loadConfig } from './config/index.ts';
+import { runContext } from './context/index.ts';
 import { toHttpErrorPayload } from './effect/errors.ts';
 import { createServerRuntime } from './effect/runtime.ts';
 import * as ServerServices from './effect/services.ts';
@@ -472,7 +473,10 @@ export const startServer = async (options: StartServerOptions = {}): Promise<Ser
 
 	const server = Bun.serve({
 		port: requestedPort,
-		fetch: (request) => handler(request, requestContext),
+		fetch: (request) =>
+			runContext({ requestId: crypto.randomUUID(), txDepth: 0 }, () =>
+				handler(request, requestContext)
+			),
 		idleTimeout: 60
 	});
 
