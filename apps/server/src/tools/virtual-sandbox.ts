@@ -1,10 +1,6 @@
 import * as path from 'node:path';
 
-import {
-	existsInVirtualFs,
-	realpathVirtualFs,
-	statVirtualFs
-} from '../vfs/virtual-fs.ts';
+import { existsInVirtualFs, realpathVirtualFs, statVirtualFs } from '../vfs/virtual-fs.ts';
 
 const posix = path.posix;
 
@@ -58,7 +54,11 @@ export const resolveSandboxPathWithSymlinks = async (
 	}
 };
 
-export const sandboxPathExists = async (basePath: string, requestedPath: string, vfsId?: string) => {
+export const sandboxPathExists = async (
+	basePath: string,
+	requestedPath: string,
+	vfsId?: string
+) => {
 	try {
 		const resolved = resolveSandboxPath(basePath, requestedPath);
 		return await existsInVirtualFs(resolved, vfsId);
@@ -81,7 +81,11 @@ export const sandboxPathIsDirectory = async (
 	}
 };
 
-export const sandboxPathIsFile = async (basePath: string, requestedPath: string, vfsId?: string) => {
+export const sandboxPathIsFile = async (
+	basePath: string,
+	requestedPath: string,
+	vfsId?: string
+) => {
 	try {
 		const resolved = resolveSandboxPath(basePath, requestedPath);
 		const stats = await statVirtualFs(resolved, vfsId);

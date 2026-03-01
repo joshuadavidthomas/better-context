@@ -196,7 +196,10 @@ export const runAskCommand = async (args: {
 								});
 							}
 
-							const cleanedQuery = stripResolvedMentionTokens(questionText, mentionResolution.names);
+							const cleanedQuery = stripResolvedMentionTokens(
+								questionText,
+								mentionResolution.names
+							);
 							console.log('loading resources...');
 
 							const response = await askQuestionStream(server.url, {

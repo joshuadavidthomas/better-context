@@ -20,10 +20,7 @@ const MAX_LINE_LENGTH = 2000;
 
 export const ReadToolParameters = z.object({
 	path: z.string().describe('The absolute path to the file to read'),
-	offset: z.coerce
-		.number()
-		.optional()
-		.describe('The line number to start reading from (0-based)'),
+	offset: z.coerce.number().optional().describe('The line number to start reading from (0-based)'),
 	limit: z.coerce.number().optional().describe('The number of lines to read (defaults to 2000)')
 });
 

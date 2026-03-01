@@ -39,10 +39,7 @@ describe('Resources.resolveResourceDefinition', () => {
 	});
 
 	it('creates anonymous npm resources from npm references', () => {
-		const definition = resolveResourceDefinition(
-			'npm:@types/node@22.10.1',
-			() => undefined
-		);
+		const definition = resolveResourceDefinition('npm:@types/node@22.10.1', () => undefined);
 		expect(definition.type).toBe('npm');
 		if (definition.type === 'npm') {
 			expect(definition.package).toBe('@types/node');

@@ -110,235 +110,232 @@ const readJsoncFile = async (filePath: string) => {
 };
 
 export function getAuthPath(): string {
-		return `${expandHome(GLOBAL_CONFIG_DIR)}/${REMOTE_AUTH_FILENAME}`;
-	}
+	return `${expandHome(GLOBAL_CONFIG_DIR)}/${REMOTE_AUTH_FILENAME}`;
+}
 
-	/**
-	 * Get the path to the remote config file in the current directory
-	 */
+/**
+ * Get the path to the remote config file in the current directory
+ */
 export function getConfigPath(cwd: string = process.cwd()): string {
-		return `${cwd}/${REMOTE_CONFIG_FILENAME}`;
-	}
+	return `${cwd}/${REMOTE_CONFIG_FILENAME}`;
+}
 
-	/**
-	 * Check if the user is authenticated with remote
-	 */
+/**
+ * Check if the user is authenticated with remote
+ */
 export async function isAuthenticated(): Promise<boolean> {
-		const authPath = getAuthPath();
-		const parsed = await readJsonFile(authPath);
-		if (!parsed) return false;
-		const authResult = RemoteAuthSchema.safeParse(parsed);
-		return authResult.success && !!authResult.data.apiKey;
-	}
+	const authPath = getAuthPath();
+	const parsed = await readJsonFile(authPath);
+	if (!parsed) return false;
+	const authResult = RemoteAuthSchema.safeParse(parsed);
+	return authResult.success && !!authResult.data.apiKey;
+}
 
-	/**
-	 * Load the remote auth credentials
-	 */
+/**
+ * Load the remote auth credentials
+ */
 export async function loadAuth(): Promise<RemoteAuth | null> {
-		const authPath = getAuthPath();
-		const parsed = await readJsonFile(authPath);
-		if (!parsed) return null;
-		const authResult = RemoteAuthSchema.safeParse(parsed);
-		if (!authResult.success) {
-			metricsError('remote.auth.invalid', { path: authPath, error: authResult.error.message });
-			return null;
-		}
-		return authResult.data;
+	const authPath = getAuthPath();
+	const parsed = await readJsonFile(authPath);
+	if (!parsed) return null;
+	const authResult = RemoteAuthSchema.safeParse(parsed);
+	if (!authResult.success) {
+		metricsError('remote.auth.invalid', { path: authPath, error: authResult.error.message });
+		return null;
 	}
+	return authResult.data;
+}
 
-	/**
-	 * Save remote auth credentials
-	 */
+/**
+ * Save remote auth credentials
+ */
 export async function saveAuth(auth: RemoteAuth): Promise<void> {
-		const authPath = getAuthPath();
-		const configDir = path.dirname(authPath);
-		try {
-			await fs.mkdir(configDir, { recursive: true });
-			await Bun.write(authPath, JSON.stringify(auth, null, 2));
-			await fs.chmod(authPath, 0o600);
-		} catch (cause) {
-			throw new RemoteConfigError({
-				message: `Failed to save remote auth to: "${authPath}"`,
-				hint: 'Check that you have write permissions to the config directory.',
-				cause
-			});
-		}
-		metricsInfo('remote.auth.saved', { path: authPath });
+	const authPath = getAuthPath();
+	const configDir = path.dirname(authPath);
+	try {
+		await fs.mkdir(configDir, { recursive: true });
+		await Bun.write(authPath, JSON.stringify(auth, null, 2));
+		await fs.chmod(authPath, 0o600);
+	} catch (cause) {
+		throw new RemoteConfigError({
+			message: `Failed to save remote auth to: "${authPath}"`,
+			hint: 'Check that you have write permissions to the config directory.',
+			cause
+		});
 	}
+	metricsInfo('remote.auth.saved', { path: authPath });
+}
 
-	/**
-	 * Delete remote auth credentials (unlink)
-	 */
+/**
+ * Delete remote auth credentials (unlink)
+ */
 export async function deleteAuth(): Promise<void> {
-		const authPath = getAuthPath();
-		try {
-			await fs.unlink(authPath);
-			metricsInfo('remote.auth.deleted', { path: authPath });
-		} catch {
-			return;
-		}
+	const authPath = getAuthPath();
+	try {
+		await fs.unlink(authPath);
+		metricsInfo('remote.auth.deleted', { path: authPath });
+	} catch {
+		return;
 	}
+}
 
-	/**
-	 * Check if a remote config file exists in the current directory
-	 */
+/**
+ * Check if a remote config file exists in the current directory
+ */
 export async function configExists(cwd: string = process.cwd()): Promise<boolean> {
-		const configPath = getConfigPath(cwd);
-		return Bun.file(configPath).exists();
-	}
+	const configPath = getConfigPath(cwd);
+	return Bun.file(configPath).exists();
+}
 
-	/**
-	 * Load the remote config from the current directory
-	 */
+/**
+ * Load the remote config from the current directory
+ */
 export async function loadConfig(cwd: string = process.cwd()): Promise<RemoteConfig | null> {
-		const configPath = getConfigPath(cwd);
+	const configPath = getConfigPath(cwd);
 
-		const parsed = await readJsoncFile(configPath);
-		if (!parsed) return null;
+	const parsed = await readJsoncFile(configPath);
+	if (!parsed) return null;
 
-		const parsedResult = RemoteConfigSchema.safeParse(parsed);
-		if (!parsedResult.success) {
-			const issues = parsedResult.error.issues
-				.map((i) => `  - ${i.path.join('.')}: ${i.message}`)
-				.join('\n');
-			throw new RemoteConfigError({
-				message: `Invalid remote config structure:\n${issues}`,
-				hint: `${CommonHints.CHECK_CONFIG} Required field: "project" (string).`,
-				cause: parsedResult.error
-			});
-		}
-
-		metricsInfo('remote.config.loaded', {
-			path: configPath,
-			project: parsedResult.data.project,
-			resourceCount: parsedResult.data.resources.length
-		});
-
-		return parsedResult.data;
-	}
-
-	/**
-	 * Save the remote config to the current directory
-	 */
-export async function saveConfig(
-		config: RemoteConfig,
-		cwd: string = process.cwd()
-	): Promise<void> {
-		const configPath = getConfigPath(cwd);
-
-		const toSave = {
-			$schema: REMOTE_CONFIG_SCHEMA_URL,
-			...config
-		};
-
-		try {
-			await Bun.write(configPath, JSON.stringify(toSave, null, '\t'));
-		} catch (cause) {
-			throw new RemoteConfigError({
-				message: `Failed to save remote config to: "${configPath}"`,
-				hint: 'Check that you have write permissions to the directory.',
-				cause
-			});
-		}
-		metricsInfo('remote.config.saved', {
-			path: configPath,
-			project: config.project,
-			resourceCount: config.resources.length
+	const parsedResult = RemoteConfigSchema.safeParse(parsed);
+	if (!parsedResult.success) {
+		const issues = parsedResult.error.issues
+			.map((i) => `  - ${i.path.join('.')}: ${i.message}`)
+			.join('\n');
+		throw new RemoteConfigError({
+			message: `Invalid remote config structure:\n${issues}`,
+			hint: `${CommonHints.CHECK_CONFIG} Required field: "project" (string).`,
+			cause: parsedResult.error
 		});
 	}
 
-	/**
-	 * Create a new remote config with defaults
-	 */
+	metricsInfo('remote.config.loaded', {
+		path: configPath,
+		project: parsedResult.data.project,
+		resourceCount: parsedResult.data.resources.length
+	});
+
+	return parsedResult.data;
+}
+
+/**
+ * Save the remote config to the current directory
+ */
+export async function saveConfig(config: RemoteConfig, cwd: string = process.cwd()): Promise<void> {
+	const configPath = getConfigPath(cwd);
+
+	const toSave = {
+		$schema: REMOTE_CONFIG_SCHEMA_URL,
+		...config
+	};
+
+	try {
+		await Bun.write(configPath, JSON.stringify(toSave, null, '\t'));
+	} catch (cause) {
+		throw new RemoteConfigError({
+			message: `Failed to save remote config to: "${configPath}"`,
+			hint: 'Check that you have write permissions to the directory.',
+			cause
+		});
+	}
+	metricsInfo('remote.config.saved', {
+		path: configPath,
+		project: config.project,
+		resourceCount: config.resources.length
+	});
+}
+
+/**
+ * Create a new remote config with defaults
+ */
 export function createDefaultConfig(projectName: string): RemoteConfig {
-		return {
-			project: projectName,
-			model: 'claude-haiku',
-			resources: []
-		};
-	}
+	return {
+		project: projectName,
+		model: 'claude-haiku',
+		resources: []
+	};
+}
 
-	/**
-	 * Add a resource to the remote config
-	 */
+/**
+ * Add a resource to the remote config
+ */
 export async function addResource(
-		resource: GitResource,
-		cwd: string = process.cwd()
-	): Promise<RemoteConfig> {
-		let config = await loadConfig(cwd);
+	resource: GitResource,
+	cwd: string = process.cwd()
+): Promise<RemoteConfig> {
+	let config = await loadConfig(cwd);
 
-		if (!config) {
-			throw new RemoteConfigError({
-				message: 'No remote config found in current directory',
-				hint: `Create a remote config first with "btca remote init" or create a ${REMOTE_CONFIG_FILENAME} file.`
-			});
-		}
-
-		// Check for duplicate
-		if (config.resources.some((r) => r.name === resource.name)) {
-			throw new RemoteConfigError({
-				message: `Resource "${resource.name}" already exists in remote config`,
-				hint: `Remove the existing resource first or use a different name.`
-			});
-		}
-
-		config = {
-			...config,
-			resources: [...config.resources, resource]
-		};
-
-		await saveConfig(config, cwd);
-		return config;
+	if (!config) {
+		throw new RemoteConfigError({
+			message: 'No remote config found in current directory',
+			hint: `Create a remote config first with "btca remote init" or create a ${REMOTE_CONFIG_FILENAME} file.`
+		});
 	}
 
-	/**
-	 * Remove a resource from the remote config
-	 */
+	// Check for duplicate
+	if (config.resources.some((r) => r.name === resource.name)) {
+		throw new RemoteConfigError({
+			message: `Resource "${resource.name}" already exists in remote config`,
+			hint: `Remove the existing resource first or use a different name.`
+		});
+	}
+
+	config = {
+		...config,
+		resources: [...config.resources, resource]
+	};
+
+	await saveConfig(config, cwd);
+	return config;
+}
+
+/**
+ * Remove a resource from the remote config
+ */
 export async function removeResource(
-		name: string,
-		cwd: string = process.cwd()
-	): Promise<RemoteConfig> {
-		let config = await loadConfig(cwd);
+	name: string,
+	cwd: string = process.cwd()
+): Promise<RemoteConfig> {
+	let config = await loadConfig(cwd);
 
-		if (!config) {
-			throw new RemoteConfigError({
-				message: 'No remote config found in current directory',
-				hint: `Create a remote config first with "btca remote init" or create a ${REMOTE_CONFIG_FILENAME} file.`
-			});
-		}
-
-		const existingIndex = config.resources.findIndex((r) => r.name === name);
-		if (existingIndex === -1) {
-			throw new RemoteConfigError({
-				message: `Resource "${name}" not found in remote config`,
-				hint: `Available resources: ${config.resources.map((r) => r.name).join(', ') || 'none'}`
-			});
-		}
-
-		config = {
-			...config,
-			resources: config.resources.filter((r) => r.name !== name)
-		};
-
-		await saveConfig(config, cwd);
-		return config;
+	if (!config) {
+		throw new RemoteConfigError({
+			message: 'No remote config found in current directory',
+			hint: `Create a remote config first with "btca remote init" or create a ${REMOTE_CONFIG_FILENAME} file.`
+		});
 	}
 
-	/**
-	 * Update the model in the remote config
-	 */
-export async function updateModel(
-		model: RemoteModelId,
-		cwd: string = process.cwd()
-	): Promise<RemoteConfig> {
-		let config = await loadConfig(cwd);
+	const existingIndex = config.resources.findIndex((r) => r.name === name);
+	if (existingIndex === -1) {
+		throw new RemoteConfigError({
+			message: `Resource "${name}" not found in remote config`,
+			hint: `Available resources: ${config.resources.map((r) => r.name).join(', ') || 'none'}`
+		});
+	}
 
-		if (!config) {
-			throw new RemoteConfigError({
-				message: 'No remote config found in current directory',
-				hint: `Create a remote config first with "btca remote init" or create a ${REMOTE_CONFIG_FILENAME} file.`
-			});
-		}
+	config = {
+		...config,
+		resources: config.resources.filter((r) => r.name !== name)
+	};
+
+	await saveConfig(config, cwd);
+	return config;
+}
+
+/**
+ * Update the model in the remote config
+ */
+export async function updateModel(
+	model: RemoteModelId,
+	cwd: string = process.cwd()
+): Promise<RemoteConfig> {
+	let config = await loadConfig(cwd);
+
+	if (!config) {
+		throw new RemoteConfigError({
+			message: 'No remote config found in current directory',
+			hint: `Create a remote config first with "btca remote init" or create a ${REMOTE_CONFIG_FILENAME} file.`
+		});
+	}
 
 	config = { ...config, model };
 	await saveConfig(config, cwd);

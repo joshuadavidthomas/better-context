@@ -171,7 +171,8 @@ export const createResourcesService = (config: ConfigServiceShape): ResourcesSer
 
 			if (isGitResource(definition)) {
 				return yield* Effect.tryPromise({
-					try: () => loadGitResource(definitionToGitArgs(definition, config.resourcesDirectory, quiet)),
+					try: () =>
+						loadGitResource(definitionToGitArgs(definition, config.resourcesDirectory, quiet)),
 					catch: (cause) =>
 						cause instanceof ResourceError
 							? cause

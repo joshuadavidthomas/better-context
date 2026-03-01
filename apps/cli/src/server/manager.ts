@@ -85,8 +85,6 @@ export const withServerEffect = <A>(
 	options: EnsureServerOptions,
 	use: (server: ServerManager) => Effect.Effect<A, unknown>
 ): Effect.Effect<A, unknown> =>
-	Effect.acquireUseRelease(
-		ensureServerEffect(options),
-		use,
-		(server) => Effect.sync(() => server.stop())
+	Effect.acquireUseRelease(ensureServerEffect(options), use, (server) =>
+		Effect.sync(() => server.stop())
 	);

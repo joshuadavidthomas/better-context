@@ -100,7 +100,9 @@ export const runRemoveCommand = async (args: {
 
 					if (!names.includes(resourceName)) {
 						yield* Effect.fail(
-							new Error(`Resource "${resourceName}" not found. Available resources: ${names.join(', ')}`)
+							new Error(
+								`Resource "${resourceName}" not found. Available resources: ${names.join(', ')}`
+							)
 						);
 					}
 

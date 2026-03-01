@@ -9,11 +9,7 @@ const CLI_DIR = fileURLToPath(new URL('..', import.meta.url));
 const textFromProcessOutput = (value: Uint8Array | string | undefined) =>
 	typeof value === 'string' ? value : value ? new TextDecoder().decode(value) : '';
 
-const runCli = (
-	argv: string[],
-	timeout = 10_000,
-	env?: Record<string, string>
-) => {
+const runCli = (argv: string[], timeout = 10_000, env?: Record<string, string>) => {
 	const result = Bun.spawnSync({
 		cmd: ['bun', 'run', 'src/index.ts', ...argv],
 		cwd: CLI_DIR,
@@ -133,10 +129,7 @@ describe('cli dispatch', () => {
 		const stub = createStubServer();
 		try {
 			const exitCode = await withTempHome(() =>
-				runEffectCli(
-					['bun', 'src/index.ts', '--server', stub.url, 'status'],
-					'test'
-				)
+				runEffectCli(['bun', 'src/index.ts', '--server', stub.url, 'status'], 'test')
 			);
 			expect(exitCode).toBe(1);
 			expect(stub.requestPaths).toContain('/');

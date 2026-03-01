@@ -61,9 +61,7 @@ export async function copyToClipboard(text: string) {
 		if (!xclipResult) {
 			const xselResult = await runClipboard(['xsel', '--clipboard', '--input']);
 			if (!xselResult) {
-				throw new Error(
-					'Failed to copy to clipboard: no compatible clipboard command succeeded.'
-				);
+				throw new Error('Failed to copy to clipboard: no compatible clipboard command succeeded.');
 			}
 		}
 	}

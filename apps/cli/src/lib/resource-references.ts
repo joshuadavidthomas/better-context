@@ -1,13 +1,22 @@
 type NamedResource = { name: string };
 
-const MENTION_REGEX = /(^|\s)@(\S+)/g;
+const MENTION_REGEX = /(^|[^\w@])@(\S+)/g;
+const TRAILING_MENTION_PUNCTUATION_REGEX = /[!?.,;:)\]}]+$/u;
+
+const splitMentionToken = (token: string) => {
+	const normalized = token.replace(TRAILING_MENTION_PUNCTUATION_REGEX, '');
+	return {
+		normalized,
+		suffix: token.slice(normalized.length)
+	};
+};
 
 export const extractMentionTokens = (input: string): string[] => {
 	const mentions: string[] = [];
 	let match: RegExpExecArray | null;
 
 	while ((match = MENTION_REGEX.exec(input)) !== null) {
-		const token = match[2]?.trim();
+		const token = match[2] ? splitMentionToken(match[2].trim()).normalized : '';
 		if (token) mentions.push(token);
 	}
 
@@ -15,7 +24,13 @@ export const extractMentionTokens = (input: string): string[] => {
 };
 
 export const stripMentionTokens = (input: string): string =>
-	input.replace(MENTION_REGEX, '$1').trim().replace(/\s+/g, ' ');
+	input
+		.replace(MENTION_REGEX, (match, prefix, token) => {
+			const { normalized, suffix } = splitMentionToken(token);
+			return normalized ? `${prefix}${suffix}` : match;
+		})
+		.trim()
+		.replace(/\s+/g, ' ');
 
 export const stripResolvedMentionTokens = (
 	input: string,
@@ -23,8 +38,9 @@ export const stripResolvedMentionTokens = (
 ): string => {
 	const resolvedSet = new Set(resolvedReferences.map((reference) => reference.toLowerCase()));
 	return input
-		.replace(/(^|[^\w@])@(\S+)/g, (match, prefix, mention) => {
-			return resolvedSet.has(mention.toLowerCase()) ? prefix : match;
+		.replace(MENTION_REGEX, (match, prefix, mention) => {
+			const { normalized, suffix } = splitMentionToken(mention);
+			return resolvedSet.has(normalized.toLowerCase()) ? `${prefix}${suffix}` : match;
 		})
 		.replace(/\s+/g, ' ')
 		.trim();

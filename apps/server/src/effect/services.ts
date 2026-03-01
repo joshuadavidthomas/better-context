@@ -12,9 +12,7 @@ export class ConfigService extends ServiceMap.Service<ConfigService, ConfigServi
 export class CollectionsService extends ServiceMap.Service<
 	CollectionsService,
 	CollectionsServiceShape
->()(
-	'btca-server/effect/CollectionsService'
-) {}
+>()('btca-server/effect/CollectionsService') {}
 
 export class AgentService extends ServiceMap.Service<AgentService, AgentServiceShape>()(
 	'btca-server/effect/AgentService'
@@ -60,9 +58,8 @@ export const getConfigSnapshot: Effect.Effect<ConfigSnapshot, never, ConfigServi
 	})
 );
 
-export const getResourcesSnapshot: Effect.Effect<ResourcesSnapshot, never, ConfigService> = Effect.map(
-	configService,
-	(config) => ({
+export const getResourcesSnapshot: Effect.Effect<ResourcesSnapshot, never, ConfigService> =
+	Effect.map(configService, (config) => ({
 		resources: config.resources.map((resource) => {
 			if (resource.type === 'git') {
 				return {
@@ -91,11 +88,12 @@ export const getResourcesSnapshot: Effect.Effect<ResourcesSnapshot, never, Confi
 				specialNotes: resource.specialNotes ?? null
 			};
 		})
-	})
-);
+	}));
 
-export const getDefaultResourceNames: Effect.Effect<string[], never, ConfigService> =
-	Effect.map(configService, (config) => config.resources.map((resource) => resource.name));
+export const getDefaultResourceNames: Effect.Effect<string[], never, ConfigService> = Effect.map(
+	configService,
+	(config) => config.resources.map((resource) => resource.name)
+);
 
 export const reloadConfig: Effect.Effect<void, unknown, ConfigService> = Effect.flatMap(
 	configService,
@@ -111,8 +109,11 @@ export const listProviders: Effect.Effect<
 export const loadCollection = (args: {
 	resourceNames: readonly string[];
 	quiet?: boolean;
-}): Effect.Effect<Awaited<ReturnType<CollectionsServiceShape['load']>>, unknown, CollectionsService> =>
-	Effect.flatMap(collectionsService, (collections) => collections.loadEffect(args));
+}): Effect.Effect<
+	Awaited<ReturnType<CollectionsServiceShape['load']>>,
+	unknown,
+	CollectionsService
+> => Effect.flatMap(collectionsService, (collections) => collections.loadEffect(args));
 
 export const askQuestion = (args: {
 	collection: Awaited<ReturnType<CollectionsServiceShape['load']>>;
@@ -140,9 +141,7 @@ export const addConfigResource = (
 ): Effect.Effect<ResourceDefinition, unknown, ConfigService> =>
 	Effect.flatMap(configService, (config) => config.addResourceEffect(resource));
 
-export const removeConfigResource = (
-	name: string
-): Effect.Effect<void, unknown, ConfigService> =>
+export const removeConfigResource = (name: string): Effect.Effect<void, unknown, ConfigService> =>
 	Effect.flatMap(configService, (config) => config.removeResourceEffect(name));
 
 export const clearConfigResources: Effect.Effect<

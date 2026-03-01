@@ -119,17 +119,17 @@ export const services = {
 				try {
 					yield* Effect.tryPromise(() =>
 						(async () => {
-						for await (const event of parseSSEStream(response)) {
-							if (signal.aborted) break;
-							if (event.type === 'error') {
-								throw new Error(formatTuiStreamError(event));
+							for await (const event of parseSSEStream(response)) {
+								if (signal.aborted) break;
+								if (event.type === 'error') {
+									throw new Error(formatTuiStreamError(event));
+								}
+								if (event.type === 'done') {
+									doneEvent = event;
+									continue;
+								}
+								processStreamEvent(event, chunksById, chunkOrder, onChunkUpdate);
 							}
-							if (event.type === 'done') {
-								doneEvent = event;
-								continue;
-							}
-							processStreamEvent(event, chunksById, chunkOrder, onChunkUpdate);
-						}
 						})()
 					);
 				} catch (error) {
@@ -173,9 +173,7 @@ export const services = {
 		providerOptions?: ProviderOptionsInput
 	): Promise<ModelUpdateResult> => {
 		return runCliEffect(
-			Effect.tryPromise(() =>
-				updateModelClient(getServerUrl(), provider, model, providerOptions)
-			)
+			Effect.tryPromise(() => updateModelClient(getServerUrl(), provider, model, providerOptions))
 		);
 	},
 

@@ -102,9 +102,7 @@ const fetchJson = async <T>(url: string, resourceName: string): Promise<T> => {
 		throw new ResourceError({
 			message: `Failed to fetch npm metadata for "${resourceName}" (${response.status})`,
 			hint:
-				response.status === 404
-					? 'Check that the npm package exists.'
-					: CommonHints.CHECK_NETWORK,
+				response.status === 404 ? 'Check that the npm package exists.' : CommonHints.CHECK_NETWORK,
 			cause: new Error(`Unexpected status ${response.status}`)
 		});
 	}

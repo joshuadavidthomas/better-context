@@ -79,19 +79,22 @@ const parseErrorResponse = (
 		return message;
 	};
 
-	return Effect.match(Effect.tryPromise(() => res.json() as Promise<unknown>), {
-		onFailure: () => new BtcaError(fallbackMessage),
-		onSuccess: (body) => {
-			if (!body || typeof body !== 'object') {
-				return new BtcaError(fallbackMessage);
+	return Effect.match(
+		Effect.tryPromise(() => res.json() as Promise<unknown>),
+		{
+			onFailure: () => new BtcaError(fallbackMessage),
+			onSuccess: (body) => {
+				if (!body || typeof body !== 'object') {
+					return new BtcaError(fallbackMessage);
+				}
+				const parsed = body as { error?: string; hint?: string; tag?: string };
+				return new BtcaError(normalizeMessage(parsed.error ?? fallbackMessage), {
+					hint: parsed.hint,
+					tag: parsed.tag
+				});
 			}
-			const parsed = body as { error?: string; hint?: string; tag?: string };
-			return new BtcaError(normalizeMessage(parsed.error ?? fallbackMessage), {
-				hint: parsed.hint,
-				tag: parsed.tag
-			});
 		}
-	});
+	);
 };
 
 const requestJson = <T>(
@@ -214,9 +217,7 @@ export async function askQuestionStream(
 	});
 
 	if (!res.ok) {
-		throw await Effect.runPromise(
-			parseErrorResponse(res, `Failed to ask question: ${res.status}`)
-		);
+		throw await Effect.runPromise(parseErrorResponse(res, `Failed to ask question: ${res.status}`));
 	}
 
 	return res;

@@ -118,7 +118,8 @@ const createTools = (basePath: string, vfsId?: string) => ({
 	}),
 
 	list: tool({
-		description: 'List the contents of a directory. Returns files and subdirectories with their types.',
+		description:
+			'List the contents of a directory. Returns files and subdirectories with their types.',
 		inputSchema: ListToolParameters,
 		execute: async (params: ListToolParametersType) => {
 			const result = await executeListTool(params, { basePath, vfsId });
@@ -174,7 +175,9 @@ export const runAgentLoop = async (options: AgentLoopOptions): Promise<AgentLoop
 		messages,
 		tools,
 		providerOptions:
-			providerId === 'openai' ? { openai: { instructions: systemPrompt, store: false } } : undefined,
+			providerId === 'openai'
+				? { openai: { instructions: systemPrompt, store: false } }
+				: undefined,
 		stopWhen: stepCountIs(maxSteps)
 	});
 
@@ -266,7 +269,9 @@ export async function* streamAgentLoop(options: AgentLoopOptions): AsyncGenerato
 		messages,
 		tools,
 		providerOptions:
-			providerId === 'openai' ? { openai: { instructions: systemPrompt, store: false } } : undefined,
+			providerId === 'openai'
+				? { openai: { instructions: systemPrompt, store: false } }
+				: undefined,
 		stopWhen: stepCountIs(maxSteps)
 	});
 
@@ -311,4 +316,3 @@ export async function* streamAgentLoop(options: AgentLoopOptions): AsyncGenerato
 		}
 	}
 }
-

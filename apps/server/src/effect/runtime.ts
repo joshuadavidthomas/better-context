@@ -1,9 +1,5 @@
 import { Effect, Exit, ManagedRuntime } from 'effect';
-import {
-	makeServerLayer,
-	makeServerServiceMap,
-	type ServerLayerDependencies
-} from './layers.ts';
+import { makeServerLayer, makeServerServiceMap, type ServerLayerDependencies } from './layers.ts';
 
 export interface ServerRuntime {
 	runPromise: <A, E>(effect: Effect.Effect<A, E>) => Promise<A>;

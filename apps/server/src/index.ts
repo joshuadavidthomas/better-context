@@ -9,12 +9,7 @@ import { runContext } from './context/index.ts';
 import { toHttpErrorPayload } from './effect/errors.ts';
 import { createServerRuntime } from './effect/runtime.ts';
 import * as ServerServices from './effect/services.ts';
-import {
-	metricsError,
-	metricsErrorInfo,
-	metricsInfo,
-	setQuietMetrics
-} from './metrics/index.ts';
+import { metricsError, metricsErrorInfo, metricsInfo, setQuietMetrics } from './metrics/index.ts';
 import { createModelsDevPricing } from './pricing/models-dev.ts';
 import { createResourcesService } from './resources/service.ts';
 import { GitResourceSchema, LocalResourceSchema, NpmResourceSchema } from './resources/schema.ts';

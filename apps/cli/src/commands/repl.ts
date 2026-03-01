@@ -1,12 +1,7 @@
 import { Effect } from 'effect';
 import type { BtcaStreamEvent } from 'btca-server/stream/types';
 import { withServerEffect } from '../server/manager.ts';
-import {
-	createClient,
-	getConfig,
-	getResources,
-	askQuestionStream
-} from '../client/index.ts';
+import { createClient, getConfig, getResources, askQuestionStream } from '../client/index.ts';
 import { parseSSEStream } from '../client/stream.ts';
 import { formatCliCommandError } from '../effect/errors.ts';
 import { runCliEffect } from '../effect/runtime.ts';
@@ -137,7 +132,10 @@ export async function launchRepl(options: ReplOptions): Promise<void> {
 			(server) =>
 				Effect.tryPromise(async () => {
 					const client = createClient(server.url);
-					const [config, resourcesResult] = await Promise.all([getConfig(client), getResources(client)]);
+					const [config, resourcesResult] = await Promise.all([
+						getConfig(client),
+						getResources(client)
+					]);
 					setTelemetryContext({ provider: config.provider, model: config.model });
 					await trackTelemetryEvent({
 						event: 'cli_started',
@@ -157,7 +155,9 @@ export async function launchRepl(options: ReplOptions): Promise<void> {
 
 					console.log('btca REPL mode (--no-tui)');
 					console.log(`Available resources: ${resources.map((r) => r.name).join(', ')}`);
-					console.log('Use @resource to specify context. Type /help for commands, /quit to exit.\n');
+					console.log(
+						'Use @resource to specify context. Type /help for commands, /quit to exit.\n'
+					);
 
 					let sessionResources: string[] = [];
 

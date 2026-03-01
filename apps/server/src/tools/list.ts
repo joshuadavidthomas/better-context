@@ -112,7 +112,9 @@ export const executeListTool = async (
 	}
 
 	outputLines.push('');
-	outputLines.push(`Total: ${entries.length} items (${directoryCount} directories, ${fileCount} files)`);
+	outputLines.push(
+		`Total: ${entries.length} items (${directoryCount} directories, ${fileCount} files)`
+	);
 
 	return {
 		title: params.path,

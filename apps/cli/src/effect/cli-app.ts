@@ -103,11 +103,8 @@ const resources = Command.make(
 		Effect.tryPromise(() => runResourcesCommand(resolveServerOptions({ server, port })))
 );
 
-const status = Command.make(
-	'status',
-	{ server: serverFlag, port: portFlag },
-	({ server, port }) =>
-		Effect.tryPromise(() => runStatusCommand(resolveServerOptions({ server, port })))
+const status = Command.make('status', { server: serverFlag, port: portFlag }, ({ server, port }) =>
+	Effect.tryPromise(() => runStatusCommand(resolveServerOptions({ server, port })))
 );
 const init = Command.make(
 	'init',

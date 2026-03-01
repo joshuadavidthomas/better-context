@@ -345,4 +345,3 @@ export const runConnectCommand = async (args: {
 		throw error;
 	}
 };
-
