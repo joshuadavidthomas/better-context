@@ -2,6 +2,7 @@ import * as readline from 'readline';
 import { Effect } from 'effect';
 import { withServerEffect } from '../server/manager.ts';
 import { createClient, getResources, removeResource } from '../client/index.ts';
+import { effectFromPromise } from '../effect/errors.ts';
 import { dim } from '../lib/utils/colors.ts';
 
 /**
@@ -84,7 +85,7 @@ export const runRemoveCommand = async (args: {
 			(server) =>
 				Effect.gen(function* () {
 					const client = createClient(server.url);
-					const { resources } = yield* Effect.tryPromise(() => getResources(client));
+					const { resources } = yield* effectFromPromise(() => getResources(client));
 
 					if (resources.length === 0) {
 						yield* Effect.sync(() => console.log('No resources configured.'));
@@ -94,7 +95,7 @@ export const runRemoveCommand = async (args: {
 					const names = resources.map((r) => r.name);
 					const resourceName = args.name
 						? args.name
-						: yield* Effect.tryPromise(() =>
+						: yield* effectFromPromise(() =>
 								selectSingleResource(resources as ResourceDefinition[])
 							);
 
@@ -106,7 +107,7 @@ export const runRemoveCommand = async (args: {
 						);
 					}
 
-					yield* Effect.tryPromise(() => removeResource(server.url, resourceName));
+					yield* effectFromPromise(() => removeResource(server.url, resourceName));
 					yield* Effect.sync(() => console.log(`Removed resource: ${resourceName}`));
 				})
 		)

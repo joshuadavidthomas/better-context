@@ -138,4 +138,24 @@ describe('cli dispatch', () => {
 			stub.server.stop();
 		}
 	});
+
+	test('preserves backend error messages for resources command', async () => {
+		const stub = createStubServer();
+		const originalError = console.error;
+		const output: string[] = [];
+		console.error = (...args) => {
+			output.push(args.map((arg) => String(arg)).join(' '));
+		};
+		try {
+			const exitCode = await withTempHome(() =>
+				runEffectCli(['bun', 'src/index.ts', 'resources', '--server', stub.url], 'test')
+			);
+			expect(exitCode).toBe(1);
+			expect(output.join('\n')).toContain('stub resources error');
+			expect(output.join('\n')).not.toContain('An error occurred in Effect.tryPromise');
+		} finally {
+			console.error = originalError;
+			stub.server.stop();
+		}
+	});
 });

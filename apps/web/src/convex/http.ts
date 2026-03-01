@@ -898,7 +898,8 @@ async function ensureServerUrlResult(
 
 	if (instance.state === 'running' && instance.serverUrl) {
 		if (!instance.sandboxId) {
-			return Result.err(new WebUnhandledError({ message: 'Instance does not have a sandbox' }));
+			sendEvent({ type: 'status', status: 'ready' });
+			return Result.ok({ serverUrl: instance.serverUrl });
 		}
 
 		const previewAccess = await ctx.runAction(internal.instances.actions.getPreviewAccess, {

@@ -1,6 +1,7 @@
 import { Effect } from 'effect';
 import { withServerEffect } from '../server/manager.ts';
 import { createClient, getResources } from '../client/index.ts';
+import { effectFromPromise } from '../effect/errors.ts';
 
 export const runResourcesCommand = async (globalOpts?: { server?: string; port?: number }) => {
 	return Effect.runPromise(
@@ -13,7 +14,7 @@ export const runResourcesCommand = async (globalOpts?: { server?: string; port?:
 			(server) =>
 				Effect.gen(function* () {
 					const client = createClient(server.url);
-					const { resources } = yield* Effect.tryPromise(() => getResources(client));
+					const { resources } = yield* effectFromPromise(() => getResources(client));
 
 					if (resources.length === 0) {
 						yield* Effect.sync(() => console.log('No resources configured.'));

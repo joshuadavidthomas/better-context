@@ -415,6 +415,14 @@ async function startBtcaServer(sandbox: Sandbox): Promise<PreviewAccess> {
 		});
 	}
 
+	return await getPreviewAccessForSandbox(sandbox, undefined, 'start_btca');
+}
+
+async function getPreviewAccessForSandbox(
+	sandbox: Sandbox,
+	fallbackServerUrl?: string,
+	step?: string
+): Promise<PreviewAccess> {
 	try {
 		const previewInfo = await sandbox.getPreviewLink(BTCA_SERVER_PORT);
 		return {
@@ -422,7 +430,10 @@ async function startBtcaServer(sandbox: Sandbox): Promise<PreviewAccess> {
 			previewToken: previewInfo.token || undefined
 		};
 	} catch (error) {
-		throw attachErrorContext(error, { step: 'start_btca' });
+		if (fallbackServerUrl) {
+			return { serverUrl: fallbackServerUrl };
+		}
+		throw step ? attachErrorContext(error, { step }) : error;
 	}
 }
 
@@ -1121,14 +1132,19 @@ export const syncResources = internalAction({
 			// Upload the config and reload the server
 			await syncGitHubAuth(sandbox, instance.clerkId, resources);
 			await uploadBtcaConfig(sandbox, resources);
-			const previewInfo = await sandbox.getPreviewLink(BTCA_SERVER_PORT);
+			const previewAccess = await getPreviewAccessForSandbox(
+				sandbox,
+				instance.serverUrl ?? undefined
+			);
 
 			// Tell the btca server to reload its config
-			const reloadResponse = await fetch(`${previewInfo.url}/reload-config`, {
+			const reloadResponse = await fetch(`${previewAccess.serverUrl}/reload-config`, {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
-					...(previewInfo.token ? { 'x-daytona-preview-token': previewInfo.token } : {})
+					...(previewAccess.previewToken
+						? { 'x-daytona-preview-token': previewAccess.previewToken }
+						: {})
 				}
 			});
 
@@ -1154,17 +1170,15 @@ export const getPreviewAccess = internalAction({
 	handler: async (ctx, args): Promise<PreviewAccess> => {
 		const instance = await requireInstance(ctx, args.instanceId);
 		if (!instance.sandboxId) {
+			if (instance.serverUrl) {
+				return { serverUrl: instance.serverUrl };
+			}
 			throw new WebUnhandledError({ message: 'Instance does not have a sandbox' });
 		}
 
 		const daytona = getDaytona();
 		const sandbox = await daytona.get(instance.sandboxId);
-		const previewInfo = await sandbox.getPreviewLink(BTCA_SERVER_PORT);
-
-		return {
-			serverUrl: previewInfo.url,
-			previewToken: previewInfo.token || undefined
-		};
+		return await getPreviewAccessForSandbox(sandbox, instance.serverUrl ?? undefined);
 	}
 });
 

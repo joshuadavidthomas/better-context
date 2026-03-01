@@ -4,6 +4,7 @@ import { parseJsonc } from '@btca/shared';
 import { Effect } from 'effect';
 import { withServerEffect } from '../server/manager.ts';
 import { createClient, getConfig, getProviders } from '../client/index.ts';
+import { effectFromPromise } from '../effect/errors.ts';
 import packageJson from '../../package.json';
 
 declare const __VERSION__: string;
@@ -130,7 +131,7 @@ export const runStatusCommand = async (globalOpts?: { server?: string; port?: nu
 			(server) =>
 				Effect.gen(function* () {
 					const client = createClient(server.url);
-					const [config, providers, globalConfig, projectConfig] = yield* Effect.tryPromise(() =>
+					const [config, providers, globalConfig, projectConfig] = yield* effectFromPromise(() =>
 						Promise.all([
 							getConfig(client),
 							getProviders(client),

@@ -3,6 +3,7 @@ import * as readline from 'readline';
 import { Effect } from 'effect';
 import { withServerEffect } from '../server/manager.ts';
 import { createClient, getProviders } from '../client/index.ts';
+import { effectFromPromise } from '../effect/errors.ts';
 import { removeProviderAuth } from '../lib/opencode-oauth.ts';
 
 /**
@@ -65,7 +66,7 @@ export const runDisconnectCommand = async (args: {
 			(server) =>
 				Effect.gen(function* () {
 					const client = createClient(server.url);
-					const providers = yield* Effect.tryPromise(() => getProviders(client));
+					const providers = yield* effectFromPromise(() => getProviders(client));
 
 					if (args.provider && !providers.connected.includes(args.provider)) {
 						const hint =
@@ -82,7 +83,7 @@ export const runDisconnectCommand = async (args: {
 
 					const provider =
 						args.provider ??
-						(yield* Effect.tryPromise(() =>
+						(yield* effectFromPromise(() =>
 							promptSelect(
 								'Select a connected provider to disconnect:',
 								providers.connected.map((id) => ({ label: id, value: id }))
@@ -93,7 +94,7 @@ export const runDisconnectCommand = async (args: {
 						yield* Effect.fail(new Error(`Provider "${provider}" is not connected.`));
 					}
 
-					const removed = yield* Effect.tryPromise(() => removeProviderAuth(provider));
+					const removed = yield* effectFromPromise(() => removeProviderAuth(provider));
 					if (!removed) {
 						yield* Effect.sync(() =>
 							console.warn(

@@ -14,6 +14,7 @@ import {
 	type ResourceInput
 } from '../client/index.ts';
 import { parseSSEStream } from '../client/stream.ts';
+import { effectFromPromise } from '../effect/errors.ts';
 import { runCliEffect } from '../effect/runtime.ts';
 import type { Repo, BtcaChunk } from './types.ts';
 import { trackTelemetryEvent } from '../lib/telemetry.ts';
@@ -45,7 +46,7 @@ export const services = {
 		return runCliEffect(
 			Effect.gen(function* () {
 				const client = createClient(getServerUrl());
-				const { resources } = yield* Effect.tryPromise(() => getResources(client));
+				const { resources } = yield* effectFromPromise(() => getResources(client));
 				return resources.map((r) => ({
 					name: r.name,
 					type: r.type,
@@ -71,7 +72,7 @@ export const services = {
 		return runCliEffect(
 			Effect.gen(function* () {
 				const client = createClient(getServerUrl());
-				const config = yield* Effect.tryPromise(() => getConfig(client));
+				const config = yield* effectFromPromise(() => getConfig(client));
 				return { provider: config.provider, model: config.model };
 			})
 		);
@@ -84,7 +85,7 @@ export const services = {
 		return runCliEffect(
 			Effect.gen(function* () {
 				const client = createClient(getServerUrl());
-				return yield* Effect.tryPromise(() => getProvidersClient(client));
+				return yield* effectFromPromise(() => getProvidersClient(client));
 			})
 		);
 	},
@@ -173,7 +174,7 @@ export const services = {
 		providerOptions?: ProviderOptionsInput
 	): Promise<ModelUpdateResult> => {
 		return runCliEffect(
-			Effect.tryPromise(() => updateModelClient(getServerUrl(), provider, model, providerOptions))
+			effectFromPromise(() => updateModelClient(getServerUrl(), provider, model, providerOptions))
 		);
 	},
 
@@ -181,14 +182,14 @@ export const services = {
 	 * Add a new resource
 	 */
 	addResource: async (resource: ResourceInput): Promise<ResourceInput> => {
-		return runCliEffect(Effect.tryPromise(() => addResourceClient(getServerUrl(), resource)));
+		return runCliEffect(effectFromPromise(() => addResourceClient(getServerUrl(), resource)));
 	},
 
 	/**
 	 * Remove a resource
 	 */
 	removeResource: async (name: string): Promise<void> => {
-		await runCliEffect(Effect.tryPromise(() => removeResourceClient(getServerUrl(), name)));
+		await runCliEffect(effectFromPromise(() => removeResourceClient(getServerUrl(), name)));
 	}
 };
 

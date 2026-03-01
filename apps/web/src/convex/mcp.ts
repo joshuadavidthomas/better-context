@@ -9,6 +9,7 @@ import { action } from './_generated/server';
 import { AnalyticsEvents } from './analyticsEvents';
 import { instances } from './apiHelpers';
 import type { ApiKeyValidationResult } from './clerkApiKeys';
+import { getAvailableMcpResourceNames, toMcpVisibleResources } from './mcp/resource-contract.ts';
 import { toWebError, type WebError } from '../lib/result/errors';
 
 const instanceActions = instances.actions;
@@ -201,10 +202,7 @@ export const ask = action({
 			projectId,
 			includePrivate: false
 		});
-		const allResourceNames: string[] = [
-			...availableResources.global.map((r: { name: string }) => r.name),
-			...availableResources.custom.map((r: { name: string }) => r.name)
-		];
+		const allResourceNames = getAvailableMcpResourceNames(availableResources);
 
 		const invalidResources: string[] = resources.filter(
 			(r: string) => !allResourceNames.includes(r)
@@ -392,18 +390,7 @@ export const listResources = action({
 
 		return {
 			ok: true as const,
-			resources: custom
-				.filter((resource) => resource.type === 'git' && !!resource.url && !!resource.branch)
-				.map((resource) => ({
-					name: resource.name,
-					displayName: resource.displayName,
-					type: resource.type,
-					url: resource.url!,
-					branch: resource.branch!,
-					searchPath: resource.searchPath,
-					specialNotes: resource.specialNotes,
-					isGlobal: false as const
-				}))
+			resources: toMcpVisibleResources(custom)
 		};
 	}
 });

@@ -66,15 +66,7 @@
 					},
 					{
 						"group": "Cloud API",
-						"pages": [
-							"api-reference/cloud/mcp",
-							"api-reference/cloud/status",
-							"api-reference/cloud/wake",
-							"api-reference/cloud/thread",
-							"api-reference/cloud/threads",
-							"api-reference/cloud/questions",
-							"api-reference/cloud/projects"
-						]
+						"pages": ["api-reference/cloud/mcp"]
 					}
 				]
 			}
