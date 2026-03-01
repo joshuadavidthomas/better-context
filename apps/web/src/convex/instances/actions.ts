@@ -1,5 +1,6 @@
 'use node';
 
+import { createClerkClient } from '@clerk/backend';
 import { Daytona, type Sandbox } from '@daytonaio/sdk';
 import { BTCA_SNAPSHOT_NAME } from 'btca-sandbox/shared';
 import { v } from 'convex/values';
@@ -11,10 +12,12 @@ import { action, internalAction, type ActionCtx } from '../_generated/server';
 import { AnalyticsEvents } from '../analyticsEvents';
 import { instances } from '../apiHelpers';
 import { inspectGitHubConnectionForClerkUser } from '../githubAuth';
+import { privateAction, withPrivateApiKey } from '../privateWrappers';
 import {
 	WebAuthError,
 	WebConfigMissingError,
 	WebUnhandledError,
+	WebValidationError,
 	type WebError
 } from '../../lib/result/errors';
 
@@ -61,6 +64,17 @@ type PreviewAccess = {
 
 let daytonaInstance: Daytona | null = null;
 type InstanceActionResult<T> = Result<T, WebError>;
+
+const getClerkClient = () => {
+	const secretKey = process.env.CLERK_SECRET_KEY;
+	if (!secretKey) {
+		throw new WebConfigMissingError({
+			message: 'CLERK_SECRET_KEY is not set in the Convex environment',
+			config: 'CLERK_SECRET_KEY'
+		});
+	}
+	return createClerkClient({ secretKey });
+};
 
 function getDaytona(): Daytona {
 	const daytonaResult = getDaytonaResult();
@@ -139,6 +153,26 @@ function generateBtcaConfig(resources: ResourceConfig[]): string {
 
 function getErrorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : 'Unknown error';
+}
+
+async function assertClerkUserExists(clerkId: string): Promise<void> {
+	try {
+		await getClerkClient().users.getUser(clerkId);
+	} catch (error) {
+		const status =
+			typeof error === 'object' && error && 'status' in error ? error.status : undefined;
+		if (status === 404) {
+			throw new WebValidationError({
+				message: `Clerk user "${clerkId}" does not exist`,
+				field: 'clerkId'
+			});
+		}
+
+		throw new WebUnhandledError({
+			message: `Failed to verify Clerk user "${clerkId}"`,
+			cause: error
+		});
+	}
 }
 
 function parseVersion(output: string): string | undefined {
@@ -476,7 +510,7 @@ async function fetchLatestVersion(packageName: string): Promise<string | undefin
 	}
 }
 
-export const provision = action({
+export const provision = privateAction({
 	args: instanceArgs,
 	returns: v.object({ sandboxId: v.string() }),
 	handler: async (ctx, args) => {
@@ -491,10 +525,13 @@ export const provision = action({
 			properties: { instanceId: args.instanceId }
 		});
 
-		await ctx.runMutation(instanceMutations.updateState, {
-			instanceId: args.instanceId,
-			state: 'provisioning'
-		});
+		await ctx.runMutation(
+			instanceMutations.updateState,
+			withPrivateApiKey({
+				instanceId: args.instanceId,
+				state: 'provisioning'
+			})
+		);
 
 		let sandbox: Sandbox | null = null;
 		let step = 'load_resources';
@@ -536,19 +573,29 @@ export const provision = action({
 			step = 'stop_sandbox';
 			unwrapInstance(await withStep(step, () => stopSandboxIfRunning(createdSandbox)));
 
-			await ctx.runMutation(instanceMutations.setProvisioned, {
-				instanceId: args.instanceId,
-				sandboxId: createdSandbox.id,
-				btcaVersion: versions.btcaVersion
-			});
-			await ctx.runMutation(instanceMutations.touchActivity, {
-				instanceId: args.instanceId
-			});
+			await ctx.runMutation(
+				instanceMutations.setProvisioned,
+				withPrivateApiKey({
+					instanceId: args.instanceId,
+					sandboxId: createdSandbox.id,
+					btcaVersion: versions.btcaVersion
+				})
+			);
+			await ctx.runMutation(
+				instanceMutations.touchActivity,
+				withPrivateApiKey({
+					instanceId: args.instanceId
+				})
+			);
 
 			// Schedule an update to ensure packages are up to date (snapshot may have older versions)
-			await ctx.scheduler.runAfter(0, instances.actions.update, {
-				instanceId: args.instanceId
-			});
+			await ctx.scheduler.runAfter(
+				0,
+				instances.actions.update,
+				withPrivateApiKey({
+					instanceId: args.instanceId
+				})
+			);
 
 			const durationMs = Date.now() - provisionStartedAt;
 			await ctx.scheduler.runAfter(0, internal.analytics.trackEvent, {
@@ -603,16 +650,19 @@ export const provision = action({
 				}
 			});
 
-			await ctx.runMutation(instanceMutations.setError, {
-				instanceId: args.instanceId,
-				errorMessage: message
-			});
+			await ctx.runMutation(
+				instanceMutations.setError,
+				withPrivateApiKey({
+					instanceId: args.instanceId,
+					errorMessage: message
+				})
+			);
 			throw new WebUnhandledError({ message });
 		}
 	}
 });
 
-export const wake = action({
+export const wake = privateAction({
 	args: {
 		instanceId: v.id('instances'),
 		projectId: v.optional(v.id('projects')),
@@ -623,13 +673,13 @@ export const wake = action({
 		wakeInstanceInternal(ctx, args.instanceId, args.projectId, args.includePrivate ?? true)
 });
 
-export const stop = action({
+export const stop = privateAction({
 	args: instanceArgs,
 	returns: v.object({ stopped: v.boolean() }),
 	handler: async (ctx, args) => stopInstanceInternal(ctx, args.instanceId)
 });
 
-export const update = action({
+export const update = privateAction({
 	args: instanceArgs,
 	returns: v.object({
 		serverUrl: v.optional(v.string()),
@@ -638,7 +688,7 @@ export const update = action({
 	handler: async (ctx, args) => updateInstanceInternal(ctx, args.instanceId)
 });
 
-export const checkVersions = action({
+export const checkVersions = privateAction({
 	args: instanceArgs,
 	returns: v.object({
 		latestBtca: v.optional(v.string()),
@@ -648,11 +698,14 @@ export const checkVersions = action({
 		const instance = await requireInstance(ctx, args.instanceId);
 		const latestBtca = await fetchLatestVersion(BTCA_PACKAGE_NAME);
 
-		await ctx.runMutation(instanceMutations.setVersions, {
-			instanceId: args.instanceId,
-			latestBtcaVersion: latestBtca,
-			lastVersionCheck: Date.now()
-		});
+		await ctx.runMutation(
+			instanceMutations.setVersions,
+			withPrivateApiKey({
+				instanceId: args.instanceId,
+				latestBtcaVersion: latestBtca,
+				lastVersionCheck: Date.now()
+			})
+		);
 
 		const updateAvailable = Boolean(
 			latestBtca && instance.btcaVersion && latestBtca !== instance.btcaVersion
@@ -665,7 +718,7 @@ export const checkVersions = action({
 	}
 });
 
-export const destroy = action({
+export const destroy = privateAction({
 	args: instanceArgs,
 	returns: v.object({ destroyed: v.boolean() }),
 	handler: async (ctx, args) => {
@@ -682,14 +735,20 @@ export const destroy = action({
 			}
 		}
 
-		await ctx.runMutation(instanceMutations.setServerUrl, {
-			instanceId: args.instanceId,
-			serverUrl: ''
-		});
-		await ctx.runMutation(instanceMutations.updateState, {
-			instanceId: args.instanceId,
-			state: 'unprovisioned'
-		});
+		await ctx.runMutation(
+			instanceMutations.setServerUrl,
+			withPrivateApiKey({
+				instanceId: args.instanceId,
+				serverUrl: ''
+			})
+		);
+		await ctx.runMutation(
+			instanceMutations.updateState,
+			withPrivateApiKey({
+				instanceId: args.instanceId,
+				state: 'unprovisioned'
+			})
+		);
 
 		await ctx.scheduler.runAfter(0, internal.analytics.trackEvent, {
 			distinctId: instance.clerkId,
@@ -767,11 +826,14 @@ async function createSandboxFromScratch(
 	step = 'get_versions';
 	const versions = unwrapInstance(await withStep(step, () => getInstalledVersions(sandbox)));
 
-	await ctx.runMutation(instanceMutations.setProvisioned, {
-		instanceId,
-		sandboxId: sandbox.id,
-		btcaVersion: versions.btcaVersion
-	});
+	await ctx.runMutation(
+		instanceMutations.setProvisioned,
+		withPrivateApiKey({
+			instanceId,
+			sandboxId: sandbox.id,
+			btcaVersion: versions.btcaVersion
+		})
+	);
 
 	await ctx.scheduler.runAfter(0, internal.analytics.trackEvent, {
 		distinctId: instance.clerkId,
@@ -806,10 +868,13 @@ async function wakeInstanceInternal(
 		}
 	});
 
-	await ctx.runMutation(instanceMutations.updateState, {
-		instanceId,
-		state: 'starting'
-	});
+	await ctx.runMutation(
+		instanceMutations.updateState,
+		withPrivateApiKey({
+			instanceId,
+			state: 'starting'
+		})
+	);
 
 	try {
 		let serverUrl: string;
@@ -843,9 +908,15 @@ async function wakeInstanceInternal(
 			sandboxId = instance.sandboxId;
 		}
 
-		await ctx.runMutation(instanceMutations.setServerUrl, { instanceId, serverUrl });
-		await ctx.runMutation(instanceMutations.updateState, { instanceId, state: 'running' });
-		await ctx.runMutation(instanceMutations.touchActivity, { instanceId });
+		await ctx.runMutation(
+			instanceMutations.setServerUrl,
+			withPrivateApiKey({ instanceId, serverUrl })
+		);
+		await ctx.runMutation(
+			instanceMutations.updateState,
+			withPrivateApiKey({ instanceId, state: 'running' })
+		);
+		await ctx.runMutation(instanceMutations.touchActivity, withPrivateApiKey({ instanceId }));
 
 		const durationMs = Date.now() - wakeStartedAt;
 		await ctx.scheduler.runAfter(0, internal.analytics.trackEvent, {
@@ -875,7 +946,10 @@ async function wakeInstanceInternal(
 			context
 		});
 
-		await ctx.runMutation(instanceMutations.setError, { instanceId, errorMessage: message });
+		await ctx.runMutation(
+			instanceMutations.setError,
+			withPrivateApiKey({ instanceId, errorMessage: message })
+		);
 		throw new WebUnhandledError({ message });
 	}
 }
@@ -889,21 +963,33 @@ async function stopInstanceInternal(
 		return { stopped: true };
 	}
 
-	await ctx.runMutation(instanceMutations.updateState, { instanceId, state: 'stopping' });
+	await ctx.runMutation(
+		instanceMutations.updateState,
+		withPrivateApiKey({ instanceId, state: 'stopping' })
+	);
 
 	try {
 		const daytona = getDaytona();
 		const sandbox = await daytona.get(instance.sandboxId);
 		await stopSandboxIfRunning(sandbox);
 
-		await ctx.runMutation(instanceMutations.setServerUrl, { instanceId, serverUrl: '' });
-		await ctx.runMutation(instanceMutations.updateState, { instanceId, state: 'stopped' });
-		await ctx.runMutation(instanceMutations.touchActivity, { instanceId });
+		await ctx.runMutation(
+			instanceMutations.setServerUrl,
+			withPrivateApiKey({ instanceId, serverUrl: '' })
+		);
+		await ctx.runMutation(
+			instanceMutations.updateState,
+			withPrivateApiKey({ instanceId, state: 'stopped' })
+		);
+		await ctx.runMutation(instanceMutations.touchActivity, withPrivateApiKey({ instanceId }));
 
 		return { stopped: true };
 	} catch (error) {
 		const message = getErrorMessage(error);
-		await ctx.runMutation(instanceMutations.setError, { instanceId, errorMessage: message });
+		await ctx.runMutation(
+			instanceMutations.setError,
+			withPrivateApiKey({ instanceId, errorMessage: message })
+		);
 		throw new WebUnhandledError({ message });
 	}
 }
@@ -917,7 +1003,10 @@ async function updateInstanceInternal(
 		throw new WebUnhandledError({ message: 'Instance does not have a sandbox to update' });
 	}
 
-	await ctx.runMutation(instanceMutations.updateState, { instanceId, state: 'updating' });
+	await ctx.runMutation(
+		instanceMutations.updateState,
+		withPrivateApiKey({ instanceId, state: 'updating' })
+	);
 
 	try {
 		const resources = await getResourceConfigs(ctx, instanceId);
@@ -936,13 +1025,16 @@ async function updateInstanceInternal(
 		step = 'get_versions';
 		const versions = unwrapInstance(await withStep(step, () => getInstalledVersions(sandbox)));
 
-		await ctx.runMutation(instanceMutations.setVersions, {
-			instanceId,
-			btcaVersion: versions.btcaVersion,
-			latestBtcaVersion: versions.btcaVersion,
-			lastVersionCheck: Date.now()
-		});
-		await ctx.runMutation(instanceMutations.touchActivity, { instanceId });
+		await ctx.runMutation(
+			instanceMutations.setVersions,
+			withPrivateApiKey({
+				instanceId,
+				btcaVersion: versions.btcaVersion,
+				latestBtcaVersion: versions.btcaVersion,
+				lastVersionCheck: Date.now()
+			})
+		);
+		await ctx.runMutation(instanceMutations.touchActivity, withPrivateApiKey({ instanceId }));
 
 		await ctx.scheduler.runAfter(0, internal.analytics.trackEvent, {
 			distinctId: instance.clerkId,
@@ -959,19 +1051,34 @@ async function updateInstanceInternal(
 			const serverUrl = unwrapInstance(
 				await withStep('start_btca', () => startBtcaServer(sandbox))
 			).serverUrl;
-			await ctx.runMutation(instanceMutations.setServerUrl, { instanceId, serverUrl });
-			await ctx.runMutation(instanceMutations.updateState, { instanceId, state: 'running' });
+			await ctx.runMutation(
+				instanceMutations.setServerUrl,
+				withPrivateApiKey({ instanceId, serverUrl })
+			);
+			await ctx.runMutation(
+				instanceMutations.updateState,
+				withPrivateApiKey({ instanceId, state: 'running' })
+			);
 			return { serverUrl };
 		}
 
 		await stopSandboxIfRunning(sandbox);
-		await ctx.runMutation(instanceMutations.setServerUrl, { instanceId, serverUrl: '' });
-		await ctx.runMutation(instanceMutations.updateState, { instanceId, state: 'stopped' });
+		await ctx.runMutation(
+			instanceMutations.setServerUrl,
+			withPrivateApiKey({ instanceId, serverUrl: '' })
+		);
+		await ctx.runMutation(
+			instanceMutations.updateState,
+			withPrivateApiKey({ instanceId, state: 'stopped' })
+		);
 
 		return { updated: true };
 	} catch (error) {
 		const message = getErrorMessage(error);
-		await ctx.runMutation(instanceMutations.setError, { instanceId, errorMessage: message });
+		await ctx.runMutation(
+			instanceMutations.setError,
+			withPrivateApiKey({ instanceId, errorMessage: message })
+		);
 		throw new WebUnhandledError({ message });
 	}
 }
@@ -991,24 +1098,21 @@ type EnsureInstanceResult = {
 };
 
 export const ensureInstanceExists = action({
-	args: { clerkId: v.optional(v.string()) },
+	args: {},
 	returns: v.object({
 		instanceId: v.id('instances'),
 		status: v.union(v.literal('created'), v.literal('exists'), v.literal('provisioning'))
 	}),
-	handler: async (ctx, args): Promise<EnsureInstanceResult> => {
-		let clerkId = args.clerkId;
-
-		if (!clerkId) {
-			const identity = await ctx.auth.getUserIdentity();
-			if (!identity) {
-				throw new WebAuthError({
-					message: 'Unauthorized: No clerkId provided and user is not authenticated',
-					code: 'UNAUTHORIZED'
-				});
-			}
-			clerkId = identity.subject;
+	handler: async (ctx): Promise<EnsureInstanceResult> => {
+		const identity = await ctx.auth.getUserIdentity();
+		if (!identity) {
+			throw new WebAuthError({
+				message: 'Authentication required',
+				code: 'UNAUTHORIZED'
+			});
 		}
+
+		const clerkId = identity.subject;
 
 		const existing = await ctx.runQuery(instanceQueries.getByClerkId, {});
 
@@ -1021,9 +1125,48 @@ export const ensureInstanceExists = action({
 			};
 		}
 
-		const instanceId = await ctx.runMutation(instanceMutations.create, { clerkId });
+		const instanceId = await ctx.runMutation(
+			instanceMutations.create,
+			withPrivateApiKey({ clerkId })
+		);
 
-		await ctx.scheduler.runAfter(0, instances.actions.provision, { instanceId });
+		await ctx.scheduler.runAfter(0, instances.actions.provision, withPrivateApiKey({ instanceId }));
+
+		return {
+			instanceId,
+			status: 'created'
+		};
+	}
+});
+
+export const ensureInstanceExistsPrivate = privateAction({
+	args: { clerkId: v.string() },
+	returns: v.object({
+		instanceId: v.id('instances'),
+		status: v.union(v.literal('created'), v.literal('exists'), v.literal('provisioning'))
+	}),
+	handler: async (ctx, args): Promise<EnsureInstanceResult> => {
+		await assertClerkUserExists(args.clerkId);
+
+		const existing = await ctx.runQuery(instances.internalQueries.getByClerkIdInternal, {
+			clerkId: args.clerkId
+		});
+
+		if (existing) {
+			const isProvisioning =
+				existing.state === 'unprovisioned' || existing.state === 'provisioning';
+			return {
+				instanceId: existing._id,
+				status: isProvisioning ? 'provisioning' : 'exists'
+			};
+		}
+
+		const instanceId = await ctx.runMutation(
+			instanceMutations.create,
+			withPrivateApiKey({ clerkId: args.clerkId })
+		);
+
+		await ctx.scheduler.runAfter(0, instances.actions.provision, withPrivateApiKey({ instanceId }));
 
 		return {
 			instanceId,
@@ -1060,10 +1203,13 @@ export const resetMyInstance = action({
 		const instance = await requireAuthenticatedInstance(ctx);
 		const sandboxId = instance.sandboxId;
 
-		await ctx.runMutation(instanceMutations.updateState, {
-			instanceId: instance._id,
-			state: 'provisioning'
-		});
+		await ctx.runMutation(
+			instanceMutations.updateState,
+			withPrivateApiKey({
+				instanceId: instance._id,
+				state: 'provisioning'
+			})
+		);
 
 		if (sandboxId) {
 			const daytona = getDaytona();
@@ -1075,14 +1221,20 @@ export const resetMyInstance = action({
 			}
 		}
 
-		await ctx.runMutation(instanceMutations.setServerUrl, {
-			instanceId: instance._id,
-			serverUrl: ''
-		});
+		await ctx.runMutation(
+			instanceMutations.setServerUrl,
+			withPrivateApiKey({
+				instanceId: instance._id,
+				serverUrl: ''
+			})
+		);
 
-		await ctx.runMutation(instanceMutations.clearError, {
-			instanceId: instance._id
-		});
+		await ctx.runMutation(
+			instanceMutations.clearError,
+			withPrivateApiKey({
+				instanceId: instance._id
+			})
+		);
 
 		await ctx.scheduler.runAfter(0, internal.analytics.trackEvent, {
 			distinctId: instance.clerkId,
@@ -1093,9 +1245,13 @@ export const resetMyInstance = action({
 			}
 		});
 
-		await ctx.scheduler.runAfter(0, instances.actions.provision, {
-			instanceId: instance._id
-		});
+		await ctx.scheduler.runAfter(
+			0,
+			instances.actions.provision,
+			withPrivateApiKey({
+				instanceId: instance._id
+			})
+		);
 
 		return { reset: true };
 	}
@@ -1287,16 +1443,22 @@ export const syncSandboxStatus = internalAction({
 
 			const status = await getSandboxStatus(sandbox);
 
-			await ctx.runMutation(instanceMutations.updateStorageUsed, {
-				instanceId: args.instanceId,
-				storageUsedBytes: status.storageUsedBytes
-			});
+			await ctx.runMutation(
+				instanceMutations.updateStorageUsed,
+				withPrivateApiKey({
+					instanceId: args.instanceId,
+					storageUsedBytes: status.storageUsedBytes
+				})
+			);
 
 			if (status.cachedResources.length > 0) {
-				await ctx.runMutation(instanceMutations.upsertCachedResources, {
-					instanceId: args.instanceId,
-					resources: status.cachedResources
-				});
+				await ctx.runMutation(
+					instanceMutations.upsertCachedResources,
+					withPrivateApiKey({
+						instanceId: args.instanceId,
+						resources: status.cachedResources
+					})
+				);
 			}
 
 			return status;

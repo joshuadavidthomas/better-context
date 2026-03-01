@@ -8,6 +8,7 @@ import { action, type ActionCtx } from './_generated/server.js';
 import { AnalyticsEvents } from './analyticsEvents.js';
 import { instances } from './apiHelpers.js';
 import { requireInstanceOwnershipActionResult, unwrapAuthResult } from './authHelpers.js';
+import { withPrivateApiKey } from './privateWrappers.js';
 import {
 	WebConfigMissingError,
 	WebExternalDependencyError,
@@ -492,14 +493,17 @@ async function syncSubscriptionState(
 		return;
 	}
 
-	await ctx.runMutation(instances.mutations.setSubscriptionState, {
-		instanceId: instance._id,
-		plan: snapshot.plan,
-		status: snapshot.status,
-		productId: snapshot.productId,
-		currentPeriodEnd: snapshot.currentPeriodEnd ?? undefined,
-		canceledAt: snapshot.canceledAt ?? undefined
-	});
+	await ctx.runMutation(
+		instances.mutations.setSubscriptionState,
+		withPrivateApiKey({
+			instanceId: instance._id,
+			plan: snapshot.plan,
+			status: snapshot.status,
+			productId: snapshot.productId,
+			currentPeriodEnd: snapshot.currentPeriodEnd ?? undefined,
+			canceledAt: snapshot.canceledAt ?? undefined
+		})
+	);
 
 	const properties = {
 		instanceId: instance._id,

@@ -412,6 +412,15 @@ export const addCustomResource = mutation({
 			throwResourceError(nameResult.error);
 		}
 
+		if (args.projectId) {
+			const project = await ctx.db.get(args.projectId);
+			if (!project || project.instanceId !== instance._id) {
+				throwResourceError(
+					new WebValidationError({ message: 'Project not found', field: 'projectId' })
+				);
+			}
+		}
+
 		const resourceId = await ctx.db.insert('userResources', {
 			instanceId: instance._id,
 			projectId: args.projectId,

@@ -3,6 +3,7 @@
 import type { Doc } from '../_generated/dataModel.js';
 import { internalAction, type ActionCtx } from '../_generated/server.js';
 import { instances as instancesApi, scheduled } from '../apiHelpers.js';
+import { withPrivateApiKey } from '../privateWrappers.js';
 
 const instanceActions = instancesApi.actions;
 
@@ -28,7 +29,7 @@ async function updateInstance(ctx: ActionCtx, instance: Doc<'instances'>): Promi
 	}
 
 	try {
-		await ctx.runAction(instanceActions.update, { instanceId: instance._id });
+		await ctx.runAction(instanceActions.update, withPrivateApiKey({ instanceId: instance._id }));
 	} catch (error) {
 		console.error('Scheduled update failed', error);
 	}

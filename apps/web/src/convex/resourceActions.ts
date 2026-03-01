@@ -252,6 +252,13 @@ export const addCustomResource = action({
 		}
 
 		if (args.projectId) {
+			const project = await ctx.runQuery(internal.projects.getInternal, {
+				projectId: args.projectId
+			});
+			if (!project || project.instanceId !== instance._id) {
+				throw new WebValidationError({ message: 'Project not found', field: 'projectId' });
+			}
+
 			const exists = await ctx.runQuery(resourcesInternal.resources.resourceExistsInProject, {
 				projectId: args.projectId,
 				name: args.name

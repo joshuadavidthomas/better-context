@@ -123,4 +123,3 @@ All scripts use Turborepo for caching. Run from the repository root.
 **minimax**
 
 - "MiniMax-M2.5"
-- "MiniMax-M2.1"

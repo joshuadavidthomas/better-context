@@ -382,6 +382,14 @@ export const getDefaultByInstance = internalQuery({
 	}
 });
 
+export const getInternal = internalQuery({
+	args: { projectId: v.id('projects') },
+	returns: v.union(v.null(), projectValidator),
+	handler: async (ctx, args) => {
+		return await ctx.db.get(args.projectId);
+	}
+});
+
 // MCP question validator
 const mcpQuestionValidator = v.object({
 	_id: v.id('mcpQuestions'),

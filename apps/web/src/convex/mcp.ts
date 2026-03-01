@@ -10,6 +10,7 @@ import { AnalyticsEvents } from './analyticsEvents';
 import { instances } from './apiHelpers';
 import type { ApiKeyValidationResult } from './clerkApiKeys';
 import { getAvailableMcpResourceNames, toMcpVisibleResources } from './mcp/resource-contract.ts';
+import { withPrivateApiKey } from './privateWrappers';
 import { toWebError, type WebError } from '../lib/result/errors';
 
 const instanceActions = instances.actions;
@@ -238,11 +239,14 @@ export const ask = action({
 				return { ok: false as const, error: 'Instance does not have a sandbox' };
 			}
 			// Pass projectId to wake so it uses project-specific resources
-			const wakeResult = await ctx.runAction(instanceActions.wake, {
-				instanceId,
-				projectId,
-				includePrivate: false
-			});
+			const wakeResult = await ctx.runAction(
+				instanceActions.wake,
+				withPrivateApiKey({
+					instanceId,
+					projectId,
+					includePrivate: false
+				})
+			);
 			serverUrl = wakeResult.serverUrl;
 			if (!serverUrl) {
 				await trackAskFailure('Failed to wake instance', projectProperties);
@@ -298,7 +302,7 @@ export const ask = action({
 			answer: answerText
 		});
 
-		await ctx.runMutation(instanceMutations.touchActivity, { instanceId });
+		await ctx.runMutation(instanceMutations.touchActivity, withPrivateApiKey({ instanceId }));
 
 		await trackAskEvent(AnalyticsEvents.MCP_ASK, {
 			...projectProperties,
