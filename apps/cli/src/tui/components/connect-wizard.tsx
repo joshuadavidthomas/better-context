@@ -17,6 +17,7 @@ import {
 	PROVIDER_AUTH_GUIDANCE,
 	PROVIDER_INFO,
 	PROVIDER_MODEL_DOCS,
+	PROVIDER_MODEL_WARNINGS,
 	PROVIDER_SETUP_LINKS
 } from '../../connect/constants.ts';
 import type { WizardStep } from '../types.ts';
@@ -134,6 +135,10 @@ export const ConnectWizard = (props: ConnectWizardProps) => {
 	const authLink = useMemo(() => PROVIDER_SETUP_LINKS[selectedProviderId], [selectedProviderId]);
 	const modelDocsLink = useMemo(
 		() => PROVIDER_MODEL_DOCS[selectedProviderId],
+		[selectedProviderId]
+	);
+	const modelWarning = useMemo(
+		() => PROVIDER_MODEL_WARNINGS[selectedProviderId],
 		[selectedProviderId]
 	);
 
@@ -579,6 +584,9 @@ export const ConnectWizard = (props: ConnectWizardProps) => {
 			) : null}
 			{showModelDocsLink && modelDocsLink ? (
 				<text fg={colors.textSubtle} content={` ${modelDocsLink.label}: ${modelDocsLink.url}`} />
+			) : null}
+			{(step === 'model' || step === 'model-input') && modelWarning ? (
+				<text fg={colors.info} content={` Heads-up: ${modelWarning}`} />
 			) : null}
 			{statusMessage.length > 0 ? (
 				<text fg={colors.textMuted} content={` ${statusMessage}`} />

@@ -21,7 +21,7 @@ import {
 } from '../commands/telemetry.ts';
 import { runWipeCommand } from '../commands/wipe.ts';
 import { normalizeCliArgv } from './argv.ts';
-import { formatCliCommandError } from './errors.ts';
+import { effectFromPromise, formatCliCommandError } from './errors.ts';
 
 const serverFlag = pipe(Flag.string('server'), Flag.optional);
 const portFlag = pipe(Flag.integer('port'), Flag.optional);
@@ -41,7 +41,7 @@ const resolveServerOptions = ({
 });
 
 const clear = Command.make('clear', { server: serverFlag, port: portFlag }, ({ server, port }) =>
-	Effect.tryPromise(() => runClearCommand(resolveServerOptions({ server, port })))
+	effectFromPromise(() => runClearCommand(resolveServerOptions({ server, port })))
 );
 const add = Command.make(
 	'add',
@@ -57,7 +57,7 @@ const add = Command.make(
 		port: portFlag
 	},
 	({ reference, global, name, branch, searchPath, notes, type, server, port }) =>
-		Effect.tryPromise(() =>
+		effectFromPromise(() =>
 			runAddCommand({
 				reference: Option.getOrUndefined(reference),
 				global,
@@ -84,7 +84,7 @@ const ask = Command.make(
 		port: portFlag
 	},
 	({ question, resource, thinking, noThinking, tools, noTools, subAgent, server, port }) =>
-		Effect.tryPromise(() =>
+		effectFromPromise(() =>
 			runAskCommand({
 				question,
 				resource: [...resource],
@@ -100,18 +100,18 @@ const resources = Command.make(
 	'resources',
 	{ server: serverFlag, port: portFlag },
 	({ server, port }) =>
-		Effect.tryPromise(() => runResourcesCommand(resolveServerOptions({ server, port })))
+		effectFromPromise(() => runResourcesCommand(resolveServerOptions({ server, port })))
 );
 
 const status = Command.make('status', { server: serverFlag, port: portFlag }, ({ server, port }) =>
-	Effect.tryPromise(() => runStatusCommand(resolveServerOptions({ server, port })))
+	effectFromPromise(() => runStatusCommand(resolveServerOptions({ server, port })))
 );
 const init = Command.make(
 	'init',
 	{
 		force: pipe(Flag.boolean('force'), Flag.withAlias('f'))
 	},
-	({ force }) => Effect.tryPromise(() => runInitCommand({ force }))
+	({ force }) => effectFromPromise(() => runInitCommand({ force }))
 );
 const mcp = pipe(
 	Command.make(
@@ -122,7 +122,7 @@ const mcp = pipe(
 			port: portFlag
 		},
 		({ mode, server, port }) =>
-			Effect.tryPromise(() => {
+			effectFromPromise(() => {
 				const selectedMode = Option.getOrUndefined(mode);
 				if (!selectedMode) {
 					return runMcpServerCommand({ globalOpts: resolveServerOptions({ server, port }) });
@@ -144,7 +144,7 @@ const connect = Command.make(
 		port: portFlag
 	},
 	({ global, provider, model, server, port }) =>
-		Effect.tryPromise(() =>
+		effectFromPromise(() =>
 			runConnectCommand({
 				global,
 				provider: Option.getOrUndefined(provider),
@@ -161,7 +161,7 @@ const disconnect = Command.make(
 		port: portFlag
 	},
 	({ provider, server, port }) =>
-		Effect.tryPromise(() =>
+		effectFromPromise(() =>
 			runDisconnectCommand({
 				provider: Option.getOrUndefined(provider),
 				globalOpts: resolveServerOptions({ server, port })
@@ -173,14 +173,14 @@ const reference = Command.make(
 	{
 		repo: Argument.string('repo')
 	},
-	({ repo }) => Effect.tryPromise(() => runReferenceCommand(repo))
+	({ repo }) => effectFromPromise(() => runReferenceCommand(repo))
 );
 const serve = Command.make(
 	'serve',
 	{
 		port: pipe(Flag.integer('port'), Flag.withAlias('p'), Flag.optional)
 	},
-	({ port }) => Effect.tryPromise(() => runServeCommand({ port: Option.getOrUndefined(port) }))
+	({ port }) => effectFromPromise(() => runServeCommand({ port: Option.getOrUndefined(port) }))
 );
 const remove = Command.make(
 	'remove',
@@ -191,7 +191,7 @@ const remove = Command.make(
 		port: portFlag
 	},
 	({ name, global, server, port }) =>
-		Effect.tryPromise(() =>
+		effectFromPromise(() =>
 			runRemoveCommand({
 				name: Option.getOrUndefined(name),
 				global,
@@ -199,13 +199,13 @@ const remove = Command.make(
 			})
 		)
 );
-const skill = Command.make('skill', {}, () => Effect.tryPromise(() => runSkillCommand()));
+const skill = Command.make('skill', {}, () => effectFromPromise(() => runSkillCommand()));
 const telemetry = pipe(
 	Command.make('telemetry'),
 	Command.withSubcommands([
-		Command.make('on', {}, () => Effect.tryPromise(() => runTelemetryOnCommand())),
-		Command.make('off', {}, () => Effect.tryPromise(() => runTelemetryOffCommand())),
-		Command.make('status', {}, () => Effect.tryPromise(() => runTelemetryStatusCommand()))
+		Command.make('on', {}, () => effectFromPromise(() => runTelemetryOnCommand())),
+		Command.make('off', {}, () => effectFromPromise(() => runTelemetryOffCommand())),
+		Command.make('status', {}, () => effectFromPromise(() => runTelemetryStatusCommand()))
 	])
 );
 const wipe = Command.make(
@@ -213,7 +213,7 @@ const wipe = Command.make(
 	{
 		yes: pipe(Flag.boolean('yes'), Flag.withAlias('y'))
 	},
-	({ yes }) => Effect.tryPromise(() => runWipeCommand({ yes }))
+	({ yes }) => effectFromPromise(() => runWipeCommand({ yes }))
 );
 
 const root = pipe(

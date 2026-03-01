@@ -9,6 +9,7 @@ import {
 	BtcaError
 } from '../client/index.ts';
 import { parseSSEStream } from '../client/stream.ts';
+import { effectFromPromise } from '../effect/errors.ts';
 import {
 	extractMentionTokens,
 	isGitUrlReference,
@@ -120,7 +121,7 @@ export const runAskCommand = async (args: {
 					quiet: true
 				},
 				(server) =>
-					Effect.tryPromise(async () => {
+					effectFromPromise(async () => {
 						const teardownSignalCleanup = registerSignalCleanup(() => server.stop());
 						try {
 							const client = createClient(server.url);

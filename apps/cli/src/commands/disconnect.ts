@@ -67,6 +67,14 @@ export const runDisconnectCommand = async (args: {
 					const client = createClient(server.url);
 					const providers = yield* Effect.tryPromise(() => getProviders(client));
 
+					if (args.provider && !providers.connected.includes(args.provider)) {
+						const hint =
+							providers.connected.length > 0
+								? `Connected providers: ${providers.connected.join(', ')}`
+								: 'No providers are currently connected.';
+						yield* Effect.fail(new Error(`Provider "${args.provider}" is not connected. ${hint}`));
+					}
+
 					if (providers.connected.length === 0) {
 						yield* Effect.sync(() => console.log('No providers are currently connected.'));
 						return;

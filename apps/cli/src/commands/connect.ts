@@ -4,6 +4,7 @@ import { spawn } from 'bun';
 import { Effect } from 'effect';
 import { withServerEffect } from '../server/manager.ts';
 import { createClient, getProviders, updateModel } from '../client/index.ts';
+import { effectFromPromise } from '../effect/errors.ts';
 import { dim, green } from '../lib/utils/colors.ts';
 import { loginCopilotOAuth } from '../lib/copilot-oauth.ts';
 import { loginOpenAIOAuth, saveProviderApiKey } from '../lib/opencode-oauth.ts';
@@ -12,6 +13,7 @@ import {
 	PROVIDER_AUTH_GUIDANCE,
 	PROVIDER_INFO,
 	PROVIDER_MODEL_DOCS,
+	PROVIDER_MODEL_WARNINGS,
 	PROVIDER_SETUP_LINKS
 } from '../connect/constants.ts';
 
@@ -204,7 +206,7 @@ export const runConnectCommand = async (args: {
 					quiet: true
 				},
 				(server) =>
-					Effect.tryPromise(async () => {
+					effectFromPromise(async () => {
 						const client = createClient(server.url);
 						const providers = await getProviders(client);
 
@@ -300,8 +302,12 @@ export const runConnectCommand = async (args: {
 						let model: string;
 						const curated = CURATED_MODELS[provider] ?? [];
 						const modelDocs = PROVIDER_MODEL_DOCS[provider];
+						const modelWarning = PROVIDER_MODEL_WARNINGS[provider];
 						if (modelDocs) {
 							console.log(`\n${modelDocs.label}: ${modelDocs.url}`);
+						}
+						if (modelWarning) {
+							console.log(`\nHeads-up: ${modelWarning}`);
 						}
 
 						if (curated.length > 0) {

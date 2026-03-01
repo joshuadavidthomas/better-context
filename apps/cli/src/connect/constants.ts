@@ -75,6 +75,11 @@ export const PROVIDER_MODEL_DOCS: Record<string, { label: string; url: string }>
 	minimax: { label: 'Model docs', url: 'https://platform.minimax.io/docs/guides/text-generation' }
 };
 
+export const PROVIDER_MODEL_WARNINGS: Record<string, string> = {
+	'github-copilot':
+		'GitHub Copilot model availability is endpoint- and policy-dependent. Public model lists may include models that the Copilot chat API still rejects for your account, so if a selected model fails, try a different one or use Copilot as an experimental provider.'
+};
+
 export const PROVIDER_SETUP_LINKS: Record<string, { label: string; url: string }> = {
 	opencode: { label: 'Get OpenCode Zen API key', url: 'https://opencode.ai/zen' },
 	minimax: {

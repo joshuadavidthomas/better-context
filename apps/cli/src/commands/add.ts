@@ -6,6 +6,7 @@ import { Effect } from 'effect';
 import { addResource } from '../client/index.ts';
 import { dim } from '../lib/utils/colors.ts';
 import { withServerEffect } from '../server/manager.ts';
+import { effectFromPromise } from '../effect/errors.ts';
 
 interface GitHubUrlParts {
 	owner: string;
@@ -269,7 +270,7 @@ const runWithServer = <A>(
 				port: globalOpts?.port,
 				quiet: true
 			},
-			(server) => Effect.tryPromise(() => run(server.url))
+			(server) => effectFromPromise(() => run(server.url))
 		)
 	);
 

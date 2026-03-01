@@ -1,10 +1,16 @@
-import { Data } from 'effect';
+import { Data, Effect } from 'effect';
 
 export class CliError extends Data.TaggedError('CliError')<{
 	readonly message: string;
 	readonly hint?: string;
 	readonly cause?: unknown;
 }> {}
+
+export const effectFromPromise = <A>(operation: () => Promise<A>) =>
+	Effect.tryPromise({
+		try: operation,
+		catch: (error) => error
+	});
 
 export const formatCliError = (error: unknown) => {
 	if (error && typeof error === 'object') {
