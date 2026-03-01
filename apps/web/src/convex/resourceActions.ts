@@ -20,8 +20,11 @@ type InternalResources = {
 			instanceId: Id<'instances'>;
 			projectId?: Id<'projects'>;
 			name: string;
-			url: string;
-			branch: string;
+			type: 'git' | 'npm';
+			url?: string;
+			branch?: string;
+			package?: string;
+			version?: string;
 			searchPath?: string;
 			specialNotes?: string;
 			gitProvider?: 'github' | 'generic';
@@ -78,6 +81,9 @@ type GitHubRepoResponse = {
 	default_branch: string;
 };
 
+const NPM_PACKAGE_SEGMENT_REGEX = /^[a-z0-9][a-z0-9._-]*$/;
+const NPM_VERSION_OR_TAG_REGEX = /^[^\s/]+$/;
+
 const parseGitHubRepoRef = (url: string): RepoRef | null => {
 	try {
 		const parsed = new URL(url);
@@ -99,6 +105,20 @@ const getGitHubHeaders = (token?: string) => ({
 	'User-Agent': 'btca-web',
 	...(token ? { Authorization: `Bearer ${token}` } : {})
 });
+
+const isValidNpmPackageName = (name: string) => {
+	if (name.startsWith('@')) {
+		const parts = name.split('/');
+		return (
+			parts.length === 2 &&
+			parts[0] !== '@' &&
+			NPM_PACKAGE_SEGMENT_REGEX.test(parts[0]!.slice(1)) &&
+			NPM_PACKAGE_SEGMENT_REGEX.test(parts[1]!)
+		);
+	}
+
+	return !name.includes('/') && NPM_PACKAGE_SEGMENT_REGEX.test(name);
+};
 
 const fetchGitHubRepo = async (repoRef: RepoRef, token?: string) =>
 	fetch(`https://api.github.com/repos/${repoRef.owner}/${repoRef.repo}`, {
@@ -200,8 +220,11 @@ const resolveGitMetadata = async (clerkUserId: string, url: string, branch: stri
 export const addCustomResource = action({
 	args: {
 		name: v.string(),
-		url: v.string(),
-		branch: v.string(),
+		type: v.union(v.literal('git'), v.literal('npm')),
+		url: v.optional(v.string()),
+		branch: v.optional(v.string()),
+		package: v.optional(v.string()),
+		version: v.optional(v.string()),
 		searchPath: v.optional(v.string()),
 		specialNotes: v.optional(v.string()),
 		projectId: v.optional(v.id('projects'))
@@ -228,15 +251,6 @@ export const addCustomResource = action({
 			throw new WebValidationError({ message: nameError, field: 'name' });
 		}
 
-		try {
-			new URL(args.url);
-		} catch {
-			throw new WebValidationError({
-				message: 'Invalid URL format',
-				field: 'url'
-			});
-		}
-
 		if (args.projectId) {
 			const exists = await ctx.runQuery(resourcesInternal.resources.resourceExistsInProject, {
 				projectId: args.projectId,
@@ -250,7 +264,84 @@ export const addCustomResource = action({
 			}
 		}
 
-		const metadata = await resolveGitMetadata(identity.subject, args.url, args.branch);
+		if (args.type === 'npm') {
+			const packageName = args.package?.trim();
+			const version = args.version?.trim() || undefined;
+
+			if (!packageName) {
+				throw new WebValidationError({
+					message: 'npm package is required',
+					field: 'package'
+				});
+			}
+
+			if (!isValidNpmPackageName(packageName)) {
+				throw new WebValidationError({
+					message:
+						'npm package must be a valid npm package name (for example react or @types/node)',
+					field: 'package'
+				});
+			}
+
+			if (version && !NPM_VERSION_OR_TAG_REGEX.test(version)) {
+				throw new WebValidationError({
+					message: 'Version/tag must not contain spaces or "/"',
+					field: 'version'
+				});
+			}
+
+			const resourceId = await ctx.runMutation(
+				resourcesInternal.resources.addCustomResourceInternal,
+				{
+					instanceId: instance._id,
+					projectId: args.projectId,
+					name: args.name,
+					type: 'npm',
+					package: packageName,
+					version,
+					specialNotes: args.specialNotes
+				}
+			);
+
+			await ctx.scheduler.runAfter(0, instances.internalActions.syncResources, {
+				instanceId: instance._id,
+				projectId: args.projectId
+			});
+
+			await ctx.scheduler.runAfter(0, resourcesInternal.analytics.trackEvent, {
+				distinctId: instance.clerkId,
+				event: AnalyticsEvents.RESOURCE_ADDED,
+				properties: {
+					instanceId: instance._id,
+					resourceId,
+					resourceName: args.name,
+					resourceType: 'npm',
+					packageName,
+					version,
+					hasNotes: !!args.specialNotes
+				}
+			});
+
+			return resourceId;
+		}
+
+		if (!args.url?.trim()) {
+			throw new WebValidationError({
+				message: 'Git URL is required',
+				field: 'url'
+			});
+		}
+
+		try {
+			new URL(args.url);
+		} catch {
+			throw new WebValidationError({
+				message: 'Invalid URL format',
+				field: 'url'
+			});
+		}
+
+		const metadata = await resolveGitMetadata(identity.subject, args.url, args.branch ?? 'main');
 		if ('connection' in metadata && metadata.connection) {
 			await ctx.runMutation(resourcesInternal.githubConnections.upsertForInstance, {
 				instanceId: instance._id,
@@ -268,6 +359,7 @@ export const addCustomResource = action({
 				instanceId: instance._id,
 				projectId: args.projectId,
 				name: args.name,
+				type: 'git',
 				url: args.url,
 				branch: metadata.branch,
 				searchPath: args.searchPath,
