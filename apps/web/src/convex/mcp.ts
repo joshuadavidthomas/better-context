@@ -392,6 +392,17 @@ export const listResources = action({
 			includePrivate: false
 		});
 
+		await ctx.scheduler.runAfter(0, internal.analytics.trackEvent, {
+			distinctId: validation.clerkUserId,
+			event: AnalyticsEvents.MCP_LIST_RESOURCES,
+			properties: {
+				instanceId,
+				project: projectName || 'default',
+				projectId,
+				resourceCount: custom.length
+			}
+		});
+
 		return {
 			ok: true as const,
 			resources: toMcpVisibleResources(custom)

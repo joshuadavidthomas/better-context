@@ -58,51 +58,75 @@ const ensureStandaloneTreeSitterWorkerPath = () => {
  * Launch the interactive TUI
  */
 export async function launchTui(options: TuiOptions): Promise<void> {
-	const server = await ensureServer({
-		serverUrl: options.server,
-		port: options.port
-	});
-
+	const startedAt = Date.now();
 	try {
+		const server = await ensureServer({
+			serverUrl: options.server,
+			port: options.port
+		});
+
+		try {
+			await runCliEffect(
+				Effect.gen(function* () {
+					const client = createClient(server.url);
+					const config = yield* Effect.tryPromise(() => getConfig(client));
+					yield* Effect.sync(() =>
+						setTelemetryContext({ provider: config.provider, model: config.model })
+					);
+				})
+			);
+		} catch {
+			// Ignore config failures for telemetry
+		}
+
 		await runCliEffect(
 			Effect.gen(function* () {
-				const client = createClient(server.url);
-				const config = yield* Effect.tryPromise(() => getConfig(client));
-				yield* Effect.sync(() =>
-					setTelemetryContext({ provider: config.provider, model: config.model })
+				yield* Effect.tryPromise(() =>
+					trackTelemetryEvent({
+						event: 'cli_started',
+						properties: { command: 'btca', mode: 'tui' }
+					})
+				);
+				yield* Effect.tryPromise(() =>
+					trackTelemetryEvent({
+						event: 'cli_tui_started',
+						properties: { command: 'btca', mode: 'tui' }
+					})
 				);
 			})
 		);
-	} catch {
-		// Ignore config failures for telemetry
+
+		// Store server reference for TUI to use
+		globalThis.__BTCA_SERVER__ = server;
+		globalThis.__BTCA_STREAM_OPTIONS__ = {
+			showThinking: options.subAgent ? false : (options.thinking ?? true),
+			showTools: options.subAgent ? false : (options.tools ?? true)
+		};
+
+		ensureStandaloneTreeSitterWorkerPath();
+
+		// Import and run TUI (dynamic import to avoid loading TUI deps when not needed)
+		await runCliEffect(Effect.tryPromise(() => import('../tui/App.tsx')));
+		await trackTelemetryEvent({
+			event: 'cli_tui_completed',
+			properties: {
+				command: 'btca',
+				mode: 'tui',
+				durationMs: Date.now() - startedAt,
+				exitCode: 0
+			}
+		});
+	} catch (error) {
+		await trackTelemetryEvent({
+			event: 'cli_tui_failed',
+			properties: {
+				command: 'btca',
+				mode: 'tui',
+				durationMs: Date.now() - startedAt,
+				errorName: error instanceof Error ? error.name : 'UnknownError',
+				exitCode: 1
+			}
+		});
+		throw error;
 	}
-
-	await runCliEffect(
-		Effect.gen(function* () {
-			yield* Effect.tryPromise(() =>
-				trackTelemetryEvent({
-					event: 'cli_started',
-					properties: { command: 'btca', mode: 'tui' }
-				})
-			);
-			yield* Effect.tryPromise(() =>
-				trackTelemetryEvent({
-					event: 'cli_tui_started',
-					properties: { command: 'btca', mode: 'tui' }
-				})
-			);
-		})
-	);
-
-	// Store server reference for TUI to use
-	globalThis.__BTCA_SERVER__ = server;
-	globalThis.__BTCA_STREAM_OPTIONS__ = {
-		showThinking: options.subAgent ? false : (options.thinking ?? true),
-		showTools: options.subAgent ? false : (options.tools ?? true)
-	};
-
-	ensureStandaloneTreeSitterWorkerPath();
-
-	// Import and run TUI (dynamic import to avoid loading TUI deps when not needed)
-	await runCliEffect(Effect.tryPromise(() => import('../tui/App.tsx')));
 }

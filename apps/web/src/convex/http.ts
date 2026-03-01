@@ -658,6 +658,11 @@ const clerkWebhook = httpAction(async (ctx, request) => {
 		const issues = parsedPayload.error.issues
 			.map((issue) => `${issue.path.join('.')}: ${issue.message}`)
 			.join('; ');
+		await ctx.scheduler.runAfter(0, internal.analytics.trackEvent, {
+			distinctId: 'webhook_system',
+			event: AnalyticsEvents.WEBHOOK_VERIFICATION_FAILED,
+			properties: { webhookType: 'clerk', reason: 'invalid_payload', issues }
+		});
 		const response = jsonResponse({ error: `Invalid webhook payload: ${issues}` }, { status: 400 });
 		return withCors(request, response);
 	}
@@ -737,6 +742,11 @@ const daytonaWebhook = httpAction(async (ctx, request) => {
 		const issues = parseResult.error.issues
 			.map((issue) => `${issue.path.join('.')}: ${issue.message}`)
 			.join('; ');
+		await ctx.scheduler.runAfter(0, internal.analytics.trackEvent, {
+			distinctId: 'webhook_system',
+			event: AnalyticsEvents.WEBHOOK_VERIFICATION_FAILED,
+			properties: { webhookType: 'daytona', reason: 'invalid_payload', issues }
+		});
 		return jsonResponse({ error: `Invalid webhook payload: ${issues}` }, { status: 400 });
 	}
 

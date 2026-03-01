@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { useConvexClient } from 'convex-svelte';
 	import { getAuthState } from '$lib/stores/auth.svelte';
+	import { ClientAnalyticsEvents, trackEvent } from '$lib/stores/analytics.svelte';
 	import { getBillingStore } from '$lib/stores/billing.svelte';
 	import { BILLING_PLAN } from '$lib/billing/plans';
 	import PricingPlans from '$lib/components/pricing/PricingPlans.svelte';
@@ -46,6 +47,9 @@
 		errorMessage = null;
 		isRedirecting = true;
 		try {
+			trackEvent(ClientAnalyticsEvents.CHECKOUT_BUTTON_CLICKED, {
+				surface: 'settings_billing'
+			});
 			const result = await client.action(api.usage.createCheckoutSession, {
 				instanceId: auth.instanceId,
 				baseUrl: window.location.origin

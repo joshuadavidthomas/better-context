@@ -20,6 +20,7 @@ import {
 	runTelemetryStatusCommand
 } from '../commands/telemetry.ts';
 import { runWipeCommand } from '../commands/wipe.ts';
+import { runTrackedCliCommand } from '../lib/telemetry.ts';
 import { normalizeCliArgv } from './argv.ts';
 import { effectFromPromise, formatCliCommandError } from './errors.ts';
 
@@ -41,7 +42,13 @@ const resolveServerOptions = ({
 });
 
 const clear = Command.make('clear', { server: serverFlag, port: portFlag }, ({ server, port }) =>
-	effectFromPromise(() => runClearCommand(resolveServerOptions({ server, port })))
+	effectFromPromise(() =>
+		runTrackedCliCommand({
+			command: 'clear',
+			mode: 'clear',
+			action: () => runClearCommand(resolveServerOptions({ server, port }))
+		})
+	)
 );
 const add = Command.make(
 	'add',
@@ -58,15 +65,21 @@ const add = Command.make(
 	},
 	({ reference, global, name, branch, searchPath, notes, type, server, port }) =>
 		effectFromPromise(() =>
-			runAddCommand({
-				reference: Option.getOrUndefined(reference),
-				global,
-				name: Option.getOrUndefined(name),
-				branch: Option.getOrUndefined(branch),
-				searchPath: [...searchPath],
-				notes: Option.getOrUndefined(notes),
-				type: Option.getOrUndefined(type),
-				globalOpts: resolveServerOptions({ server, port })
+			runTrackedCliCommand({
+				command: 'add',
+				mode: 'add',
+				startProperties: { global },
+				action: () =>
+					runAddCommand({
+						reference: Option.getOrUndefined(reference),
+						global,
+						name: Option.getOrUndefined(name),
+						branch: Option.getOrUndefined(branch),
+						searchPath: [...searchPath],
+						notes: Option.getOrUndefined(notes),
+						type: Option.getOrUndefined(type),
+						globalOpts: resolveServerOptions({ server, port })
+					})
 			})
 		)
 );
@@ -100,18 +113,38 @@ const resources = Command.make(
 	'resources',
 	{ server: serverFlag, port: portFlag },
 	({ server, port }) =>
-		effectFromPromise(() => runResourcesCommand(resolveServerOptions({ server, port })))
+		effectFromPromise(() =>
+			runTrackedCliCommand({
+				command: 'resources',
+				mode: 'resources',
+				action: () => runResourcesCommand(resolveServerOptions({ server, port }))
+			})
+		)
 );
 
 const status = Command.make('status', { server: serverFlag, port: portFlag }, ({ server, port }) =>
-	effectFromPromise(() => runStatusCommand(resolveServerOptions({ server, port })))
+	effectFromPromise(() =>
+		runTrackedCliCommand({
+			command: 'status',
+			mode: 'status',
+			action: () => runStatusCommand(resolveServerOptions({ server, port }))
+		})
+	)
 );
 const init = Command.make(
 	'init',
 	{
 		force: pipe(Flag.boolean('force'), Flag.withAlias('f'))
 	},
-	({ force }) => effectFromPromise(() => runInitCommand({ force }))
+	({ force }) =>
+		effectFromPromise(() =>
+			runTrackedCliCommand({
+				command: 'init',
+				mode: 'init',
+				startProperties: { force },
+				action: () => runInitCommand({ force })
+			})
+		)
 );
 const mcp = pipe(
 	Command.make(
@@ -124,13 +157,21 @@ const mcp = pipe(
 		({ mode, server, port }) =>
 			effectFromPromise(() => {
 				const selectedMode = Option.getOrUndefined(mode);
-				if (!selectedMode) {
-					return runMcpServerCommand({ globalOpts: resolveServerOptions({ server, port }) });
-				}
-				if (selectedMode === 'local') {
-					return runMcpConfigureLocalCommand();
-				}
-				throw new Error(`Unknown mcp mode "${selectedMode}". Use "local" or omit it.`);
+				return runTrackedCliCommand({
+					command: 'mcp',
+					mode: selectedMode === 'local' ? 'mcp:local' : 'mcp',
+					eventName: selectedMode === 'local' ? 'mcp_local' : 'mcp',
+					startProperties: { mcpMode: selectedMode ?? 'server' },
+					action: () => {
+						if (!selectedMode) {
+							return runMcpServerCommand({ globalOpts: resolveServerOptions({ server, port }) });
+						}
+						if (selectedMode === 'local') {
+							return runMcpConfigureLocalCommand();
+						}
+						throw new Error(`Unknown mcp mode "${selectedMode}". Use "local" or omit it.`);
+					}
+				});
 			})
 	)
 );
@@ -145,11 +186,21 @@ const connect = Command.make(
 	},
 	({ global, provider, model, server, port }) =>
 		effectFromPromise(() =>
-			runConnectCommand({
-				global,
-				provider: Option.getOrUndefined(provider),
-				model: Option.getOrUndefined(model),
-				globalOpts: resolveServerOptions({ server, port })
+			runTrackedCliCommand({
+				command: 'connect',
+				mode: 'connect',
+				startProperties: {
+					global,
+					provider: Option.getOrUndefined(provider),
+					model: Option.getOrUndefined(model)
+				},
+				action: () =>
+					runConnectCommand({
+						global,
+						provider: Option.getOrUndefined(provider),
+						model: Option.getOrUndefined(model),
+						globalOpts: resolveServerOptions({ server, port })
+					})
 			})
 		)
 );
@@ -162,9 +213,15 @@ const disconnect = Command.make(
 	},
 	({ provider, server, port }) =>
 		effectFromPromise(() =>
-			runDisconnectCommand({
-				provider: Option.getOrUndefined(provider),
-				globalOpts: resolveServerOptions({ server, port })
+			runTrackedCliCommand({
+				command: 'disconnect',
+				mode: 'disconnect',
+				startProperties: { provider: Option.getOrUndefined(provider) },
+				action: () =>
+					runDisconnectCommand({
+						provider: Option.getOrUndefined(provider),
+						globalOpts: resolveServerOptions({ server, port })
+					})
 			})
 		)
 );
@@ -173,7 +230,15 @@ const reference = Command.make(
 	{
 		repo: Argument.string('repo')
 	},
-	({ repo }) => effectFromPromise(() => runReferenceCommand(repo))
+	({ repo }) =>
+		effectFromPromise(() =>
+			runTrackedCliCommand({
+				command: 'reference',
+				mode: 'reference',
+				startProperties: { repo },
+				action: () => runReferenceCommand(repo)
+			})
+		)
 );
 const serve = Command.make(
 	'serve',
@@ -192,20 +257,67 @@ const remove = Command.make(
 	},
 	({ name, global, server, port }) =>
 		effectFromPromise(() =>
-			runRemoveCommand({
-				name: Option.getOrUndefined(name),
-				global,
-				globalOpts: resolveServerOptions({ server, port })
+			runTrackedCliCommand({
+				command: 'remove',
+				mode: 'remove',
+				startProperties: {
+					global,
+					name: Option.getOrUndefined(name)
+				},
+				action: () =>
+					runRemoveCommand({
+						name: Option.getOrUndefined(name),
+						global,
+						globalOpts: resolveServerOptions({ server, port })
+					})
 			})
 		)
 );
-const skill = Command.make('skill', {}, () => effectFromPromise(() => runSkillCommand()));
+const skill = Command.make('skill', {}, () =>
+	effectFromPromise(() =>
+		runTrackedCliCommand({
+			command: 'skill',
+			mode: 'skill',
+			action: () => runSkillCommand()
+		})
+	)
+);
 const telemetry = pipe(
 	Command.make('telemetry'),
 	Command.withSubcommands([
-		Command.make('on', {}, () => effectFromPromise(() => runTelemetryOnCommand())),
-		Command.make('off', {}, () => effectFromPromise(() => runTelemetryOffCommand())),
-		Command.make('status', {}, () => effectFromPromise(() => runTelemetryStatusCommand()))
+		Command.make('on', {}, () =>
+			effectFromPromise(() =>
+				runTrackedCliCommand({
+					command: 'telemetry',
+					mode: 'telemetry:on',
+					eventName: 'telemetry_on',
+					startProperties: { subcommand: 'on' },
+					action: () => runTelemetryOnCommand()
+				})
+			)
+		),
+		Command.make('off', {}, () =>
+			effectFromPromise(() =>
+				runTrackedCliCommand({
+					command: 'telemetry',
+					mode: 'telemetry:off',
+					eventName: 'telemetry_off',
+					startProperties: { subcommand: 'off' },
+					action: () => runTelemetryOffCommand()
+				})
+			)
+		),
+		Command.make('status', {}, () =>
+			effectFromPromise(() =>
+				runTrackedCliCommand({
+					command: 'telemetry',
+					mode: 'telemetry:status',
+					eventName: 'telemetry_status',
+					startProperties: { subcommand: 'status' },
+					action: () => runTelemetryStatusCommand()
+				})
+			)
+		)
 	])
 );
 const wipe = Command.make(
@@ -213,7 +325,15 @@ const wipe = Command.make(
 	{
 		yes: pipe(Flag.boolean('yes'), Flag.withAlias('y'))
 	},
-	({ yes }) => effectFromPromise(() => runWipeCommand({ yes }))
+	({ yes }) =>
+		effectFromPromise(() =>
+			runTrackedCliCommand({
+				command: 'wipe',
+				mode: 'wipe',
+				startProperties: { yes },
+				action: () => runWipeCommand({ yes })
+			})
+		)
 );
 
 const root = pipe(

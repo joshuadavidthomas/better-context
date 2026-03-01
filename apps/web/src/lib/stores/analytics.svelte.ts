@@ -48,16 +48,12 @@ export function trackEvent(event: string, properties?: Record<string, unknown>):
 	});
 }
 
-export function trackPageView(url?: string): void {
-	if (!browser || !initialized) return;
-	posthog.capture('$pageview', url ? { $current_url: url } : undefined);
-}
-
 export const ClientAnalyticsEvents = {
 	USER_SIGNED_IN: 'user_signed_in',
 	USER_SIGNED_OUT: 'user_signed_out',
-	PAGE_VIEWED: 'page_viewed',
 	CHECKOUT_BUTTON_CLICKED: 'checkout_button_clicked',
+	API_KEY_CREATED: 'api_key_created',
+	API_KEY_REVOKED: 'api_key_revoked',
 	STREAM_CANCELLED: 'stream_cancelled',
 	INSTANCE_WAKE_REQUESTED: 'instance_wake_requested',
 	INSTANCE_STOP_REQUESTED: 'instance_stop_requested',

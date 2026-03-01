@@ -28,13 +28,12 @@ export const AnalyticsEvents = {
 	THREAD_CLEARED: 'thread_cleared',
 
 	PROJECT_CREATED: 'project_created',
+	PROJECT_MODEL_UPDATED: 'project_model_updated',
 	PROJECT_DELETED: 'project_deleted',
 
 	RESOURCE_ADDED: 'resource_added',
 	RESOURCE_REMOVED: 'resource_removed',
 
-	API_KEY_CREATED: 'api_key_created',
-	API_KEY_REVOKED: 'api_key_revoked',
 	API_KEY_USED: 'api_key_used',
 
 	INSTANCE_ERROR: 'instance_error',

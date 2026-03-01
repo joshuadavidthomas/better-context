@@ -24,6 +24,16 @@ type TelemetryContext = {
 	cliVersion?: string;
 };
 
+type TrackedCliCommandArgs<T> = {
+	command: string;
+	mode: string;
+	eventName?: string;
+	startProperties?: Record<string, unknown>;
+	successProperties?: (result: T) => Record<string, unknown> | undefined;
+	failureProperties?: (error: unknown) => Record<string, unknown> | undefined;
+	action: () => Promise<T>;
+};
+
 let telemetryContext: TelemetryContext = {};
 
 export const setTelemetryContext = (next: TelemetryContext) => {
@@ -173,5 +183,53 @@ export const trackTelemetryEvent = async (args: {
 		await posthogCapture(payload);
 	} catch {
 		// Ignore telemetry errors
+	}
+};
+
+export const runTrackedCliCommand = async <T>({
+	command,
+	mode,
+	eventName = mode,
+	startProperties,
+	successProperties,
+	failureProperties,
+	action
+}: TrackedCliCommandArgs<T>) => {
+	const startedAt = Date.now();
+	const baseProperties = { command, mode, ...(startProperties ?? {}) };
+
+	await trackTelemetryEvent({
+		event: 'cli_started',
+		properties: baseProperties
+	});
+	await trackTelemetryEvent({
+		event: `cli_${eventName}_started`,
+		properties: baseProperties
+	});
+
+	try {
+		const result = await action();
+		await trackTelemetryEvent({
+			event: `cli_${eventName}_completed`,
+			properties: {
+				...baseProperties,
+				durationMs: Date.now() - startedAt,
+				exitCode: 0,
+				...(successProperties?.(result) ?? {})
+			}
+		});
+		return result;
+	} catch (error) {
+		await trackTelemetryEvent({
+			event: `cli_${eventName}_failed`,
+			properties: {
+				...baseProperties,
+				durationMs: Date.now() - startedAt,
+				errorName: error instanceof Error ? error.name : 'UnknownError',
+				exitCode: 1,
+				...(failureProperties?.(error) ?? {})
+			}
+		});
+		throw error;
 	}
 };

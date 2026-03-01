@@ -237,12 +237,23 @@ export const updateModel = mutation({
 	handler: async (ctx, args) => {
 		const instance = await unwrapAuthResult(await getAuthenticatedInstanceResult(ctx));
 		const projectResult = await requireProjectOwnershipResult(ctx, args.projectId, instance._id);
-		Result.match(projectResult, {
-			ok: () => undefined,
+		const project = Result.match(projectResult, {
+			ok: (value) => value,
 			err: (error) => throwProjectError(error)
 		});
 
 		await ctx.db.patch(args.projectId, { model: args.model });
+		await ctx.scheduler.runAfter(0, internal.analytics.trackEvent, {
+			distinctId: instance.clerkId,
+			event: AnalyticsEvents.PROJECT_MODEL_UPDATED,
+			properties: {
+				instanceId: instance._id,
+				projectId: args.projectId,
+				projectName: project.name,
+				model: args.model ?? null,
+				hadModel: !!project.model
+			}
+		});
 		return null;
 	}
 });

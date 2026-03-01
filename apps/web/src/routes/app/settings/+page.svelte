@@ -22,6 +22,7 @@
 	import PricingPlans from '$lib/components/pricing/PricingPlans.svelte';
 	import CopyButton from '$lib/CopyButton.svelte';
 	import { getClerk } from '$lib/clerk';
+	import { ClientAnalyticsEvents, trackEvent } from '$lib/stores/analytics.svelte';
 
 	const auth = getAuthState();
 	const client = useConvexClient();
@@ -281,15 +282,20 @@ The resources available are defined by the end user in their btca dashboard. If 
 	// Create a new API key via Clerk
 	async function handleCreateKey() {
 		const clerk = getClerk();
-		if (!clerk || !newKeyName.trim()) return;
+		const keyName = newKeyName.trim();
+		if (!clerk || !keyName) return;
 
 		isCreating = true;
 		try {
 			const result = await clerk.apiKeys.create({
-				name: newKeyName.trim()
+				name: keyName
 			});
 			// IMPORTANT: result.secret is only available immediately after creation!
 			newlyCreatedKey = result.secret ?? null;
+			trackEvent(ClientAnalyticsEvents.API_KEY_CREATED, {
+				apiKeyId: result.id,
+				nameLength: keyName.length
+			});
 			newKeyName = '';
 			await loadApiKeys();
 		} catch (error) {
@@ -307,6 +313,7 @@ The resources available are defined by the end user in their btca dashboard. If 
 
 		try {
 			await clerk.apiKeys.revoke({ apiKeyID: keyId });
+			trackEvent(ClientAnalyticsEvents.API_KEY_REVOKED, { apiKeyId: keyId });
 			await loadApiKeys();
 		} catch (error) {
 			console.error('Failed to revoke API key:', error);
@@ -352,6 +359,9 @@ The resources available are defined by the end user in their btca dashboard. If 
 		errorMessage = null;
 		isRedirecting = true;
 		try {
+			trackEvent(ClientAnalyticsEvents.CHECKOUT_BUTTON_CLICKED, {
+				surface: 'settings'
+			});
 			const result = await client.action(api.usage.createCheckoutSession, {
 				instanceId: auth.instanceId,
 				baseUrl: window.location.origin

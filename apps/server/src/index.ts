@@ -1,6 +1,7 @@
 import { Effect, Cause } from 'effect';
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from 'effect/unstable/http';
 import { z } from 'zod';
+import packageJson from '../package.json';
 
 import { createAgentService } from './agent/service.ts';
 import { createCollectionsService } from './collections/service.ts';
@@ -28,6 +29,8 @@ import { disposeAllVirtualFs } from './vfs/virtual-fs.ts';
 const DEFAULT_PORT = 8080;
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : DEFAULT_PORT;
 const modelsDevPricing = createModelsDevPricing();
+declare const __VERSION__: string;
+const VERSION = typeof __VERSION__ !== 'undefined' ? __VERSION__ : (packageJson.version ?? '0.0.0');
 
 const RESOURCE_NAME_REGEX = /^@?[a-zA-Z0-9][a-zA-Z0-9._-]*(\/[a-zA-Z0-9][a-zA-Z0-9._-]*)*$/;
 const SAFE_NAME_REGEX = /^[a-zA-Z0-9._+\-/:]+$/;
@@ -197,7 +200,7 @@ const createApp = () => {
 			HttpServerResponse.jsonUnsafe({
 				ok: true,
 				service: 'btca-server',
-				version: '0.0.1'
+				version: VERSION
 			})
 		),
 		HttpRouter.route(

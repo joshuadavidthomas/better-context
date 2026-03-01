@@ -46,22 +46,3 @@ export const trackEvent = internalAction({
 		return null;
 	}
 });
-
-export const identifyUser = internalAction({
-	args: {
-		distinctId: v.string(),
-		properties: v.optional(v.any())
-	},
-	returns: v.null(),
-	handler: async (_ctx, args) => {
-		const posthog = getPostHog();
-		if (!posthog) {
-			return null;
-		}
-		posthog.identify({
-			distinctId: args.distinctId,
-			properties: args.properties as Record<string, unknown> | undefined
-		});
-		return null;
-	}
-});

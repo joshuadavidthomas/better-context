@@ -122,47 +122,49 @@ async function prompt(message: string): Promise<string | null> {
 export async function launchRepl(options: ReplOptions): Promise<void> {
 	const showThinking = options.subAgent ? false : (options.thinking ?? true);
 	const showTools = options.subAgent ? false : (options.tools ?? true);
+	const startedAt = Date.now();
 
-	return runCliEffect(
-		withServerEffect(
-			{
-				serverUrl: options.server,
-				port: options.port
-			},
-			(server) =>
-				Effect.tryPromise(async () => {
-					const client = createClient(server.url);
-					const [config, resourcesResult] = await Promise.all([
-						getConfig(client),
-						getResources(client)
-					]);
-					setTelemetryContext({ provider: config.provider, model: config.model });
-					await trackTelemetryEvent({
-						event: 'cli_started',
-						properties: { command: 'btca', mode: 'repl' }
-					});
-					await trackTelemetryEvent({
-						event: 'cli_repl_started',
-						properties: { command: 'btca', mode: 'repl' }
-					});
-					const { resources } = resourcesResult;
+	try {
+		await runCliEffect(
+			withServerEffect(
+				{
+					serverUrl: options.server,
+					port: options.port
+				},
+				(server) =>
+					Effect.tryPromise(async () => {
+						const client = createClient(server.url);
+						const [config, resourcesResult] = await Promise.all([
+							getConfig(client),
+							getResources(client)
+						]);
+						setTelemetryContext({ provider: config.provider, model: config.model });
+						await trackTelemetryEvent({
+							event: 'cli_started',
+							properties: { command: 'btca', mode: 'repl' }
+						});
+						await trackTelemetryEvent({
+							event: 'cli_repl_started',
+							properties: { command: 'btca', mode: 'repl' }
+						});
+						const { resources } = resourcesResult;
 
-					if (resources.length === 0) {
-						throw new Error(
-							'No resources configured. Add resources with "btca add" or check "btca resources".'
+						if (resources.length === 0) {
+							throw new Error(
+								'No resources configured. Add resources with "btca add" or check "btca resources".'
+							);
+						}
+
+						console.log('btca REPL mode (--no-tui)');
+						console.log(`Available resources: ${resources.map((r) => r.name).join(', ')}`);
+						console.log(
+							'Use @resource to specify context. Type /help for commands, /quit to exit.\n'
 						);
-					}
 
-					console.log('btca REPL mode (--no-tui)');
-					console.log(`Available resources: ${resources.map((r) => r.name).join(', ')}`);
-					console.log(
-						'Use @resource to specify context. Type /help for commands, /quit to exit.\n'
-					);
+						let sessionResources: string[] = [];
 
-					let sessionResources: string[] = [];
-
-					const printHelp = () => {
-						console.log(`
+						const printHelp = () => {
+							console.log(`
 Commands:
   /help           Show this help message
   /resources      List available resources
@@ -177,116 +179,140 @@ Examples:
   @svelte How do stores work?
   @react @vue Compare component lifecycles
 `);
-					};
+						};
 
-					while (true) {
-						const input = await prompt('btca> ');
-						if (input === null) {
-							console.log('\nGoodbye!');
-							break;
-						}
-
-						if (!input) continue;
-
-						if (input.startsWith('/')) {
-							const cmd = input.toLowerCase();
-							if (cmd === '/help') {
-								printHelp();
-							} else if (cmd === '/resources') {
-								console.log(`Available: ${resources.map((r) => r.name).join(', ')}`);
-								if (sessionResources.length > 0) {
-									console.log(`Session: ${sessionResources.join(', ')}`);
-								}
-							} else if (cmd === '/clear') {
-								sessionResources = [];
-								console.log('Session resources cleared.');
-							} else if (cmd === '/quit' || cmd === '/exit') {
-								console.log('Goodbye!');
+						while (true) {
+							const input = await prompt('btca> ');
+							if (input === null) {
+								console.log('\nGoodbye!');
 								break;
-							} else {
-								console.log(`Unknown command: ${input}. Type /help for available commands.`);
 							}
-							continue;
-						}
 
-						const mentions = extractMentions(input);
-						const validNewResources: string[] = [];
-						for (const mention of mentions) {
-							const resolved = resolveResourceName(mention, resources);
-							if (resolved) validNewResources.push(resolved);
-						}
+							if (!input) continue;
 
-						if (validNewResources.length > 0) {
-							sessionResources = [...new Set([...sessionResources, ...validNewResources])];
-						}
+							if (input.startsWith('/')) {
+								const cmd = input.toLowerCase();
+								if (cmd === '/help') {
+									printHelp();
+								} else if (cmd === '/resources') {
+									console.log(`Available: ${resources.map((r) => r.name).join(', ')}`);
+									if (sessionResources.length > 0) {
+										console.log(`Session: ${sessionResources.join(', ')}`);
+									}
+								} else if (cmd === '/clear') {
+									sessionResources = [];
+									console.log('Session resources cleared.');
+								} else if (cmd === '/quit' || cmd === '/exit') {
+									console.log('Goodbye!');
+									break;
+								} else {
+									console.log(`Unknown command: ${input}. Type /help for available commands.`);
+								}
+								continue;
+							}
 
-						if (sessionResources.length === 0) {
-							console.log('Use @resource to specify context. Example: @svelte How do stores work?');
-							continue;
-						}
+							const mentions = extractMentions(input);
+							const validNewResources: string[] = [];
+							for (const mention of mentions) {
+								const resolved = resolveResourceName(mention, resources);
+								if (resolved) validNewResources.push(resolved);
+							}
 
-						const question = cleanInput(input, sessionResources);
-						if (!question) {
-							console.log('Please enter a question after the @mention.');
-							continue;
-						}
+							if (validNewResources.length > 0) {
+								sessionResources = [...new Set([...sessionResources, ...validNewResources])];
+							}
 
-						try {
-							await runReplEffect(
-								Effect.tryPromise(async () => {
-									console.log(`[Searching: ${sessionResources.join(', ')}]\n`);
-									const response = await askQuestionStream(server.url, {
-										question,
-										resources: sessionResources,
-										quiet: true
-									});
+							if (sessionResources.length === 0) {
+								console.log(
+									'Use @resource to specify context. Example: @svelte How do stores work?'
+								);
+								continue;
+							}
 
-									let inReasoning = false;
-									let hasText = false;
-									for await (const event of parseSSEStream(response)) {
-										handleStreamEvent(event, {
-											onReasoningDelta: (delta) => {
-												if (!showThinking) return;
-												if (!inReasoning) {
-													process.stdout.write('<thinking>\n');
-													inReasoning = true;
-												}
-												process.stdout.write(delta);
-											},
-											onTextDelta: (delta) => {
-												if (inReasoning) {
-													process.stdout.write('\n</thinking>\n\n');
-													inReasoning = false;
-												}
-												hasText = true;
-												process.stdout.write(delta);
-											},
-											onToolCall: (tool) => {
-												if (inReasoning) {
-													process.stdout.write('\n</thinking>\n\n');
-													inReasoning = false;
-												}
-												if (!showTools) return;
-												if (hasText) process.stdout.write('\n');
-												console.log(`[${tool}]`);
-											},
-											onError: (message) => {
-												console.error(`\nError: ${message}`);
-											}
+							const question = cleanInput(input, sessionResources);
+							if (!question) {
+								console.log('Please enter a question after the @mention.');
+								continue;
+							}
+
+							try {
+								await runReplEffect(
+									Effect.tryPromise(async () => {
+										console.log(`[Searching: ${sessionResources.join(', ')}]\n`);
+										const response = await askQuestionStream(server.url, {
+											question,
+											resources: sessionResources,
+											quiet: true
 										});
-									}
 
-									if (inReasoning) {
-										process.stdout.write('\n</thinking>\n');
-									}
-									console.log('\n');
-								})
-							);
-						} catch (error) {
-							console.error(formatCliCommandError(error));
+										let inReasoning = false;
+										let hasText = false;
+										for await (const event of parseSSEStream(response)) {
+											handleStreamEvent(event, {
+												onReasoningDelta: (delta) => {
+													if (!showThinking) return;
+													if (!inReasoning) {
+														process.stdout.write('<thinking>\n');
+														inReasoning = true;
+													}
+													process.stdout.write(delta);
+												},
+												onTextDelta: (delta) => {
+													if (inReasoning) {
+														process.stdout.write('\n</thinking>\n\n');
+														inReasoning = false;
+													}
+													hasText = true;
+													process.stdout.write(delta);
+												},
+												onToolCall: (tool) => {
+													if (inReasoning) {
+														process.stdout.write('\n</thinking>\n\n');
+														inReasoning = false;
+													}
+													if (!showTools) return;
+													if (hasText) process.stdout.write('\n');
+													console.log(`[${tool}]`);
+												},
+												onError: (message) => {
+													console.error(`\nError: ${message}`);
+												}
+											});
+										}
+
+										if (inReasoning) {
+											process.stdout.write('\n</thinking>\n');
+										}
+										console.log('\n');
+									})
+								);
+							} catch (error) {
+								console.error(formatCliCommandError(error));
+							}
 						}
-					}
-				})
-		)
-	);
+					})
+			)
+		);
+		await trackTelemetryEvent({
+			event: 'cli_repl_completed',
+			properties: {
+				command: 'btca',
+				mode: 'repl',
+				durationMs: Date.now() - startedAt,
+				exitCode: 0
+			}
+		});
+	} catch (error) {
+		await trackTelemetryEvent({
+			event: 'cli_repl_failed',
+			properties: {
+				command: 'btca',
+				mode: 'repl',
+				durationMs: Date.now() - startedAt,
+				errorName: error instanceof Error ? error.name : 'UnknownError',
+				exitCode: 1
+			}
+		});
+		throw error;
+	}
 }

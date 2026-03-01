@@ -46,6 +46,15 @@ export const runServeCommand = async (options: { port?: number } = {}) => {
 		process.on('SIGINT', shutdown);
 		process.on('SIGTERM', shutdown);
 		await shutdownPromise;
+		await trackTelemetryEvent({
+			event: 'cli_server_completed',
+			properties: {
+				command: commandName,
+				mode: 'serve',
+				durationMs: Date.now() - startedAt,
+				exitCode: 0
+			}
+		});
 	} catch (error) {
 		const durationMs = Date.now() - startedAt;
 		const errorName = error instanceof Error ? error.name : 'UnknownError';
