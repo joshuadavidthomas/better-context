@@ -1,7 +1,12 @@
 import { Effect } from 'effect';
 import type { BtcaStreamEvent } from 'btca-server/stream/types';
 import { withServerEffect } from '../server/manager.ts';
-import { createClient, getConfig, getResources, askQuestionStream } from '../client/index.ts';
+import {
+	createClient,
+	getConfigEffect,
+	getResourcesEffect,
+	askQuestionStreamEffect
+} from '../client/index.ts';
 import { parseSSEStream } from '../client/stream.ts';
 import { formatCliCommandError } from '../effect/errors.ts';
 import { runCliEffect } from '../effect/runtime.ts';
@@ -17,9 +22,6 @@ export interface ReplOptions {
 	subAgent?: boolean;
 }
 
-/**
- * Extract @mentions from input
- */
 function extractMentions(input: string): string[] {
 	const mentionRegex = /(^|[^\w@])@([A-Za-z0-9._/-]+)/g;
 	const mentions: string[] = [];
@@ -30,22 +32,16 @@ function extractMentions(input: string): string[] {
 	return mentions;
 }
 
-/**
- * Remove valid @mentions from input, leaving the question
- */
 function cleanInput(input: string, validResources: string[]): string {
 	const validSet = new Set(validResources.map((r) => r.toLowerCase()));
 	return input
-		.replace(/(^|[^\w@])@([A-Za-z0-9._/-]+)/g, (match, prefix, mention) => {
-			return validSet.has(mention.toLowerCase()) ? prefix : match;
-		})
+		.replace(/(^|[^\w@])@([A-Za-z0-9._/-]+)/g, (match, prefix, mention) =>
+			validSet.has(mention.toLowerCase()) ? prefix : match
+		)
 		.replace(/\s+/g, ' ')
 		.trim();
 }
 
-/**
- * Resolve resource name, case-insensitive
- */
 function resolveResourceName(input: string, available: ResourceInfo[]): string | null {
 	const target = input.toLowerCase();
 	const direct = available.find((r) => r.name.toLowerCase() === target);
@@ -90,9 +86,6 @@ function handleStreamEvent(event: BtcaStreamEvent, handlers: StreamHandlers): vo
 	}
 }
 
-/**
- * Simple prompt using Bun's built-in console
- */
 async function prompt(message: string): Promise<string | null> {
 	process.stdout.write(message);
 	const reader = (
@@ -116,10 +109,7 @@ async function prompt(message: string): Promise<string | null> {
 	}
 }
 
-/**
- * Launch the simple REPL mode (no TUI)
- */
-export async function launchRepl(options: ReplOptions): Promise<void> {
+const launchReplPromise = async (options: ReplOptions): Promise<void> => {
 	const showThinking = options.subAgent ? false : (options.thinking ?? true);
 	const showTools = options.subAgent ? false : (options.tools ?? true);
 	const startedAt = Date.now();
@@ -135,8 +125,8 @@ export async function launchRepl(options: ReplOptions): Promise<void> {
 					Effect.tryPromise(async () => {
 						const client = createClient(server.url);
 						const [config, resourcesResult] = await Promise.all([
-							getConfig(client),
-							getResources(client)
+							runReplEffect(getConfigEffect(client)),
+							runReplEffect(getResourcesEffect(client))
 						]);
 						setTelemetryContext({ provider: config.provider, model: config.model });
 						await trackTelemetryEvent({
@@ -239,11 +229,13 @@ Examples:
 								await runReplEffect(
 									Effect.tryPromise(async () => {
 										console.log(`[Searching: ${sessionResources.join(', ')}]\n`);
-										const response = await askQuestionStream(server.url, {
-											question,
-											resources: sessionResources,
-											quiet: true
-										});
+										const response = await runReplEffect(
+											askQuestionStreamEffect(server.url, {
+												question,
+												resources: sessionResources,
+												quiet: true
+											})
+										);
 
 										let inReasoning = false;
 										let hasText = false;
@@ -315,4 +307,7 @@ Examples:
 		});
 		throw error;
 	}
-}
+};
+
+export const launchRepl = (options: ReplOptions) =>
+	Effect.tryPromise(() => launchReplPromise(options));

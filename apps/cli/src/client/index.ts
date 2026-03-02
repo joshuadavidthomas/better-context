@@ -120,8 +120,6 @@ const requestJson = <T>(
 		})) as T;
 	});
 
-const runClientEffect = <A>(effect: Effect.Effect<A, BtcaError>) => Effect.runPromise(effect);
-
 /**
  * Create an HTTP client descriptor for the btca server
  */
@@ -132,69 +130,72 @@ export function createClient(baseUrl: string): Client {
 /**
  * Get server configuration
  */
-export async function getConfig(client: Client): Promise<ConfigResponse> {
-	return runClientEffect(
-		requestJson<ConfigResponse>(`${client.baseUrl}/config`, undefined, 'Failed to get config')
-	);
-}
+export const getConfigEffect = (client: Client): Effect.Effect<ConfigResponse, BtcaError> =>
+	requestJson<ConfigResponse>(`${client.baseUrl}/config`, undefined, 'Failed to get config');
+
+export const getConfig = (client: Client) => Effect.runPromise(getConfigEffect(client));
 
 /**
  * Get available resources
  */
-export async function getResources(client: Client): Promise<ResourcesResponse> {
-	return runClientEffect(
-		requestJson<ResourcesResponse>(
-			`${client.baseUrl}/resources`,
-			undefined,
-			'Failed to get resources'
-		)
+export const getResourcesEffect = (client: Client): Effect.Effect<ResourcesResponse, BtcaError> =>
+	requestJson<ResourcesResponse>(
+		`${client.baseUrl}/resources`,
+		undefined,
+		'Failed to get resources'
 	);
-}
 
-export async function getProviders(client: Client): Promise<ProvidersResponse> {
-	return runClientEffect(
-		requestJson<ProvidersResponse>(
-			`${client.baseUrl}/providers`,
-			undefined,
-			'Failed to get providers'
-		)
+export const getResources = (client: Client) => Effect.runPromise(getResourcesEffect(client));
+
+export const getProvidersEffect = (client: Client): Effect.Effect<ProvidersResponse, BtcaError> =>
+	requestJson<ProvidersResponse>(
+		`${client.baseUrl}/providers`,
+		undefined,
+		'Failed to get providers'
 	);
-}
+
+export const getProviders = (client: Client) => Effect.runPromise(getProvidersEffect(client));
 
 /**
  * Ask a question (non-streaming)
  */
-export async function askQuestion(
+export const askQuestionEffect = (
 	client: Client,
 	options: {
 		question: string;
 		resources?: string[];
 		quiet?: boolean;
 	}
-): Promise<{ answer: string; model: { provider: string; model: string } }> {
-	return runClientEffect(
-		requestJson<{ answer: string; model: { provider: string; model: string } }>(
-			`${client.baseUrl}/question`,
-			{
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				},
-				body: JSON.stringify({
-					question: options.question,
-					resources: options.resources,
-					quiet: options.quiet
-				})
+): Effect.Effect<{ answer: string; model: { provider: string; model: string } }, BtcaError> =>
+	requestJson<{ answer: string; model: { provider: string; model: string } }>(
+		`${client.baseUrl}/question`,
+		{
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json'
 			},
-			'Failed to ask question'
-		)
+			body: JSON.stringify({
+				question: options.question,
+				resources: options.resources,
+				quiet: options.quiet
+			})
+		},
+		'Failed to ask question'
 	);
-}
+
+export const askQuestion = (
+	client: Client,
+	options: {
+		question: string;
+		resources?: string[];
+		quiet?: boolean;
+	}
+) => Effect.runPromise(askQuestionEffect(client, options));
 
 /**
  * Ask a question (streaming) - returns the raw Response for SSE parsing
  */
-export async function askQuestionStream(
+export const askQuestionStreamEffect = (
 	baseUrl: string,
 	options: {
 		question: string;
@@ -202,26 +203,45 @@ export async function askQuestionStream(
 		quiet?: boolean;
 		signal?: AbortSignal;
 	}
-): Promise<Response> {
-	const res = await fetch(`${baseUrl}/question/stream`, {
-		method: 'POST',
-		headers: {
-			'Content-Type': 'application/json'
-		},
-		body: JSON.stringify({
-			question: options.question,
-			resources: options.resources,
-			quiet: options.quiet
-		}),
-		signal: options.signal
+): Effect.Effect<Response, BtcaError> =>
+	Effect.gen(function* () {
+		const response = yield* Effect.tryPromise({
+			try: () =>
+				fetch(`${baseUrl}/question/stream`, {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json'
+					},
+					body: JSON.stringify({
+						question: options.question,
+						resources: options.resources,
+						quiet: options.quiet
+					}),
+					signal: options.signal
+				}),
+			catch: (error) => new BtcaError(String(error))
+		});
+
+		if (!response.ok) {
+			const parsedError = yield* parseErrorResponse(
+				response,
+				`Failed to ask question: ${response.status}`
+			);
+			return yield* Effect.fail(parsedError);
+		}
+
+		return response;
 	});
 
-	if (!res.ok) {
-		throw await Effect.runPromise(parseErrorResponse(res, `Failed to ask question: ${res.status}`));
+export const askQuestionStream = (
+	baseUrl: string,
+	options: {
+		question: string;
+		resources?: string[];
+		quiet?: boolean;
+		signal?: AbortSignal;
 	}
-
-	return res;
-}
+) => Effect.runPromise(askQuestionStreamEffect(baseUrl, options));
 
 /**
  * Update model configuration
@@ -237,30 +257,34 @@ export type ModelUpdateResult = {
 	savedTo: 'project' | 'global';
 };
 
-export async function updateModel(
+export const updateModelEffect = (
 	baseUrl: string,
 	provider: string,
 	model: string,
 	providerOptions?: ProviderOptionsInput
-): Promise<ModelUpdateResult> {
-	return runClientEffect(
-		requestJson<ModelUpdateResult>(
-			`${baseUrl}/config/model`,
-			{
-				method: 'PUT',
-				headers: {
-					'Content-Type': 'application/json'
-				},
-				body: JSON.stringify({
-					provider,
-					model,
-					...(providerOptions ? { providerOptions } : {})
-				})
+): Effect.Effect<ModelUpdateResult, BtcaError> =>
+	requestJson<ModelUpdateResult>(
+		`${baseUrl}/config/model`,
+		{
+			method: 'PUT',
+			headers: {
+				'Content-Type': 'application/json'
 			},
-			'Failed to update model'
-		)
+			body: JSON.stringify({
+				provider,
+				model,
+				...(providerOptions ? { providerOptions } : {})
+			})
+		},
+		'Failed to update model'
 	);
-}
+
+export const updateModel = (
+	baseUrl: string,
+	provider: string,
+	model: string,
+	providerOptions?: ProviderOptionsInput
+) => Effect.runPromise(updateModelEffect(baseUrl, provider, model, providerOptions));
 
 export interface GitResourceInput {
 	type: 'git';
@@ -292,30 +316,33 @@ export type ResourceInput = GitResourceInput | LocalResourceInput | NpmResourceI
 /**
  * Add a new resource
  */
-export async function addResource(
+export const addResourceEffect = (
 	baseUrl: string,
 	resource: ResourceInput
-): Promise<ResourceInput> {
-	return runClientEffect(
-		requestJson<ResourceInput>(
-			`${baseUrl}/config/resources`,
-			{
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				},
-				body: JSON.stringify(resource)
+): Effect.Effect<ResourceInput, BtcaError> =>
+	requestJson<ResourceInput>(
+		`${baseUrl}/config/resources`,
+		{
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json'
 			},
-			'Failed to add resource'
-		)
+			body: JSON.stringify(resource)
+		},
+		'Failed to add resource'
 	);
-}
+
+export const addResource = (baseUrl: string, resource: ResourceInput) =>
+	Effect.runPromise(addResourceEffect(baseUrl, resource));
 
 /**
  * Remove a resource
  */
-export async function removeResource(baseUrl: string, name: string): Promise<void> {
-	await runClientEffect(
+export const removeResourceEffect = (
+	baseUrl: string,
+	name: string
+): Effect.Effect<void, BtcaError> =>
+	Effect.asVoid(
 		requestJson<{ success: boolean }>(
 			`${baseUrl}/config/resources`,
 			{
@@ -328,22 +355,25 @@ export async function removeResource(baseUrl: string, name: string): Promise<voi
 			'Failed to remove resource'
 		)
 	);
-}
+
+export const removeResource = (baseUrl: string, name: string) =>
+	Effect.runPromise(removeResourceEffect(baseUrl, name));
 
 /**
  * Clear all locally cloned resources
  */
-export async function clearResources(baseUrl: string): Promise<{ cleared: number }> {
-	return runClientEffect(
-		requestJson<{ cleared: number }>(
-			`${baseUrl}/clear`,
-			{
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				}
-			},
-			'Failed to clear resources'
-		)
+export const clearResourcesEffect = (
+	baseUrl: string
+): Effect.Effect<{ cleared: number }, BtcaError> =>
+	requestJson<{ cleared: number }>(
+		`${baseUrl}/clear`,
+		{
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json'
+			}
+		},
+		'Failed to clear resources'
 	);
-}
+
+export const clearResources = (baseUrl: string) => Effect.runPromise(clearResourcesEffect(baseUrl));

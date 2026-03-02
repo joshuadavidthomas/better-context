@@ -25,11 +25,14 @@ import {
 } from './virtual-metadata.ts';
 
 export type CollectionsService = {
-	load: (args: { resourceNames: readonly string[]; quiet?: boolean }) => Promise<CollectionResult>;
-	loadEffect: (args: {
+	load: (args: {
 		resourceNames: readonly string[];
 		quiet?: boolean;
-	}) => Effect.Effect<CollectionResult, CollectionError>;
+	}) => Effect.Effect<CollectionResult, CollectionError, never>;
+	loadPromise: (args: {
+		resourceNames: readonly string[];
+		quiet?: boolean;
+	}) => Promise<CollectionResult>;
 };
 
 const encodePathSegments = (value: string) => value.split('/').map(encodeURIComponent).join('/');
@@ -106,7 +109,7 @@ const initVirtualRoot = async (collectionPath: string, vfsId: string) => {
 
 const loadResource = async (resources: ResourcesService, name: string, quiet: boolean) => {
 	try {
-		return await resources.load(name, { quiet });
+		return await resources.loadPromise(name, { quiet });
 	} catch (cause) {
 		const underlyingHint = getErrorHint(cause);
 		const underlyingMessage = getErrorMessage(cause);
@@ -270,7 +273,7 @@ export const createCollectionsService = (args: {
 	config: ConfigServiceShape;
 	resources: ResourcesService;
 }): CollectionsService => {
-	const load: CollectionsService['load'] = ({ resourceNames, quiet = false }) =>
+	const loadPromise: CollectionsService['loadPromise'] = ({ resourceNames, quiet = false }) =>
 		runTransaction('collections.load', async () => {
 			const uniqueNames = Array.from(new Set(resourceNames));
 			if (uniqueNames.length === 0)
@@ -368,9 +371,9 @@ export const createCollectionsService = (args: {
 			}
 		});
 
-	const loadEffect: CollectionsService['loadEffect'] = ({ resourceNames, quiet }) =>
+	const load: CollectionsService['load'] = ({ resourceNames, quiet }) =>
 		Effect.tryPromise({
-			try: () => load({ resourceNames, quiet }),
+			try: () => loadPromise({ resourceNames, quiet }),
 			catch: (cause) =>
 				cause instanceof CollectionError
 					? cause
@@ -383,6 +386,6 @@ export const createCollectionsService = (args: {
 
 	return {
 		load,
-		loadEffect
+		loadPromise
 	};
 };

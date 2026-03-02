@@ -13,6 +13,56 @@ const checks: Check[] = [
 		command: ['rg', 'process\\.exit\\(', 'apps/cli/src/commands']
 	},
 	{
+		name: 'no Effect.runPromise in cli commands',
+		command: ['rg', 'Effect\\.runPromise', 'apps/cli/src/commands']
+	},
+	{
+		name: 'no effectFromPromise in cli commands',
+		command: ['rg', 'effectFromPromise', 'apps/cli/src/commands']
+	},
+	{
+		name: 'no effectFromPromise in cli source',
+		command: ['rg', 'effectFromPromise', 'apps/cli/src']
+	},
+	{
+		name: 'no promise-style cli client calls in commands',
+		command: [
+			'rg',
+			'\\b(getConfig|getResources|getProviders|askQuestionStream|askQuestion|updateModel|addResource|removeResource|clearResources)\\(',
+			'apps/cli/src/commands'
+		]
+	},
+	{
+		name: 'no promise-style cli client calls in tui services',
+		command: [
+			'rg',
+			'\\b(getConfig|getResources|getProviders|askQuestionStream|askQuestion|updateModel|addResource|removeResource|clearResources)\\(',
+			'apps/cli/src/tui/services.ts'
+		]
+	},
+	{
+		name: 'no direct ensureServer in cli commands',
+		command: ['rg', 'ensureServer\\(', 'apps/cli/src/commands']
+	},
+	{
+		name: 'no async exported command handlers',
+		command: [
+			'rg',
+			'export\\s+(const\\s+(run\\w+Command|launch\\w+)\\s*=\\s*async|async\\s+function\\s+(run\\w+Command|launch\\w+))',
+			'apps/cli/src/commands'
+		]
+	},
+	{
+		name: 'no Effect.runPromise in server ask stack services',
+		command: [
+			'rg',
+			'Effect\\.runPromise',
+			'apps/server/src/agent/service.ts',
+			'apps/server/src/collections/service.ts',
+			'apps/server/src/resources/service.ts'
+		]
+	},
+	{
 		name: 'no Effect.runPromise in tui tree',
 		command: ['rg', 'Effect\\.runPromise', 'apps/cli/src/tui']
 	}

@@ -3,13 +3,12 @@ import { Effect } from 'effect';
 import { withServerEffect } from '../server/manager.ts';
 import {
 	createClient,
-	getConfig,
-	getResources,
-	askQuestionStream,
+	getConfigEffect,
+	getResourcesEffect,
+	askQuestionStreamEffect,
 	BtcaError
 } from '../client/index.ts';
 import { parseSSEStream } from '../client/stream.ts';
-import { effectFromPromise } from '../effect/errors.ts';
 import {
 	extractMentionTokens,
 	isGitUrlReference,
@@ -91,7 +90,7 @@ export function registerSignalCleanup(stopServer: () => void, proc: SignalProces
 	};
 }
 
-export const runAskCommand = async (args: {
+export const runAskCommand = (args: {
 	question: string;
 	resource?: string[];
 	thinking?: boolean;
@@ -107,192 +106,203 @@ export const runAskCommand = async (args: {
 
 	const rawArgs = process.argv;
 	if (rawArgs.includes('-t') || rawArgs.includes('--tech')) {
-		throw new BtcaError('The -t/--tech flag has been deprecated.', {
-			hint: 'Use -r/--resource instead: btca ask -r <resource> -q "your question". You can specify multiple resources: btca ask -r svelte -r effect -q "...".'
-		});
-	}
-
-	try {
-		await Effect.runPromise(
-			withServerEffect(
-				{
-					serverUrl: args.globalOpts?.server,
-					port: args.globalOpts?.port,
-					quiet: true
-				},
-				(server) =>
-					effectFromPromise(async () => {
-						const teardownSignalCleanup = registerSignalCleanup(() => server.stop());
-						try {
-							const client = createClient(server.url);
-							const [config, resourcesResult] = await Promise.all([
-								getConfig(client),
-								getResources(client)
-							]);
-							setTelemetryContext({ provider: config.provider, model: config.model });
-							await trackTelemetryEvent({
-								event: 'cli_started',
-								properties: { command: commandName, mode: 'ask' }
-							});
-							await trackTelemetryEvent({
-								event: 'cli_ask_started',
-								properties: { command: commandName, mode: 'ask' }
-							});
-
-							const questionText = args.question;
-							const cliResources = args.resource ?? [];
-							const mentionedResources = extractMentionTokens(questionText);
-							const hasExplicitResources = cliResources.length > 0;
-							const { resources } = resourcesResult;
-							const mentionResolution = normalizeResourceNames(mentionedResources, resources);
-							const explicitResolution = normalizeResourceNames(cliResources, resources);
-							const anonymousResources: string[] = [];
-							const unresolvedExplicit: string[] = [];
-
-							for (const rawResource of cliResources) {
-								if (explicitResolution.invalid.includes(rawResource)) {
-									if (isGitUrlReference(rawResource) || isNpmReference(rawResource)) {
-										anonymousResources.push(rawResource);
-									} else {
-										unresolvedExplicit.push(rawResource);
-									}
-								}
-							}
-
-							if (unresolvedExplicit.length > 0) {
-								const available = resources.map((resource) => resource.name);
-								throw new BtcaError(
-									[
-										'Unknown resources:',
-										...unresolvedExplicit.map((resourceName) => `  - ${resourceName}`),
-										available.length > 0
-											? `Available resources: ${available.join(', ')}`
-											: 'No resources are configured yet.'
-									].join('\n'),
-									{
-										hint: 'Use a configured resource name, a valid HTTPS Git URL, or an npm reference (npm:<package> or npmjs URL).'
-									}
-								);
-							}
-
-							const normalized = {
-								names: [
-									...new Set([
-										...explicitResolution.names,
-										...anonymousResources,
-										...mentionResolution.names
-									])
-								]
-							};
-
-							const resourceNames: string[] = hasExplicitResources
-								? normalized.names
-								: mentionResolution.names.length > 0
-									? mentionResolution.names
-									: resources.map((r) => r.name);
-
-							if (resourceNames.length === 0) {
-								throw new BtcaError('No resources configured.', {
-									hint: 'Add resources with "btca add" or check "btca resources".'
-								});
-							}
-
-							const cleanedQuery = stripResolvedMentionTokens(
-								questionText,
-								mentionResolution.names
-							);
-							console.log('loading resources...');
-
-							const response = await askQuestionStream(server.url, {
-								question: cleanedQuery,
-								resources: resourceNames,
-								quiet: true
-							});
-
-							let receivedMeta = false;
-							let inReasoning = false;
-							let hasText = false;
-
-							for await (const event of parseSSEStream(response)) {
-								handleStreamEvent(event, {
-									onMeta: () => {
-										if (!receivedMeta) {
-											console.log('creating collection...\n');
-											receivedMeta = true;
-										}
-									},
-									onReasoningDelta: (delta) => {
-										if (!showThinking) return;
-										if (!inReasoning) {
-											process.stdout.write('<thinking>\n');
-											inReasoning = true;
-										}
-										process.stdout.write(delta);
-									},
-									onTextDelta: (delta) => {
-										if (inReasoning) {
-											process.stdout.write('\n</thinking>\n\n');
-											inReasoning = false;
-										}
-										hasText = true;
-										outputChars += delta.length;
-										process.stdout.write(delta);
-									},
-									onToolCall: (tool) => {
-										if (inReasoning) {
-											process.stdout.write('\n</thinking>\n\n');
-											inReasoning = false;
-										}
-										if (!showTools) return;
-										if (hasText) {
-											process.stdout.write('\n');
-										}
-										console.log(`[${tool}]`);
-									},
-									onError: (message, tag, hint) => {
-										throw streamErrorToBtcaError(message, tag, hint);
-									}
-								});
-							}
-
-							if (inReasoning) {
-								process.stdout.write('\n</thinking>\n');
-							}
-
-							console.log('\n');
-						} finally {
-							teardownSignalCleanup();
-						}
-					})
-			)
+		return Effect.fail(
+			new BtcaError('The -t/--tech flag has been deprecated.', {
+				hint: 'Use -r/--resource instead: btca ask -r <resource> -q "your question". You can specify multiple resources: btca ask -r svelte -r effect -q "...".'
+			})
 		);
-		const durationMs = Date.now() - startedAt;
-		await trackTelemetryEvent({
-			event: 'cli_ask_completed',
-			properties: {
-				command: commandName,
-				mode: 'ask',
-				durationMs,
-				outputChars,
-				exitCode: 0
-			}
-		});
-		return;
-	} catch (error) {
-		const durationMs = Date.now() - startedAt;
-		const errorName = error instanceof Error ? error.name : 'UnknownError';
-		await trackTelemetryEvent({
-			event: 'cli_ask_failed',
-			properties: {
-				command: commandName,
-				mode: 'ask',
-				durationMs,
-				errorName,
-				exitCode: 1
-			}
-		});
-		throw error;
 	}
+
+	const askEffect = withServerEffect(
+		{
+			serverUrl: args.globalOpts?.server,
+			port: args.globalOpts?.port,
+			quiet: true
+		},
+		(server) =>
+			Effect.gen(function* () {
+				const teardownSignalCleanup = registerSignalCleanup(() => server.stop());
+				try {
+					const client = createClient(server.url);
+					const [config, resourcesResult] = yield* Effect.all(
+						[getConfigEffect(client), getResourcesEffect(client)],
+						{ concurrency: 'unbounded' }
+					);
+					yield* Effect.sync(() =>
+						setTelemetryContext({ provider: config.provider, model: config.model })
+					);
+					yield* Effect.tryPromise(() =>
+						trackTelemetryEvent({
+							event: 'cli_started',
+							properties: { command: commandName, mode: 'ask' }
+						})
+					);
+					yield* Effect.tryPromise(() =>
+						trackTelemetryEvent({
+							event: 'cli_ask_started',
+							properties: { command: commandName, mode: 'ask' }
+						})
+					);
+
+					const questionText = args.question;
+					const cliResources = args.resource ?? [];
+					const mentionedResources = extractMentionTokens(questionText);
+					const hasExplicitResources = cliResources.length > 0;
+					const { resources } = resourcesResult;
+					const mentionResolution = normalizeResourceNames(mentionedResources, resources);
+					const explicitResolution = normalizeResourceNames(cliResources, resources);
+					const anonymousResources: string[] = [];
+					const unresolvedExplicit: string[] = [];
+
+					for (const rawResource of cliResources) {
+						if (explicitResolution.invalid.includes(rawResource)) {
+							if (isGitUrlReference(rawResource) || isNpmReference(rawResource)) {
+								anonymousResources.push(rawResource);
+							} else {
+								unresolvedExplicit.push(rawResource);
+							}
+						}
+					}
+
+					if (unresolvedExplicit.length > 0) {
+						const available = resources.map((resource) => resource.name);
+						return yield* Effect.fail(
+							new BtcaError(
+								[
+									'Unknown resources:',
+									...unresolvedExplicit.map((resourceName) => `  - ${resourceName}`),
+									available.length > 0
+										? `Available resources: ${available.join(', ')}`
+										: 'No resources are configured yet.'
+								].join('\n'),
+								{
+									hint: 'Use a configured resource name, a valid HTTPS Git URL, or an npm reference (npm:<package> or npmjs URL).'
+								}
+							)
+						);
+					}
+
+					const normalized = {
+						names: [
+							...new Set([
+								...explicitResolution.names,
+								...anonymousResources,
+								...mentionResolution.names
+							])
+						]
+					};
+
+					const resourceNames: string[] = hasExplicitResources
+						? normalized.names
+						: mentionResolution.names.length > 0
+							? mentionResolution.names
+							: resources.map((r) => r.name);
+
+					if (resourceNames.length === 0) {
+						return yield* Effect.fail(
+							new BtcaError('No resources configured.', {
+								hint: 'Add resources with "btca add" or check "btca resources".'
+							})
+						);
+					}
+
+					const cleanedQuery = stripResolvedMentionTokens(questionText, mentionResolution.names);
+					yield* Effect.sync(() => console.log('loading resources...'));
+					const response = yield* askQuestionStreamEffect(server.url, {
+						question: cleanedQuery,
+						resources: resourceNames,
+						quiet: true
+					});
+
+					yield* Effect.tryPromise(async () => {
+						let receivedMeta = false;
+						let inReasoning = false;
+						let hasText = false;
+
+						for await (const event of parseSSEStream(response)) {
+							handleStreamEvent(event, {
+								onMeta: () => {
+									if (!receivedMeta) {
+										console.log('creating collection...\n');
+										receivedMeta = true;
+									}
+								},
+								onReasoningDelta: (delta) => {
+									if (!showThinking) return;
+									if (!inReasoning) {
+										process.stdout.write('<thinking>\n');
+										inReasoning = true;
+									}
+									process.stdout.write(delta);
+								},
+								onTextDelta: (delta) => {
+									if (inReasoning) {
+										process.stdout.write('\n</thinking>\n\n');
+										inReasoning = false;
+									}
+									hasText = true;
+									outputChars += delta.length;
+									process.stdout.write(delta);
+								},
+								onToolCall: (tool) => {
+									if (inReasoning) {
+										process.stdout.write('\n</thinking>\n\n');
+										inReasoning = false;
+									}
+									if (!showTools) return;
+									if (hasText) {
+										process.stdout.write('\n');
+									}
+									console.log(`[${tool}]`);
+								},
+								onError: (message, tag, hint) => {
+									throw streamErrorToBtcaError(message, tag, hint);
+								}
+							});
+						}
+
+						if (inReasoning) {
+							process.stdout.write('\n</thinking>\n');
+						}
+
+						console.log('\n');
+					});
+				} finally {
+					teardownSignalCleanup();
+				}
+			})
+	);
+
+	return askEffect.pipe(
+		Effect.tap(() =>
+			Effect.tryPromise(() =>
+				trackTelemetryEvent({
+					event: 'cli_ask_completed',
+					properties: {
+						command: commandName,
+						mode: 'ask',
+						durationMs: Date.now() - startedAt,
+						outputChars,
+						exitCode: 0
+					}
+				})
+			)
+		),
+		Effect.tapError((error) =>
+			Effect.tryPromise(() =>
+				trackTelemetryEvent({
+					event: 'cli_ask_failed',
+					properties: {
+						command: commandName,
+						mode: 'ask',
+						durationMs: Date.now() - startedAt,
+						errorName: error instanceof Error ? error.name : 'UnknownError',
+						exitCode: 1
+					}
+				})
+			)
+		)
+	);
 };
 
 interface StreamHandlers {

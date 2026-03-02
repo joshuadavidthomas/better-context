@@ -3,18 +3,17 @@ import type { BtcaStreamEvent } from 'btca-server/stream/types';
 
 import {
 	createClient,
-	getConfig,
-	getResources,
-	getProviders as getProvidersClient,
-	askQuestionStream,
-	updateModel as updateModelClient,
-	addResource as addResourceClient,
-	removeResource as removeResourceClient,
+	getConfigEffect,
+	getResourcesEffect,
+	getProvidersEffect,
+	askQuestionStreamEffect,
+	updateModelEffect,
+	addResourceEffect,
+	removeResourceEffect,
 	type ProviderOptionsInput,
 	type ResourceInput
 } from '../client/index.ts';
 import { parseSSEStream } from '../client/stream.ts';
-import { effectFromPromise } from '../effect/errors.ts';
 import { runCliEffect } from '../effect/runtime.ts';
 import type { Repo, BtcaChunk } from './types.ts';
 import { trackTelemetryEvent } from '../lib/telemetry.ts';
@@ -46,7 +45,7 @@ export const services = {
 		return runCliEffect(
 			Effect.gen(function* () {
 				const client = createClient(getServerUrl());
-				const { resources } = yield* effectFromPromise(() => getResources(client));
+				const { resources } = yield* getResourcesEffect(client);
 				return resources.map((r) => ({
 					name: r.name,
 					type: r.type,
@@ -72,7 +71,7 @@ export const services = {
 		return runCliEffect(
 			Effect.gen(function* () {
 				const client = createClient(getServerUrl());
-				const config = yield* effectFromPromise(() => getConfig(client));
+				const config = yield* getConfigEffect(client);
 				return { provider: config.provider, model: config.model };
 			})
 		);
@@ -85,7 +84,7 @@ export const services = {
 		return runCliEffect(
 			Effect.gen(function* () {
 				const client = createClient(getServerUrl());
-				return yield* effectFromPromise(() => getProvidersClient(client));
+				return yield* getProvidersEffect(client);
 			})
 		);
 	},
@@ -106,14 +105,12 @@ export const services = {
 				const serverUrl = getServerUrl();
 				currentAbortController = new AbortController();
 				const signal = currentAbortController.signal;
-				const response = yield* Effect.tryPromise(() =>
-					askQuestionStream(serverUrl, {
-						question,
-						resources: resourceNames,
-						quiet: true,
-						signal
-					})
-				);
+				const response = yield* askQuestionStreamEffect(serverUrl, {
+					question,
+					resources: resourceNames,
+					quiet: true,
+					signal
+				});
 				const chunksById = new Map<string, BtcaChunk>();
 				const chunkOrder: string[] = [];
 				let doneEvent: Extract<BtcaStreamEvent, { type: 'done' }> | undefined;
@@ -173,23 +170,21 @@ export const services = {
 		model: string,
 		providerOptions?: ProviderOptionsInput
 	): Promise<ModelUpdateResult> => {
-		return runCliEffect(
-			effectFromPromise(() => updateModelClient(getServerUrl(), provider, model, providerOptions))
-		);
+		return runCliEffect(updateModelEffect(getServerUrl(), provider, model, providerOptions));
 	},
 
 	/**
 	 * Add a new resource
 	 */
 	addResource: async (resource: ResourceInput): Promise<ResourceInput> => {
-		return runCliEffect(effectFromPromise(() => addResourceClient(getServerUrl(), resource)));
+		return runCliEffect(addResourceEffect(getServerUrl(), resource));
 	},
 
 	/**
 	 * Remove a resource
 	 */
 	removeResource: async (name: string): Promise<void> => {
-		await runCliEffect(effectFromPromise(() => removeResourceClient(getServerUrl(), name)));
+		await runCliEffect(removeResourceEffect(getServerUrl(), name));
 	}
 };
 

@@ -1,16 +1,13 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { Effect } from 'effect';
-import { ensureServer, type ServerManager } from '../server/manager.ts';
-import { createClient, getConfig } from '../client/index.ts';
+import { ensureServerEffect, type ServerManager } from '../server/manager.ts';
+import { createClient, getConfigEffect } from '../client/index.ts';
 import { runCliEffect } from '../effect/runtime.ts';
 import { setTelemetryContext, trackTelemetryEvent } from '../lib/telemetry.ts';
 
-// Store server reference globally so TUI can access it
 declare global {
-	// eslint-disable-next-line no-var
 	var __BTCA_SERVER__: ServerManager | undefined;
-	// eslint-disable-next-line no-var
 	var __BTCA_STREAM_OPTIONS__:
 		| {
 				showThinking: boolean;
@@ -54,22 +51,22 @@ const ensureStandaloneTreeSitterWorkerPath = () => {
 	);
 };
 
-/**
- * Launch the interactive TUI
- */
-export async function launchTui(options: TuiOptions): Promise<void> {
+const launchTuiPromise = async (options: TuiOptions): Promise<void> => {
 	const startedAt = Date.now();
+
 	try {
-		const server = await ensureServer({
-			serverUrl: options.server,
-			port: options.port
-		});
+		const server = await runCliEffect(
+			ensureServerEffect({
+				serverUrl: options.server,
+				port: options.port
+			})
+		);
 
 		try {
 			await runCliEffect(
 				Effect.gen(function* () {
 					const client = createClient(server.url);
-					const config = yield* Effect.tryPromise(() => getConfig(client));
+					const config = yield* getConfigEffect(client);
 					yield* Effect.sync(() =>
 						setTelemetryContext({ provider: config.provider, model: config.model })
 					);
@@ -96,7 +93,6 @@ export async function launchTui(options: TuiOptions): Promise<void> {
 			})
 		);
 
-		// Store server reference for TUI to use
 		globalThis.__BTCA_SERVER__ = server;
 		globalThis.__BTCA_STREAM_OPTIONS__ = {
 			showThinking: options.subAgent ? false : (options.thinking ?? true),
@@ -104,8 +100,6 @@ export async function launchTui(options: TuiOptions): Promise<void> {
 		};
 
 		ensureStandaloneTreeSitterWorkerPath();
-
-		// Import and run TUI (dynamic import to avoid loading TUI deps when not needed)
 		await runCliEffect(Effect.tryPromise(() => import('../tui/App.tsx')));
 		await trackTelemetryEvent({
 			event: 'cli_tui_completed',
@@ -129,4 +123,7 @@ export async function launchTui(options: TuiOptions): Promise<void> {
 		});
 		throw error;
 	}
-}
+};
+
+export const launchTui = (options: TuiOptions) =>
+	Effect.tryPromise(() => launchTuiPromise(options));

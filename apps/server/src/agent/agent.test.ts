@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { Effect } from 'effect';
 
 import { createAgentService } from './service.ts';
 import { load as loadConfig } from '../config/index.ts';
@@ -71,10 +72,12 @@ describe('Agent', () => {
 				vfsId
 			};
 
-			const result = await agent.ask({
-				collection,
-				question: 'What number is the answer to life according to the README?'
-			});
+			const result = await Effect.runPromise(
+				agent.ask({
+					collection,
+					question: 'What number is the answer to life according to the README?'
+				})
+			);
 
 			expect(result).toBeDefined();
 			expect(result.answer).toBeDefined();
@@ -102,10 +105,12 @@ describe('Agent', () => {
 				vfsId
 			};
 
-			const { stream, model } = await agent.askStream({
-				collection,
-				question: 'What is the capital of France according to the data file?'
-			});
+			const { stream, model } = await Effect.runPromise(
+				agent.askStream({
+					collection,
+					question: 'What is the capital of France according to the data file?'
+				})
+			);
 
 			expect(model).toBeDefined();
 			expect(model.provider).toBeDefined();
@@ -154,10 +159,12 @@ describe('Agent', () => {
 				vfsId
 			};
 
-			const result = await agent.ask({
-				collection,
-				question: 'What number is the answer according to the README?'
-			});
+			const result = await Effect.runPromise(
+				agent.ask({
+					collection,
+					question: 'What number is the answer according to the README?'
+				})
+			);
 
 			expect(result).toBeDefined();
 			expect(hasVirtualFs(vfsId)).toBe(false);
@@ -200,10 +207,12 @@ describe('Agent', () => {
 				vfsId
 			};
 
-			const { stream } = await agent.askStream({
-				collection,
-				question: 'What is the capital of France according to the README?'
-			});
+			const { stream } = await Effect.runPromise(
+				agent.askStream({
+					collection,
+					question: 'What is the capital of France according to the README?'
+				})
+			);
 
 			for await (const _event of stream) {
 				// drain stream to trigger cleanup

@@ -165,13 +165,8 @@ const parseRootLaunchOptions = () => {
 if (firstOperand(normalizeCliArgv(process.argv.slice(2))) === null && !shouldDelegateRoot()) {
 	const runtime = createCliRuntime();
 	const launchOptions = parseRootLaunchOptions();
-	const launchEffect = Effect.tryPromise(async () => {
-		if (launchOptions.tui === false) {
-			await launchRepl(launchOptions);
-			return;
-		}
-		await launchTui(launchOptions);
-	});
+	const launchEffect =
+		launchOptions.tui === false ? launchRepl(launchOptions) : launchTui(launchOptions);
 
 	const launchExit = await runtime.runPromiseExit(launchEffect);
 	await runtime.dispose();

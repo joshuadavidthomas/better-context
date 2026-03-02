@@ -3,8 +3,7 @@ import * as readline from 'readline';
 import { spawn } from 'bun';
 import { Effect } from 'effect';
 import { withServerEffect } from '../server/manager.ts';
-import { createClient, getProviders, updateModel } from '../client/index.ts';
-import { effectFromPromise } from '../effect/errors.ts';
+import { createClient, getProvidersEffect, updateModelEffect } from '../client/index.ts';
 import { dim, green } from '../lib/utils/colors.ts';
 import { loginCopilotOAuth } from '../lib/copilot-oauth.ts';
 import { loginOpenAIOAuth, saveProviderApiKey } from '../lib/opencode-oauth.ts';
@@ -191,163 +190,187 @@ const promptOpenAICompatSetup = async (options: { includeModel?: boolean } = {})
 	}
 };
 
-export const runConnectCommand = async (args: {
+export const runConnectCommand = (args: {
 	global?: boolean;
 	provider?: string;
 	model?: string;
 	globalOpts?: { server?: string; port?: number };
-}) => {
-	try {
-		await Effect.runPromise(
-			withServerEffect(
-				{
-					serverUrl: args.globalOpts?.server,
-					port: args.globalOpts?.port,
-					quiet: true
-				},
-				(server) =>
-					effectFromPromise(async () => {
-						const client = createClient(server.url);
-						const providers = await getProviders(client);
+}) =>
+	withServerEffect(
+		{
+			serverUrl: args.globalOpts?.server,
+			port: args.globalOpts?.port,
+			quiet: true
+		},
+		(server) =>
+			Effect.gen(function* () {
+				try {
+					const client = createClient(server.url);
+					const providers = yield* getProvidersEffect(client);
 
-						if (args.provider && args.model) {
-							if (args.provider === 'openai-compat') {
-								const { baseURL, name, apiKey } = await promptOpenAICompatSetup({
-									includeModel: false
-								});
-								if (!baseURL || !name) {
-									throw new Error('Base URL and provider name are required.');
-								}
-								if (apiKey) {
-									await saveProviderApiKey(args.provider, apiKey);
-									console.log(`${args.provider} API key saved.`);
-								}
-								const updated = await updateModel(server.url, args.provider, args.model, {
-									baseURL,
-									name
-								});
-								console.log(`Model updated: ${updated.provider}/${updated.model}`);
-								return;
-							}
-
-							const updated = await updateModel(server.url, args.provider, args.model);
-							console.log(`Model updated: ${updated.provider}/${updated.model}`);
-
-							const info = PROVIDER_INFO[args.provider];
-							if (info?.requiresAuth && !providers.connected.includes(args.provider)) {
-								console.warn(`\nWarning: Provider "${args.provider}" is not connected.`);
-								console.warn('Run "opencode auth" to configure credentials.');
-							}
-							return;
-						}
-
-						console.log('\n--- Configure AI Provider ---\n');
-						const providerOptions: { label: string; value: string }[] = [];
-
-						for (const connectedId of providers.connected) {
-							const info = PROVIDER_INFO[connectedId];
-							const label = info
-								? `${info.label} ${green('(connected)')}`
-								: `${connectedId} ${green('(connected)')}`;
-							providerOptions.push({ label, value: connectedId });
-						}
-
-						for (const provider of providers.all) {
-							if (!providers.connected.includes(provider.id)) {
-								const info = PROVIDER_INFO[provider.id];
-								const label = info ? info.label : provider.id;
-								providerOptions.push({ label, value: provider.id });
-							}
-						}
-
-						const provider = await promptSelect('Select a provider:', providerOptions);
-						const isConnected = providers.connected.includes(provider);
-						const info = PROVIDER_INFO[provider];
-
-						if (!isConnected && info?.requiresAuth) {
-							console.log(`\nProvider "${provider}" requires authentication.`);
-							const guidance = PROVIDER_AUTH_GUIDANCE[provider];
-							if (guidance) {
-								console.log(`\n${guidance}`);
-							}
-							const success = await runBtcaAuth(provider);
-							if (!success) {
-								throw new Error(
-									'Authentication may have failed. Try again later with: opencode auth.'
-								);
-							}
-						}
-
-						if (provider === 'openai-compat') {
-							const modelDocs = PROVIDER_MODEL_DOCS[provider];
-							if (modelDocs) {
-								console.log(`\n${modelDocs.label}: ${modelDocs.url}`);
-							}
-
-							const { baseURL, name, modelId, apiKey } = await promptOpenAICompatSetup();
-							if (!baseURL || !name || !modelId) {
-								throw new Error('Base URL, provider name, and model ID are required.');
+					if (args.provider && args.model) {
+						if (args.provider === 'openai-compat') {
+							const { baseURL, name, apiKey } = yield* Effect.tryPromise(() =>
+								promptOpenAICompatSetup({ includeModel: false })
+							);
+							if (!baseURL || !name) {
+								return yield* Effect.fail(new Error('Base URL and provider name are required.'));
 							}
 							if (apiKey) {
-								await saveProviderApiKey(provider, apiKey);
-								console.log(`${provider} API key saved.`);
+								yield* Effect.tryPromise(() => saveProviderApiKey(args.provider!, apiKey));
+								yield* Effect.sync(() => console.log(`${args.provider} API key saved.`));
 							}
-
-							const updated = await updateModel(server.url, provider, modelId, { baseURL, name });
-							console.log(`\nModel configured: ${updated.provider}/${updated.model}`);
-							console.log(`\nSaved to: ${updated.savedTo} config`);
+							const updated = yield* updateModelEffect(server.url, args.provider, args.model, {
+								baseURL,
+								name
+							});
+							yield* Effect.sync(() =>
+								console.log(`Model updated: ${updated.provider}/${updated.model}`)
+							);
 							return;
 						}
 
-						let model: string;
-						const curated = CURATED_MODELS[provider] ?? [];
+						const updated = yield* updateModelEffect(server.url, args.provider, args.model);
+						yield* Effect.sync(() =>
+							console.log(`Model updated: ${updated.provider}/${updated.model}`)
+						);
+
+						const info = PROVIDER_INFO[args.provider];
+						if (info?.requiresAuth && !providers.connected.includes(args.provider)) {
+							yield* Effect.sync(() => {
+								console.warn(`\nWarning: Provider "${args.provider}" is not connected.`);
+								console.warn('Run "opencode auth" to configure credentials.');
+							});
+						}
+						return;
+					}
+
+					yield* Effect.sync(() => console.log('\n--- Configure AI Provider ---\n'));
+					const providerOptions: { label: string; value: string }[] = [];
+
+					for (const connectedId of providers.connected) {
+						const info = PROVIDER_INFO[connectedId];
+						const label = info
+							? `${info.label} ${green('(connected)')}`
+							: `${connectedId} ${green('(connected)')}`;
+						providerOptions.push({ label, value: connectedId });
+					}
+
+					for (const provider of providers.all) {
+						if (!providers.connected.includes(provider.id)) {
+							const info = PROVIDER_INFO[provider.id];
+							const label = info ? info.label : provider.id;
+							providerOptions.push({ label, value: provider.id });
+						}
+					}
+
+					const provider = yield* Effect.tryPromise(() =>
+						promptSelect('Select a provider:', providerOptions)
+					);
+					const isConnected = providers.connected.includes(provider);
+					const info = PROVIDER_INFO[provider];
+
+					if (!isConnected && info?.requiresAuth) {
+						yield* Effect.sync(() =>
+							console.log(`\nProvider "${provider}" requires authentication.`)
+						);
+						const guidance = PROVIDER_AUTH_GUIDANCE[provider];
+						if (guidance) {
+							yield* Effect.sync(() => console.log(`\n${guidance}`));
+						}
+						const success = yield* Effect.tryPromise(() => runBtcaAuth(provider));
+						if (!success) {
+							return yield* Effect.fail(
+								new Error('Authentication may have failed. Try again later with: opencode auth.')
+							);
+						}
+					}
+
+					if (provider === 'openai-compat') {
 						const modelDocs = PROVIDER_MODEL_DOCS[provider];
-						const modelWarning = PROVIDER_MODEL_WARNINGS[provider];
 						if (modelDocs) {
-							console.log(`\n${modelDocs.label}: ${modelDocs.url}`);
-						}
-						if (modelWarning) {
-							console.log(`\nHeads-up: ${modelWarning}`);
+							yield* Effect.sync(() => console.log(`\n${modelDocs.label}: ${modelDocs.url}`));
 						}
 
-						if (curated.length > 0) {
-							const options = [
-								...curated.map((modelItem) => ({ label: modelItem.label, value: modelItem.id })),
-								{ label: 'Custom model ID...', value: '__custom__' }
-							];
-							const selection = await promptSelect('Select a model:', options);
-							if (selection === '__custom__') {
-								const rl = createRl();
-								model = await promptInput(rl, 'Enter model ID');
-								rl.close();
-							} else {
-								model = selection;
-							}
-						} else {
-							console.log(`\nCurated models for ${provider} are coming soon.`);
+						const { baseURL, name, modelId, apiKey } = yield* Effect.tryPromise(() =>
+							promptOpenAICompatSetup()
+						);
+						if (!baseURL || !name || !modelId) {
+							return yield* Effect.fail(
+								new Error('Base URL, provider name, and model ID are required.')
+							);
+						}
+						if (apiKey) {
+							yield* Effect.tryPromise(() => saveProviderApiKey(provider, apiKey));
+							yield* Effect.sync(() => console.log(`${provider} API key saved.`));
+						}
+
+						const updated = yield* updateModelEffect(server.url, provider, modelId, {
+							baseURL,
+							name
+						});
+						yield* Effect.sync(() => {
+							console.log(`\nModel configured: ${updated.provider}/${updated.model}`);
+							console.log(`\nSaved to: ${updated.savedTo} config`);
+						});
+						return;
+					}
+
+					let model: string;
+					const curated = CURATED_MODELS[provider] ?? [];
+					const modelDocs = PROVIDER_MODEL_DOCS[provider];
+					const modelWarning = PROVIDER_MODEL_WARNINGS[provider];
+					if (modelDocs) {
+						yield* Effect.sync(() => console.log(`\n${modelDocs.label}: ${modelDocs.url}`));
+					}
+					if (modelWarning) {
+						yield* Effect.sync(() => console.log(`\nHeads-up: ${modelWarning}`));
+					}
+
+					if (curated.length > 0) {
+						const options = [
+							...curated.map((modelItem) => ({ label: modelItem.label, value: modelItem.id })),
+							{ label: 'Custom model ID...', value: '__custom__' }
+						];
+						const selection = yield* Effect.tryPromise(() =>
+							promptSelect('Select a model:', options)
+						);
+						if (selection === '__custom__') {
 							const rl = createRl();
-							model = await promptInput(rl, 'Enter model ID');
+							model = yield* Effect.tryPromise(() => promptInput(rl, 'Enter model ID'));
 							rl.close();
+						} else {
+							model = selection;
 						}
+					} else {
+						yield* Effect.sync(() =>
+							console.log(`\nCurated models for ${provider} are coming soon.`)
+						);
+						const rl = createRl();
+						model = yield* Effect.tryPromise(() => promptInput(rl, 'Enter model ID'));
+						rl.close();
+					}
 
-						if (!model) {
-							throw new Error('Model ID is required.');
-						}
+					if (!model) {
+						return yield* Effect.fail(new Error('Model ID is required.'));
+					}
 
-						const updated = await updateModel(server.url, provider, model);
+					const updated = yield* updateModelEffect(server.url, provider, model);
+					yield* Effect.sync(() => {
 						console.log(`\nModel configured: ${updated.provider}/${updated.model}`);
 						console.log(`\nSaved to: ${updated.savedTo} config`);
-					})
-			)
-		);
-	} catch (error) {
-		if (error instanceof Error && error.message === 'Invalid selection') {
-			throw new Error('Invalid selection. Please try again.');
-		}
-		if (isPromptCancelled(error)) {
-			console.log('\nSelection cancelled.');
-			return;
-		}
-		throw error;
-	}
-};
+					});
+				} catch (error) {
+					if (error instanceof Error && error.message === 'Invalid selection') {
+						return yield* Effect.fail(new Error('Invalid selection. Please try again.'));
+					}
+					if (isPromptCancelled(error)) {
+						yield* Effect.sync(() => {
+							console.log('\nSelection cancelled.');
+						});
+						return;
+					}
+					return yield* Effect.fail(error);
+				}
+			})
+	);

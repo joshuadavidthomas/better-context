@@ -87,11 +87,7 @@ export class ProviderNotConnectedError extends Error {
 }
 
 export type AgentService = {
-	askStream: (args: { collection: CollectionResult; question: string }) => Promise<{
-		stream: AsyncIterable<AgentEvent>;
-		model: { provider: string; model: string };
-	}>;
-	askStreamEffect: (args: { collection: CollectionResult; question: string }) => Effect.Effect<
+	askStream: (args: { collection: CollectionResult; question: string }) => Effect.Effect<
 		{
 			stream: AsyncIterable<AgentEvent>;
 			model: { provider: string; model: string };
@@ -99,17 +95,12 @@ export type AgentService = {
 		unknown
 	>;
 
-	ask: (args: { collection: CollectionResult; question: string }) => Promise<AgentResult>;
-	askEffect: (args: {
+	ask: (args: {
 		collection: CollectionResult;
 		question: string;
 	}) => Effect.Effect<AgentResult, unknown>;
 
-	listProviders: () => Promise<{
-		all: { id: string; models: Record<string, unknown> }[];
-		connected: string[];
-	}>;
-	listProvidersEffect: () => Effect.Effect<
+	listProviders: () => Effect.Effect<
 		{
 			all: { id: string; models: Record<string, unknown> }[];
 			connected: string[];
@@ -121,36 +112,39 @@ export type AgentService = {
 export type Service = AgentService;
 
 export const createAgentService = (config: ConfigServiceShape): AgentService => {
-	const cleanupCollection = (collection: CollectionResult) =>
-		Effect.promise(async () => {
-			if (collection.vfsId) {
-				disposeVirtualFs(collection.vfsId);
-				clearVirtualCollectionMetadata(collection.vfsId);
-			}
-			try {
-				await collection.cleanup?.();
-			} catch {
-				return;
-			}
-		});
+	const cleanupCollection = async (collection: CollectionResult) => {
+		if (collection.vfsId) {
+			disposeVirtualFs(collection.vfsId);
+			clearVirtualCollectionMetadata(collection.vfsId);
+		}
+		try {
+			await collection.cleanup?.();
+		} catch {
+			return;
+		}
+	};
 
-	const ensureProviderConnected = Effect.fn(function* () {
-		const isAuthed = yield* Effect.tryPromise(() => isAuthenticated(config.provider));
+	const ensureProviderConnected = async () => {
+		const isAuthed = await isAuthenticated(config.provider);
 		const requiresAuth = config.provider !== 'opencode' && config.provider !== 'openai-compat';
 		if (isAuthed || !requiresAuth) return;
-		const authenticated = yield* Effect.tryPromise(() => getAuthenticatedProviders());
-		yield* Effect.fail(
-			new ProviderNotConnectedError({
-				providerId: config.provider,
-				connectedProviders: authenticated
-			})
-		);
-	});
+		const authenticated = await getAuthenticatedProviders();
+		throw new ProviderNotConnectedError({
+			providerId: config.provider,
+			connectedProviders: authenticated
+		});
+	};
 
 	/**
 	 * Ask a question and stream the response using the new AI SDK loop
 	 */
-	const askStream: AgentService['askStream'] = async ({ collection, question }) => {
+	const askStreamImpl = async ({
+		collection,
+		question
+	}: {
+		collection: CollectionResult;
+		question: string;
+	}) => {
 		metricsInfo('agent.ask.start', {
 			provider: config.provider,
 			model: config.model,
@@ -158,9 +152,9 @@ export const createAgentService = (config: ConfigServiceShape): AgentService => 
 		});
 
 		try {
-			await Effect.runPromise(ensureProviderConnected());
+			await ensureProviderConnected();
 		} catch (error) {
-			await Effect.runPromise(cleanupCollection(collection));
+			await cleanupCollection(collection);
 			throw error;
 		}
 
@@ -181,7 +175,7 @@ export const createAgentService = (config: ConfigServiceShape): AgentService => 
 					yield event;
 				}
 			} finally {
-				await Effect.runPromise(cleanupCollection(collection));
+				await cleanupCollection(collection);
 			}
 		})();
 
@@ -194,103 +188,99 @@ export const createAgentService = (config: ConfigServiceShape): AgentService => 
 	/**
 	 * Ask a question and return the complete response
 	 */
-	const ask: AgentService['ask'] = async ({ collection, question }) => {
-		return Effect.runPromise(
-			Effect.gen(function* () {
-				metricsInfo('agent.ask.start', {
-					provider: config.provider,
-					model: config.model,
-					questionLength: question.length
+	const askImpl = async ({
+		collection,
+		question
+	}: {
+		collection: CollectionResult;
+		question: string;
+	}) => {
+		try {
+			metricsInfo('agent.ask.start', {
+				provider: config.provider,
+				model: config.model,
+				questionLength: question.length
+			});
+
+			await ensureProviderConnected();
+
+			let result: Awaited<ReturnType<typeof runAgentLoop>>;
+			try {
+				result = await runAgentLoop({
+					providerId: config.provider,
+					modelId: config.model,
+					maxSteps: config.maxSteps,
+					collectionPath: collection.path,
+					vfsId: collection.vfsId,
+					agentInstructions: collection.agentInstructions,
+					question,
+					providerOptions: config.getProviderOptions(config.provider)
 				});
-
-				yield* ensureProviderConnected();
-
-				const result = yield* Effect.tryPromise({
-					try: () =>
-						runAgentLoop({
-							providerId: config.provider,
-							modelId: config.model,
-							maxSteps: config.maxSteps,
-							collectionPath: collection.path,
-							vfsId: collection.vfsId,
-							agentInstructions: collection.agentInstructions,
-							question,
-							providerOptions: config.getProviderOptions(config.provider)
-						}),
-					catch: (cause) =>
-						new AgentError({
-							message: getErrorMessage(cause),
-							hint:
-								getErrorHint(cause) ??
-								'This may be a temporary issue. Try running the command again.',
-							cause
-						})
+			} catch (cause) {
+				throw new AgentError({
+					message: getErrorMessage(cause),
+					hint:
+						getErrorHint(cause) ?? 'This may be a temporary issue. Try running the command again.',
+					cause
 				});
+			}
 
-				metricsInfo('agent.ask.complete', {
-					provider: config.provider,
-					model: config.model,
-					answerLength: result.answer.length,
-					eventCount: result.events.length
-				});
+			metricsInfo('agent.ask.complete', {
+				provider: config.provider,
+				model: config.model,
+				answerLength: result.answer.length,
+				eventCount: result.events.length
+			});
 
-				return {
-					answer: result.answer,
-					model: result.model,
-					events: result.events
-				};
-			}).pipe(
-				Effect.tapError((error) =>
-					Effect.sync(() => metricsError('agent.ask.error', { error: metricsErrorInfo(error) }))
-				),
-				Effect.ensuring(cleanupCollection(collection))
-			)
-		);
+			return {
+				answer: result.answer,
+				model: result.model,
+				events: result.events
+			};
+		} catch (error) {
+			metricsError('agent.ask.error', { error: metricsErrorInfo(error) });
+			throw error;
+		} finally {
+			await cleanupCollection(collection);
+		}
 	};
 
 	/**
 	 * List available providers using local auth data
 	 */
-	const listProviders: AgentService['listProviders'] = async () => {
-		return Effect.runPromise(
-			Effect.gen(function* () {
-				const supportedProviders = getSupportedProviders();
-				const authenticatedProviders = yield* Effect.tryPromise(() => getAuthenticatedProviders());
-				const all = supportedProviders.map((id) => ({
-					id,
-					models: {} as Record<string, unknown>
-				}));
+	const listProvidersImpl = async () => {
+		const supportedProviders = getSupportedProviders();
+		const authenticatedProviders = await getAuthenticatedProviders();
+		const all = supportedProviders.map((id) => ({
+			id,
+			models: {} as Record<string, unknown>
+		}));
 
-				return {
-					all,
-					connected: authenticatedProviders
-				};
-			})
-		);
+		return {
+			all,
+			connected: authenticatedProviders
+		};
 	};
 
-	const askStreamEffect: AgentService['askStreamEffect'] = (args) =>
+	const askStream: AgentService['askStream'] = (args) =>
 		Effect.tryPromise({
-			try: () => askStream(args),
+			try: () => askStreamImpl(args),
 			catch: (cause) => cause
 		});
-	const askEffect: AgentService['askEffect'] = (args) =>
+	const ask: AgentService['ask'] = (args) =>
 		Effect.tryPromise({
-			try: () => ask(args),
+			try: () => askImpl(args),
 			catch: (cause) => cause
 		});
-	const listProvidersEffect: AgentService['listProvidersEffect'] = () =>
+	const listProviders: AgentService['listProviders'] = () =>
 		Effect.tryPromise({
-			try: () => listProviders(),
+			try: () => listProvidersImpl(),
 			catch: (cause) => cause
 		});
 
 	return {
 		askStream,
 		ask,
-		listProviders,
-		askStreamEffect,
-		askEffect,
-		listProvidersEffect
+		listProviders
 	};
 };

@@ -1,4 +1,4 @@
-import { startServer, type ServerInstance } from 'btca-server';
+import { startServer } from 'btca-server';
 import { Effect } from 'effect';
 
 export interface ServerManager {
@@ -15,30 +15,27 @@ export interface EnsureServerOptions {
 
 const DEFAULT_TIMEOUT = 10000;
 
-/**
- * Wait for the server to be healthy
- */
-const waitForHealth = async (url: string, timeout: number): Promise<void> => {
-	const startTime = Date.now();
-	const pollInterval = 100;
+const waitForHealthEffect = (url: string, timeout: number): Effect.Effect<void, unknown, never> =>
+	Effect.gen(function* () {
+		const startTime = Date.now();
+		const pollInterval = 100;
 
-	while (Date.now() - startTime < timeout) {
-		try {
-			const response = await fetch(`${url}/`);
-			if (!response.ok) {
-				await new Promise((resolve) => setTimeout(resolve, pollInterval));
-				continue;
-			}
-			const data = (await response.json()) as { ok?: boolean };
-			if (data.ok) return;
-		} catch {
-			// keep polling until timeout
+		while (Date.now() - startTime < timeout) {
+			const isHealthy = yield* Effect.tryPromise({
+				try: async () => {
+					const response = await fetch(`${url}/`);
+					if (!response.ok) return false;
+					const data = (await response.json()) as { ok?: boolean };
+					return Boolean(data.ok);
+				},
+				catch: () => false
+			});
+			if (isHealthy) return;
+			yield* Effect.tryPromise(() => Bun.sleep(pollInterval));
 		}
-		await new Promise((resolve) => setTimeout(resolve, pollInterval));
-	}
 
-	throw new Error(`Server failed to start within ${timeout}ms`);
-};
+		return yield* Effect.fail(new Error(`Server failed to start within ${timeout}ms`));
+	});
 
 /**
  * Ensure a btca server is available
@@ -46,45 +43,42 @@ const waitForHealth = async (url: string, timeout: number): Promise<void> => {
  * If serverUrl is provided, uses that server (just health checks it).
  * Otherwise, starts the server in-process.
  */
-export async function ensureServer(options: EnsureServerOptions = {}): Promise<ServerManager> {
-	const { serverUrl, timeout = DEFAULT_TIMEOUT } = options;
+export const ensureServerEffect = (
+	options: EnsureServerOptions = {}
+): Effect.Effect<ServerManager, unknown, never> =>
+	Effect.gen(function* () {
+		const { serverUrl, timeout = DEFAULT_TIMEOUT } = options;
 
-	// If a server URL is provided, just verify it's healthy
-	if (serverUrl) {
-		await waitForHealth(serverUrl, timeout);
+		if (serverUrl) {
+			yield* waitForHealthEffect(serverUrl, timeout);
+			return {
+				url: serverUrl,
+				stop: () => {
+					// External server, nothing to stop
+				}
+			};
+		}
+
+		const port = options.port ?? 0;
+		const quiet = options.quiet ?? true;
+		const server = yield* Effect.tryPromise({
+			try: () => startServer({ port, quiet }),
+			catch: (error) => new Error(`Failed to start server: ${error}`)
+		});
+
 		return {
-			url: serverUrl,
-			stop: () => {
-				// External server, nothing to stop
-			}
+			url: server.url,
+			stop: () => server.stop()
 		};
-	}
+	});
 
-	// Start the server in-process
-	// Use port 0 by default: OS assigns an available ephemeral port (avoids collisions).
-	const port = options.port ?? 0;
-	const quiet = options.quiet ?? true;
-
-	let server: ServerInstance;
-	try {
-		server = await startServer({ port, quiet });
-	} catch (error) {
-		throw new Error(`Failed to start server: ${error}`);
-	}
-
-	return {
-		url: server.url,
-		stop: () => server.stop()
-	};
-}
-
-export const ensureServerEffect = (options: EnsureServerOptions = {}) =>
-	Effect.tryPromise(() => ensureServer(options));
+export const ensureServer = (options: EnsureServerOptions = {}) =>
+	Effect.runPromise(ensureServerEffect(options));
 
 export const withServerEffect = <A>(
 	options: EnsureServerOptions,
-	use: (server: ServerManager) => Effect.Effect<A, unknown>
-): Effect.Effect<A, unknown> =>
+	use: (server: ServerManager) => Effect.Effect<A, unknown, never>
+): Effect.Effect<A, unknown, never> =>
 	Effect.acquireUseRelease(ensureServerEffect(options), use, (server) =>
 		Effect.sync(() => server.stop())
 	);

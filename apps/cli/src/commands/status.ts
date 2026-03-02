@@ -3,8 +3,7 @@ import path from 'node:path';
 import { parseJsonc } from '@btca/shared';
 import { Effect } from 'effect';
 import { withServerEffect } from '../server/manager.ts';
-import { createClient, getConfig, getProviders } from '../client/index.ts';
-import { effectFromPromise } from '../effect/errors.ts';
+import { createClient, getConfigEffect, getProvidersEffect } from '../client/index.ts';
 import packageJson from '../../package.json';
 
 declare const __VERSION__: string;
@@ -118,64 +117,63 @@ const printResourceList = (label: string, resources: string[] | null) => {
 	}
 };
 
-export const runStatusCommand = async (globalOpts?: { server?: string; port?: number }) => {
+export const runStatusCommand = (globalOpts?: { server?: string; port?: number }) => {
 	const projectPath = path.resolve(process.cwd(), PROJECT_CONFIG_FILENAME);
 
-	return Effect.runPromise(
-		withServerEffect(
-			{
-				serverUrl: globalOpts?.server,
-				port: globalOpts?.port,
-				quiet: true
-			},
-			(server) =>
-				Effect.gen(function* () {
-					const client = createClient(server.url);
-					const [config, providers, globalConfig, projectConfig] = yield* effectFromPromise(() =>
-						Promise.all([
-							getConfig(client),
-							getProviders(client),
-							readConfigFromPath(GLOBAL_CONFIG_PATH),
-							readConfigFromPath(projectPath)
-						])
+	return withServerEffect(
+		{
+			serverUrl: globalOpts?.server,
+			port: globalOpts?.port,
+			quiet: true
+		},
+		(server) =>
+			Effect.gen(function* () {
+				const client = createClient(server.url);
+				const [config, providers, globalConfig, projectConfig] = yield* Effect.all(
+					[
+						getConfigEffect(client),
+						getProvidersEffect(client),
+						Effect.tryPromise(() => readConfigFromPath(GLOBAL_CONFIG_PATH)),
+						Effect.tryPromise(() => readConfigFromPath(projectPath))
+					],
+					{ concurrency: 'unbounded' }
+				);
+
+				const connected = Array.isArray(providers.connected) ? providers.connected : [];
+				const isAuthenticated = connected.includes(config.provider);
+				const latestVersion = yield* Effect.tryPromise(() => getLatestVersion());
+				const hasUpdate = latestVersion && compareVersions(VERSION, latestVersion) < 0;
+
+				yield* Effect.sync(() => {
+					console.log('\n--- btca status ---\n');
+					const modelSource = getConfigOrigin('model', projectConfig, globalConfig);
+					const providerSource = getConfigOrigin('provider', projectConfig, globalConfig);
+					console.log(`Selected model: ${config.model} (${modelSource})`);
+					console.log(`Selected provider: ${config.provider} (${providerSource})`);
+					console.log(`Selected provider authed: ${isAuthenticated ? 'yes' : 'no'}`);
+					console.log('');
+
+					printResourceList(
+						'Global resources',
+						globalConfig ? listResourceNames(globalConfig) : null
+					);
+					printResourceList(
+						'Project resources',
+						projectConfig ? listResourceNames(projectConfig) : null
 					);
 
-					const connected = Array.isArray(providers.connected) ? providers.connected : [];
-					const isAuthenticated = connected.includes(config.provider);
-					const latestVersion = yield* Effect.tryPromise(() => getLatestVersion());
-					const hasUpdate = latestVersion && compareVersions(VERSION, latestVersion) < 0;
-
-					yield* Effect.sync(() => {
-						console.log('\n--- btca status ---\n');
-						const modelSource = getConfigOrigin('model', projectConfig, globalConfig);
-						const providerSource = getConfigOrigin('provider', projectConfig, globalConfig);
-						console.log(`Selected model: ${config.model} (${modelSource})`);
-						console.log(`Selected provider: ${config.provider} (${providerSource})`);
-						console.log(`Selected provider authed: ${isAuthenticated ? 'yes' : 'no'}`);
-						console.log('');
-
-						printResourceList(
-							'Global resources',
-							globalConfig ? listResourceNames(globalConfig) : null
-						);
-						printResourceList(
-							'Project resources',
-							projectConfig ? listResourceNames(projectConfig) : null
-						);
-
-						console.log(`\nbtca version: ${VERSION}`);
-						if (latestVersion) {
-							console.log(`Latest version: ${latestVersion}`);
-							if (hasUpdate) {
-								console.log('Update available: run "bun add -g btca@latest"');
-							} else {
-								console.log('btca is up to date');
-							}
+					console.log(`\nbtca version: ${VERSION}`);
+					if (latestVersion) {
+						console.log(`Latest version: ${latestVersion}`);
+						if (hasUpdate) {
+							console.log('Update available: run "bun add -g btca@latest"');
 						} else {
-							console.log('Latest version: unavailable');
+							console.log('btca is up to date');
 						}
-					});
-				})
-		)
+					} else {
+						console.log('Latest version: unavailable');
+					}
+				});
+			})
 	);
 };

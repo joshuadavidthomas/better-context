@@ -22,7 +22,7 @@ import {
 import { runWipeCommand } from '../commands/wipe.ts';
 import { runTrackedCliCommand } from '../lib/telemetry.ts';
 import { normalizeCliArgv } from './argv.ts';
-import { effectFromPromise, formatCliCommandError } from './errors.ts';
+import { formatCliCommandError } from './errors.ts';
 
 const serverFlag = pipe(Flag.string('server'), Flag.optional);
 const portFlag = pipe(Flag.integer('port'), Flag.optional);
@@ -41,15 +41,28 @@ const resolveServerOptions = ({
 	quiet: true
 });
 
-const clear = Command.make('clear', { server: serverFlag, port: portFlag }, ({ server, port }) =>
-	effectFromPromise(() =>
+const trackCommand = <A>(args: {
+	command: string;
+	mode: string;
+	eventName?: string;
+	startProperties?: Record<string, unknown>;
+	action: () => Effect.Effect<A, unknown, never>;
+}) =>
+	Effect.tryPromise(() =>
 		runTrackedCliCommand({
-			command: 'clear',
-			mode: 'clear',
-			action: () => runClearCommand(resolveServerOptions({ server, port }))
+			...args,
+			action: () => Effect.runPromise(args.action())
 		})
-	)
+	);
+
+const clear = Command.make('clear', { server: serverFlag, port: portFlag }, ({ server, port }) =>
+	trackCommand({
+		command: 'clear',
+		mode: 'clear',
+		action: () => runClearCommand(resolveServerOptions({ server, port }))
+	})
 );
+
 const add = Command.make(
 	'add',
 	{
@@ -64,25 +77,24 @@ const add = Command.make(
 		port: portFlag
 	},
 	({ reference, global, name, branch, searchPath, notes, type, server, port }) =>
-		effectFromPromise(() =>
-			runTrackedCliCommand({
-				command: 'add',
-				mode: 'add',
-				startProperties: { global },
-				action: () =>
-					runAddCommand({
-						reference: Option.getOrUndefined(reference),
-						global,
-						name: Option.getOrUndefined(name),
-						branch: Option.getOrUndefined(branch),
-						searchPath: [...searchPath],
-						notes: Option.getOrUndefined(notes),
-						type: Option.getOrUndefined(type),
-						globalOpts: resolveServerOptions({ server, port })
-					})
-			})
-		)
+		trackCommand({
+			command: 'add',
+			mode: 'add',
+			startProperties: { global },
+			action: () =>
+				runAddCommand({
+					reference: Option.getOrUndefined(reference),
+					global,
+					name: Option.getOrUndefined(name),
+					branch: Option.getOrUndefined(branch),
+					searchPath: [...searchPath],
+					notes: Option.getOrUndefined(notes),
+					type: Option.getOrUndefined(type),
+					globalOpts: resolveServerOptions({ server, port })
+				})
+		})
 );
+
 const ask = Command.make(
 	'ask',
 	{
@@ -97,55 +109,49 @@ const ask = Command.make(
 		port: portFlag
 	},
 	({ question, resource, thinking, noThinking, tools, noTools, subAgent, server, port }) =>
-		effectFromPromise(() =>
-			runAskCommand({
-				question,
-				resource: [...resource],
-				thinking: Option.getOrUndefined(noThinking) ? false : Option.getOrUndefined(thinking),
-				tools: Option.getOrUndefined(noTools) ? false : Option.getOrUndefined(tools),
-				subAgent: Option.getOrUndefined(subAgent),
-				globalOpts: resolveServerOptions({ server, port })
-			})
-		)
+		runAskCommand({
+			question,
+			resource: [...resource],
+			thinking: Option.getOrUndefined(noThinking) ? false : Option.getOrUndefined(thinking),
+			tools: Option.getOrUndefined(noTools) ? false : Option.getOrUndefined(tools),
+			subAgent: Option.getOrUndefined(subAgent),
+			globalOpts: resolveServerOptions({ server, port })
+		})
 );
 
 const resources = Command.make(
 	'resources',
 	{ server: serverFlag, port: portFlag },
 	({ server, port }) =>
-		effectFromPromise(() =>
-			runTrackedCliCommand({
-				command: 'resources',
-				mode: 'resources',
-				action: () => runResourcesCommand(resolveServerOptions({ server, port }))
-			})
-		)
+		trackCommand({
+			command: 'resources',
+			mode: 'resources',
+			action: () => runResourcesCommand(resolveServerOptions({ server, port }))
+		})
 );
 
 const status = Command.make('status', { server: serverFlag, port: portFlag }, ({ server, port }) =>
-	effectFromPromise(() =>
-		runTrackedCliCommand({
-			command: 'status',
-			mode: 'status',
-			action: () => runStatusCommand(resolveServerOptions({ server, port }))
-		})
-	)
+	trackCommand({
+		command: 'status',
+		mode: 'status',
+		action: () => runStatusCommand(resolveServerOptions({ server, port }))
+	})
 );
+
 const init = Command.make(
 	'init',
 	{
 		force: pipe(Flag.boolean('force'), Flag.withAlias('f'))
 	},
 	({ force }) =>
-		effectFromPromise(() =>
-			runTrackedCliCommand({
-				command: 'init',
-				mode: 'init',
-				startProperties: { force },
-				action: () => runInitCommand({ force })
-			})
-		)
+		trackCommand({
+			command: 'init',
+			mode: 'init',
+			startProperties: { force },
+			action: () => runInitCommand({ force })
+		})
 );
+
 const mcp = pipe(
 	Command.make(
 		'mcp',
@@ -155,26 +161,27 @@ const mcp = pipe(
 			port: portFlag
 		},
 		({ mode, server, port }) =>
-			effectFromPromise(() => {
-				const selectedMode = Option.getOrUndefined(mode);
-				return runTrackedCliCommand({
-					command: 'mcp',
-					mode: selectedMode === 'local' ? 'mcp:local' : 'mcp',
-					eventName: selectedMode === 'local' ? 'mcp_local' : 'mcp',
-					startProperties: { mcpMode: selectedMode ?? 'server' },
-					action: () => {
-						if (!selectedMode) {
-							return runMcpServerCommand({ globalOpts: resolveServerOptions({ server, port }) });
-						}
-						if (selectedMode === 'local') {
-							return runMcpConfigureLocalCommand();
-						}
-						throw new Error(`Unknown mcp mode "${selectedMode}". Use "local" or omit it.`);
+			trackCommand({
+				command: 'mcp',
+				mode: Option.getOrUndefined(mode) === 'local' ? 'mcp:local' : 'mcp',
+				eventName: Option.getOrUndefined(mode) === 'local' ? 'mcp_local' : 'mcp',
+				startProperties: { mcpMode: Option.getOrUndefined(mode) ?? 'server' },
+				action: () => {
+					const selectedMode = Option.getOrUndefined(mode);
+					if (!selectedMode) {
+						return runMcpServerCommand({ globalOpts: resolveServerOptions({ server, port }) });
 					}
-				});
+					if (selectedMode === 'local') {
+						return runMcpConfigureLocalCommand();
+					}
+					return Effect.fail(
+						new Error(`Unknown mcp mode "${selectedMode}". Use "local" or omit it.`)
+					);
+				}
 			})
 	)
 );
+
 const connect = Command.make(
 	'connect',
 	{
@@ -185,25 +192,24 @@ const connect = Command.make(
 		port: portFlag
 	},
 	({ global, provider, model, server, port }) =>
-		effectFromPromise(() =>
-			runTrackedCliCommand({
-				command: 'connect',
-				mode: 'connect',
-				startProperties: {
+		trackCommand({
+			command: 'connect',
+			mode: 'connect',
+			startProperties: {
+				global,
+				provider: Option.getOrUndefined(provider),
+				model: Option.getOrUndefined(model)
+			},
+			action: () =>
+				runConnectCommand({
 					global,
 					provider: Option.getOrUndefined(provider),
-					model: Option.getOrUndefined(model)
-				},
-				action: () =>
-					runConnectCommand({
-						global,
-						provider: Option.getOrUndefined(provider),
-						model: Option.getOrUndefined(model),
-						globalOpts: resolveServerOptions({ server, port })
-					})
-			})
-		)
+					model: Option.getOrUndefined(model),
+					globalOpts: resolveServerOptions({ server, port })
+				})
+		})
 );
+
 const disconnect = Command.make(
 	'disconnect',
 	{
@@ -212,41 +218,40 @@ const disconnect = Command.make(
 		port: portFlag
 	},
 	({ provider, server, port }) =>
-		effectFromPromise(() =>
-			runTrackedCliCommand({
-				command: 'disconnect',
-				mode: 'disconnect',
-				startProperties: { provider: Option.getOrUndefined(provider) },
-				action: () =>
-					runDisconnectCommand({
-						provider: Option.getOrUndefined(provider),
-						globalOpts: resolveServerOptions({ server, port })
-					})
-			})
-		)
+		trackCommand({
+			command: 'disconnect',
+			mode: 'disconnect',
+			startProperties: { provider: Option.getOrUndefined(provider) },
+			action: () =>
+				runDisconnectCommand({
+					provider: Option.getOrUndefined(provider),
+					globalOpts: resolveServerOptions({ server, port })
+				})
+		})
 );
+
 const reference = Command.make(
 	'reference',
 	{
 		repo: Argument.string('repo')
 	},
 	({ repo }) =>
-		effectFromPromise(() =>
-			runTrackedCliCommand({
-				command: 'reference',
-				mode: 'reference',
-				startProperties: { repo },
-				action: () => runReferenceCommand(repo)
-			})
-		)
+		trackCommand({
+			command: 'reference',
+			mode: 'reference',
+			startProperties: { repo },
+			action: () => runReferenceCommand(repo)
+		})
 );
+
 const serve = Command.make(
 	'serve',
 	{
 		port: pipe(Flag.integer('port'), Flag.withAlias('p'), Flag.optional)
 	},
-	({ port }) => effectFromPromise(() => runServeCommand({ port: Option.getOrUndefined(port) }))
+	({ port }) => runServeCommand({ port: Option.getOrUndefined(port) })
 );
+
 const remove = Command.make(
 	'remove',
 	{
@@ -256,84 +261,75 @@ const remove = Command.make(
 		port: portFlag
 	},
 	({ name, global, server, port }) =>
-		effectFromPromise(() =>
-			runTrackedCliCommand({
-				command: 'remove',
-				mode: 'remove',
-				startProperties: {
+		trackCommand({
+			command: 'remove',
+			mode: 'remove',
+			startProperties: {
+				global,
+				name: Option.getOrUndefined(name)
+			},
+			action: () =>
+				runRemoveCommand({
+					name: Option.getOrUndefined(name),
 					global,
-					name: Option.getOrUndefined(name)
-				},
-				action: () =>
-					runRemoveCommand({
-						name: Option.getOrUndefined(name),
-						global,
-						globalOpts: resolveServerOptions({ server, port })
-					})
-			})
-		)
-);
-const skill = Command.make('skill', {}, () =>
-	effectFromPromise(() =>
-		runTrackedCliCommand({
-			command: 'skill',
-			mode: 'skill',
-			action: () => runSkillCommand()
+					globalOpts: resolveServerOptions({ server, port })
+				})
 		})
-	)
 );
+
+const skill = Command.make('skill', {}, () =>
+	trackCommand({
+		command: 'skill',
+		mode: 'skill',
+		action: () => runSkillCommand()
+	})
+);
+
 const telemetry = pipe(
 	Command.make('telemetry'),
 	Command.withSubcommands([
 		Command.make('on', {}, () =>
-			effectFromPromise(() =>
-				runTrackedCliCommand({
-					command: 'telemetry',
-					mode: 'telemetry:on',
-					eventName: 'telemetry_on',
-					startProperties: { subcommand: 'on' },
-					action: () => runTelemetryOnCommand()
-				})
-			)
+			trackCommand({
+				command: 'telemetry',
+				mode: 'telemetry:on',
+				eventName: 'telemetry_on',
+				startProperties: { subcommand: 'on' },
+				action: () => runTelemetryOnCommand()
+			})
 		),
 		Command.make('off', {}, () =>
-			effectFromPromise(() =>
-				runTrackedCliCommand({
-					command: 'telemetry',
-					mode: 'telemetry:off',
-					eventName: 'telemetry_off',
-					startProperties: { subcommand: 'off' },
-					action: () => runTelemetryOffCommand()
-				})
-			)
+			trackCommand({
+				command: 'telemetry',
+				mode: 'telemetry:off',
+				eventName: 'telemetry_off',
+				startProperties: { subcommand: 'off' },
+				action: () => runTelemetryOffCommand()
+			})
 		),
 		Command.make('status', {}, () =>
-			effectFromPromise(() =>
-				runTrackedCliCommand({
-					command: 'telemetry',
-					mode: 'telemetry:status',
-					eventName: 'telemetry_status',
-					startProperties: { subcommand: 'status' },
-					action: () => runTelemetryStatusCommand()
-				})
-			)
+			trackCommand({
+				command: 'telemetry',
+				mode: 'telemetry:status',
+				eventName: 'telemetry_status',
+				startProperties: { subcommand: 'status' },
+				action: () => runTelemetryStatusCommand()
+			})
 		)
 	])
 );
+
 const wipe = Command.make(
 	'wipe',
 	{
 		yes: pipe(Flag.boolean('yes'), Flag.withAlias('y'))
 	},
 	({ yes }) =>
-		effectFromPromise(() =>
-			runTrackedCliCommand({
-				command: 'wipe',
-				mode: 'wipe',
-				startProperties: { yes },
-				action: () => runWipeCommand({ yes })
-			})
-		)
+		trackCommand({
+			command: 'wipe',
+			mode: 'wipe',
+			startProperties: { yes },
+			action: () => runWipeCommand({ yes })
+		})
 );
 
 const root = pipe(

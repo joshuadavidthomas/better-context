@@ -2,6 +2,7 @@ import select from '@inquirer/select';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import * as readline from 'readline';
+import { Effect } from 'effect';
 
 const PROJECT_CONFIG_FILENAME = 'btca.config.jsonc';
 const CONFIG_SCHEMA_URL = 'https://btca.dev/btca.schema.json';
@@ -168,8 +169,9 @@ async function handleCliSetup(cwd: string, configPath: string, force?: boolean):
 	console.log("\nRun 'btca --help' for more options.");
 }
 
-export const runInitCommand = async (args: { force?: boolean }) => {
-	const cwd = process.cwd();
-	const configPath = path.join(cwd, PROJECT_CONFIG_FILENAME);
-	await handleCliSetup(cwd, configPath, args.force);
-};
+export const runInitCommand = (args: { force?: boolean }) =>
+	Effect.tryPromise(async () => {
+		const cwd = process.cwd();
+		const configPath = path.join(cwd, PROJECT_CONFIG_FILENAME);
+		await handleCliSetup(cwd, configPath, args.force);
+	});

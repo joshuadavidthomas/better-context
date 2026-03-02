@@ -1,3 +1,4 @@
+import { Effect } from 'effect';
 import { getTelemetryStatus, setTelemetryEnabled } from '../lib/telemetry.ts';
 
 const formatStatus = (status: {
@@ -14,18 +15,21 @@ const formatStatus = (status: {
 	return `Telemetry is enabled.\nAnonymous ID: ${status.distinctId ?? 'pending'}`;
 };
 
-export const runTelemetryOnCommand = async () => {
-	const config = await setTelemetryEnabled(true);
-	console.log('Telemetry enabled.');
-	console.log(`Anonymous ID: ${config.distinctId}`);
-};
+export const runTelemetryOnCommand = () =>
+	Effect.tryPromise(async () => {
+		const config = await setTelemetryEnabled(true);
+		console.log('Telemetry enabled.');
+		console.log(`Anonymous ID: ${config.distinctId}`);
+	});
 
-export const runTelemetryOffCommand = async () => {
-	await setTelemetryEnabled(false);
-	console.log('Telemetry disabled.');
-};
+export const runTelemetryOffCommand = () =>
+	Effect.tryPromise(async () => {
+		await setTelemetryEnabled(false);
+		console.log('Telemetry disabled.');
+	});
 
-export const runTelemetryStatusCommand = async () => {
-	const status = await getTelemetryStatus();
-	console.log(formatStatus(status));
-};
+export const runTelemetryStatusCommand = () =>
+	Effect.tryPromise(async () => {
+		const status = await getTelemetryStatus();
+		console.log(formatStatus(status));
+	});

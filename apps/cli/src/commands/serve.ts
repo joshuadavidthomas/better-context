@@ -1,67 +1,74 @@
 import { startServer } from 'btca-server';
-import { createClient, getConfig } from '../client/index.ts';
+import { Effect } from 'effect';
+import { createClient, getConfigEffect } from '../client/index.ts';
 import { setTelemetryContext, trackTelemetryEvent } from '../lib/telemetry.ts';
 
 const DEFAULT_PORT = 8080;
 
-export const runServeCommand = async (options: { port?: number } = {}) => {
+const trackServeEvent = (event: string, properties: Record<string, unknown>) =>
+	Effect.tryPromise(() =>
+		trackTelemetryEvent({
+			event,
+			properties
+		})
+	);
+
+const setServeTelemetryContext = (serverUrl: string) =>
+	Effect.gen(function* () {
+		const client = createClient(serverUrl);
+		const config = yield* getConfigEffect(client);
+		yield* Effect.sync(() =>
+			setTelemetryContext({ provider: config.provider, model: config.model })
+		);
+	}).pipe(Effect.ignore);
+
+export const runServeCommand = (options: { port?: number } = {}) => {
 	const commandName = 'serve';
 	const startedAt = Date.now();
 	const port = options.port ?? DEFAULT_PORT;
 
-	try {
-		console.log(`Starting btca server on port ${port}...`);
-		const server = await startServer({ port });
-		try {
-			const client = createClient(server.url);
-			const config = await getConfig(client);
-			setTelemetryContext({ provider: config.provider, model: config.model });
-		} catch {
-			// Ignore config failures for telemetry
-		}
-		await trackTelemetryEvent({
-			event: 'cli_started',
-			properties: { command: commandName, mode: 'serve' }
-		});
-		await trackTelemetryEvent({
-			event: 'cli_server_started',
-			properties: { command: commandName, mode: 'serve' }
-		});
-		console.log(`btca server running at ${server.url}`);
-		console.log('Press Ctrl+C to stop');
+	return Effect.gen(function* () {
+		yield* Effect.sync(() => console.log(`Starting btca server on port ${port}...`));
+		const server = yield* Effect.tryPromise(() => startServer({ port }));
 
-		let resolveShutdown: (() => void) | null = null;
-		const shutdownPromise = new Promise<void>((resolve) => {
-			resolveShutdown = resolve;
+		yield* setServeTelemetryContext(server.url);
+		yield* trackServeEvent('cli_started', { command: commandName, mode: 'serve' });
+		yield* trackServeEvent('cli_server_started', { command: commandName, mode: 'serve' });
+		yield* Effect.sync(() => {
+			console.log(`btca server running at ${server.url}`);
+			console.log('Press Ctrl+C to stop');
 		});
 
-		const shutdown = () => {
-			console.log('\nShutting down server...');
-			process.off('SIGINT', shutdown);
-			process.off('SIGTERM', shutdown);
-			server.stop();
-			resolveShutdown?.();
-		};
+		yield* Effect.tryPromise(
+			() =>
+				new Promise<void>((resolve) => {
+					const shutdown = () => {
+						console.log('\nShutting down server...');
+						process.off('SIGINT', shutdown);
+						process.off('SIGTERM', shutdown);
+						server.stop();
+						resolve();
+					};
 
-		process.on('SIGINT', shutdown);
-		process.on('SIGTERM', shutdown);
-		await shutdownPromise;
-		await trackTelemetryEvent({
-			event: 'cli_server_completed',
-			properties: {
+					process.on('SIGINT', shutdown);
+					process.on('SIGTERM', shutdown);
+				})
+		);
+		yield* trackServeEvent('cli_server_completed', {
+			command: commandName,
+			mode: 'serve',
+			durationMs: Date.now() - startedAt,
+			exitCode: 0
+		});
+	}).pipe(
+		Effect.tapError((error) =>
+			trackServeEvent('cli_server_failed', {
 				command: commandName,
 				mode: 'serve',
 				durationMs: Date.now() - startedAt,
-				exitCode: 0
-			}
-		});
-	} catch (error) {
-		const durationMs = Date.now() - startedAt;
-		const errorName = error instanceof Error ? error.name : 'UnknownError';
-		await trackTelemetryEvent({
-			event: 'cli_server_failed',
-			properties: { command: commandName, mode: 'serve', durationMs, errorName, exitCode: 1 }
-		});
-		throw error;
-	}
+				errorName: error instanceof Error ? error.name : 'UnknownError',
+				exitCode: 1
+			})
+		)
+	);
 };

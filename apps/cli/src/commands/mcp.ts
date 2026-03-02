@@ -6,8 +6,10 @@ import path from 'node:path';
 import * as readline from 'readline';
 import { mkdir } from 'node:fs/promises';
 import select from '@inquirer/select';
-import { askQuestion, createClient, getResources } from '../client/index.ts';
-import { ensureServer } from '../server/manager.ts';
+import { Effect } from 'effect';
+import { askQuestionEffect, createClient, getResourcesEffect } from '../client/index.ts';
+import { ensureServerEffect } from '../server/manager.ts';
+import { runCliEffect } from '../effect/runtime.ts';
 import packageJson from '../../package.json';
 
 declare const __VERSION__: string;
@@ -301,93 +303,97 @@ const configureEditor = async (editor: McpEditor) => {
 	throw new Error(`Unsupported editor: ${editor}`);
 };
 
-export const runMcpServerCommand = async (args: {
-	globalOpts?: { server?: string; port?: number };
-}) => {
-	const serverManager = await ensureServer({
-		serverUrl: args.globalOpts?.server,
-		port: args.globalOpts?.port,
-		quiet: true
+export const runMcpServerCommand = (args: { globalOpts?: { server?: string; port?: number } }) =>
+	Effect.tryPromise(async () => {
+		const serverManager = await runCliEffect(
+			ensureServerEffect({
+				serverUrl: args.globalOpts?.server,
+				port: args.globalOpts?.port,
+				quiet: true
+			})
+		);
+
+		const cleanup = () => {
+			try {
+				serverManager.stop();
+			} catch {
+				// ignore cleanup errors
+			}
+		};
+
+		process.once('SIGINT', cleanup);
+		process.once('SIGTERM', cleanup);
+		process.once('exit', cleanup);
+
+		const client = createClient(serverManager.url);
+
+		const mcpServer = new McpServer(
+			{
+				name: 'btca-local',
+				version: VERSION,
+				description: 'Better Context local MCP server (stdio)'
+			},
+			{
+				adapter: new ZodJsonSchemaAdapter(),
+				capabilities: {
+					tools: { listChanged: false }
+				}
+			}
+		);
+
+		mcpServer.tool(
+			{
+				name: 'listResources',
+				description: 'List all available local resources.'
+			},
+			async () => {
+				try {
+					const resourcesResult = await runCliEffect(getResourcesEffect(client));
+					return jsonResult(resourcesResult.resources);
+				} catch (error) {
+					return errorResult(error);
+				}
+			}
+		);
+
+		mcpServer.tool(
+			{
+				name: 'ask',
+				description:
+					'Ask a question about local resources, HTTPS git URLs, or npm references passed in as resources.',
+				schema: askSchema
+			},
+			async (args: AskInput) => {
+				const { question, resources } = args;
+				try {
+					const answerResult = await runCliEffect(
+						askQuestionEffect(client, {
+							question,
+							resources,
+							quiet: true
+						})
+					);
+					return textResult(answerResult.answer);
+				} catch (error) {
+					return errorResult(error);
+				}
+			}
+		);
+
+		const transport = new StdioTransport(mcpServer);
+		transport.listen();
 	});
 
-	const cleanup = () => {
+export const runMcpConfigureLocalCommand = () =>
+	Effect.tryPromise(async () => {
 		try {
-			serverManager.stop();
-		} catch {
-			// ignore cleanup errors
-		}
-	};
-
-	process.once('SIGINT', cleanup);
-	process.once('SIGTERM', cleanup);
-	process.once('exit', cleanup);
-
-	const client = createClient(serverManager.url);
-
-	const mcpServer = new McpServer(
-		{
-			name: 'btca-local',
-			version: VERSION,
-			description: 'Better Context local MCP server (stdio)'
-		},
-		{
-			adapter: new ZodJsonSchemaAdapter(),
-			capabilities: {
-				tools: { listChanged: false }
+			const editor = await promptEditor();
+			const filePath = await configureEditor(editor);
+			console.log(`\nLocal MCP configured for ${editor} in: ${filePath}\n`);
+		} catch (error) {
+			if (error instanceof Error && error.message === 'Invalid selection') {
+				throw new Error('Invalid selection. Please try again.');
 			}
+			throw error;
 		}
-	);
-
-	mcpServer.tool(
-		{
-			name: 'listResources',
-			description: 'List all available local resources.'
-		},
-		async () => {
-			try {
-				const resourcesResult = await getResources(client);
-				return jsonResult(resourcesResult.resources);
-			} catch (error) {
-				return errorResult(error);
-			}
-		}
-	);
-
-	mcpServer.tool(
-		{
-			name: 'ask',
-			description:
-				'Ask a question about local resources, HTTPS git URLs, or npm references passed in as resources.',
-			schema: askSchema
-		},
-		async (args: AskInput) => {
-			const { question, resources } = args;
-			try {
-				const answerResult = await askQuestion(client, {
-					question,
-					resources,
-					quiet: true
-				});
-				return textResult(answerResult.answer);
-			} catch (error) {
-				return errorResult(error);
-			}
-		}
-	);
-
-	const transport = new StdioTransport(mcpServer);
-	transport.listen();
-};
-
-export const runMcpConfigureLocalCommand = async () => {
-	try {
-		const editor = await promptEditor();
-		const filePath = await configureEditor(editor);
-		console.log(`\nLocal MCP configured for ${editor} in: ${filePath}\n`);
-	} catch (error) {
-		if (error instanceof Error && error.message === 'Invalid selection') {
-			throw new Error('Invalid selection. Please try again.');
-		}
-		throw error;
-	}
-};
+	});

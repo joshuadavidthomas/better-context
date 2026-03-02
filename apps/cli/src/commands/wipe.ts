@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import * as readline from 'readline';
+import { Effect } from 'effect';
 import { bold, dim, red, yellow } from '../lib/utils/colors.ts';
 
 const home = path.resolve(os.homedir());
@@ -119,14 +120,15 @@ const printReport = (result: Awaited<ReturnType<typeof runWipe>>) => {
 	}
 };
 
-export const runWipeCommand = async (args: { yes?: boolean }) => {
-	const targets = listTargets();
-	if (!args.yes) {
-		const confirmed = await confirmWipe(targets);
-		if (!confirmed) return;
-	}
+export const runWipeCommand = (args: { yes?: boolean }) =>
+	Effect.tryPromise(async () => {
+		const targets = listTargets();
+		if (!args.yes) {
+			const confirmed = await confirmWipe(targets);
+			if (!confirmed) return;
+		}
 
-	const wipeResult = await runWipe();
-	printReport(wipeResult);
-	if (wipeResult.failed.length > 0) process.exitCode = 1;
-};
+		const wipeResult = await runWipe();
+		printReport(wipeResult);
+		if (wipeResult.failed.length > 0) process.exitCode = 1;
+	});
