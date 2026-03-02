@@ -380,7 +380,7 @@ describe('Config', () => {
 			expect(config.resources.length).toBe(3);
 
 			// Add a new resource
-			await config.addResource({
+			await config.addResourcePromise({
 				name: 'new-resource',
 				type: 'git',
 				url: 'https://github.com/test/new-resource',
@@ -459,7 +459,7 @@ describe('Config', () => {
 			expect(config.resources.length).toBe(3);
 
 			// Remove the project resource
-			await config.removeResource('myproject');
+			await config.removeResourcePromise('myproject');
 
 			// Verify merged state shows 2 resources (only global)
 			expect(config.resources.length).toBe(2);
@@ -477,7 +477,7 @@ describe('Config', () => {
 			).toBeUndefined();
 
 			// Trying to remove a global resource should throw an error
-			expect(config.removeResource('svelte')).rejects.toThrow(
+			expect(config.removeResourcePromise('svelte')).rejects.toThrow(
 				'Resource "svelte" is defined in the global config'
 			);
 
@@ -528,7 +528,7 @@ describe('Config', () => {
 			// Update the model
 			const nextProvider = 'openrouter';
 			const nextModel = 'openai/gpt-4o-mini';
-			await config.updateModel(nextProvider, nextModel);
+			await config.updateModelPromise(nextProvider, nextModel);
 
 			expect(config.provider).toBe(nextProvider);
 			expect(config.model).toBe(nextModel);
@@ -574,7 +574,7 @@ describe('Config', () => {
 			const config = await Config.load();
 
 			// Add a resource (should go to global)
-			await config.addResource({
+			await config.addResourcePromise({
 				name: 'new-resource',
 				type: 'git',
 				url: 'https://github.com/test/new-resource',
@@ -592,7 +592,7 @@ describe('Config', () => {
 			]);
 
 			// Remove a resource (should work since we're in global-only mode)
-			await config.removeResource('svelte');
+			await config.removeResourcePromise('svelte');
 			expect(config.resources.length).toBe(1);
 
 			const savedGlobalConfig2 = JSON.parse(await fs.readFile(globalConfigPath, 'utf-8'));

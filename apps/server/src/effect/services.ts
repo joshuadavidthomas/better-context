@@ -97,14 +97,14 @@ export const getDefaultResourceNames: Effect.Effect<string[], never, ConfigServi
 
 export const reloadConfig: Effect.Effect<void, unknown, ConfigService> = Effect.flatMap(
 	configService,
-	(config) => config.reloadEffect()
+	(config) => config.reload()
 );
 
 export const listProviders: Effect.Effect<
-	Awaited<ReturnType<AgentServiceShape['listProviders']>>,
+	Awaited<ReturnType<AgentServiceShape['listProvidersPromise']>>,
 	unknown,
 	AgentService
-> = Effect.flatMap(agentService, (agent) => agent.listProvidersEffect());
+> = Effect.flatMap(agentService, (agent) => agent.listProviders());
 
 export const loadCollection = (args: {
 	resourceNames: readonly string[];
@@ -118,37 +118,38 @@ export const loadCollection = (args: {
 export const askQuestion = (args: {
 	collection: Awaited<ReturnType<CollectionsServiceShape['loadPromise']>>;
 	question: string;
-}): Effect.Effect<Awaited<ReturnType<AgentServiceShape['ask']>>, unknown, AgentService> =>
-	Effect.flatMap(agentService, (agent) => agent.askEffect(args));
+}): Effect.Effect<Awaited<ReturnType<AgentServiceShape['askPromise']>>, unknown, AgentService> =>
+	Effect.flatMap(agentService, (agent) => agent.ask(args));
 
 export const askQuestionStream = (args: {
 	collection: Awaited<ReturnType<CollectionsServiceShape['loadPromise']>>;
 	question: string;
-}): Effect.Effect<Awaited<ReturnType<AgentServiceShape['askStream']>>, unknown, AgentService> =>
-	Effect.flatMap(agentService, (agent) => agent.askStreamEffect(args));
+}): Effect.Effect<
+	Awaited<ReturnType<AgentServiceShape['askStreamPromise']>>,
+	unknown,
+	AgentService
+> => Effect.flatMap(agentService, (agent) => agent.askStream(args));
 
 export const updateModelConfig = (args: {
 	provider: string;
 	model: string;
 	providerOptions?: Parameters<ConfigServiceShape['updateModel']>[2];
-}): Effect.Effect<Awaited<ReturnType<ConfigServiceShape['updateModel']>>, unknown, ConfigService> =>
-	Effect.flatMap(configService, (config) =>
-		config.updateModelEffect(args.provider, args.model, args.providerOptions)
-	);
+}): Effect.Effect<Awaited<ReturnType<ConfigServiceShape['updateModelPromise']>>, unknown, ConfigService> =>
+	Effect.flatMap(configService, (config) => config.updateModel(args.provider, args.model, args.providerOptions));
 
 export const addConfigResource = (
 	resource: ResourceDefinition
 ): Effect.Effect<ResourceDefinition, unknown, ConfigService> =>
-	Effect.flatMap(configService, (config) => config.addResourceEffect(resource));
+	Effect.flatMap(configService, (config) => config.addResource(resource));
 
 export const removeConfigResource = (name: string): Effect.Effect<void, unknown, ConfigService> =>
-	Effect.flatMap(configService, (config) => config.removeResourceEffect(name));
+	Effect.flatMap(configService, (config) => config.removeResource(name));
 
 export const clearConfigResources: Effect.Effect<
-	Awaited<ReturnType<ConfigServiceShape['clearResources']>>,
+	Awaited<ReturnType<ConfigServiceShape['clearResourcesPromise']>>,
 	unknown,
 	ConfigService
-> = Effect.flatMap(configService, (config) => config.clearResourcesEffect());
+> = Effect.flatMap(configService, (config) => config.clearResources());
 
 export const loadedResourceCollectionKey = (resourceNames: readonly string[]) =>
 	getCollectionKey(resourceNames);

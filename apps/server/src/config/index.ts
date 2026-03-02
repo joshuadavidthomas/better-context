@@ -141,20 +141,20 @@ export type ConfigService = {
 		provider: string,
 		model: string,
 		providerOptions?: ProviderOptionsConfig
-	) => Promise<{ provider: string; model: string; savedTo: ConfigScope }>;
-	updateModelEffect: (
+	) => Effect.Effect<{ provider: string; model: string; savedTo: ConfigScope }, unknown>;
+	updateModelPromise: (
 		provider: string,
 		model: string,
 		providerOptions?: ProviderOptionsConfig
-	) => Effect.Effect<{ provider: string; model: string; savedTo: ConfigScope }, unknown>;
-	addResource: (resource: ResourceDefinition) => Promise<ResourceDefinition>;
-	addResourceEffect: (resource: ResourceDefinition) => Effect.Effect<ResourceDefinition, unknown>;
-	removeResource: (name: string) => Promise<void>;
-	removeResourceEffect: (name: string) => Effect.Effect<void, unknown>;
-	clearResources: () => Promise<{ cleared: number }>;
-	clearResourcesEffect: () => Effect.Effect<{ cleared: number }, unknown>;
-	reload: () => Promise<void>;
-	reloadEffect: () => Effect.Effect<void, unknown>;
+	) => Promise<{ provider: string; model: string; savedTo: ConfigScope }>;
+	addResource: (resource: ResourceDefinition) => Effect.Effect<ResourceDefinition, unknown>;
+	addResourcePromise: (resource: ResourceDefinition) => Promise<ResourceDefinition>;
+	removeResource: (name: string) => Effect.Effect<void, unknown>;
+	removeResourcePromise: (name: string) => Promise<void>;
+	clearResources: () => Effect.Effect<{ cleared: number }, unknown>;
+	clearResourcesPromise: () => Promise<{ cleared: number }>;
+	reload: () => Effect.Effect<void, unknown>;
+	reloadPromise: () => Promise<void>;
 };
 
 export type Service = ConfigService;
@@ -495,6 +495,178 @@ const makeService = (
 		}
 	};
 
+	const updateModelPromise: ConfigService['updateModelPromise'] = async (
+		provider,
+		model,
+		providerOptions
+	) => {
+		if (!isProviderSupported(provider)) {
+			const available = getSupportedProviders();
+			throw new ConfigError({
+				message: `Provider "${provider}" is not supported`,
+				hint: `Available providers: ${available.join(', ')}. Open an issue to request this provider: https://github.com/davis7dotsh/better-context/issues.`
+			});
+		}
+		const mutableConfig = getMutableConfig();
+		const existingProviderOptions = mutableConfig.providerOptions ?? {};
+		const nextProviderOptions = providerOptions
+			? {
+					...existingProviderOptions,
+					[provider]: {
+						...(existingProviderOptions[provider] ?? {}),
+						...providerOptions
+					}
+				}
+			: existingProviderOptions;
+		const updated = {
+			...mutableConfig,
+			provider,
+			model,
+			...(providerOptions ? { providerOptions: nextProviderOptions } : {})
+		};
+
+		if (provider === 'openai-compat') {
+			const merged = currentProjectConfig
+				? mergeProviderOptions(currentGlobalConfig, updated)
+				: mergeProviderOptions(updated, null);
+			const compat = merged['openai-compat'];
+			const baseURL = compat?.baseURL?.trim();
+			const name = compat?.name?.trim();
+			if (!baseURL || !name) {
+				throw new ConfigError({
+					message: 'openai-compat requires baseURL and name',
+					hint: 'Run "btca connect -p openai-compat" to configure baseURL and name.'
+				});
+			}
+		}
+		setMutableConfig(updated);
+		await saveConfig(configPath, updated);
+		metricsInfo('config.model.updated', { provider, model });
+		return {
+			provider,
+			model,
+			savedTo: currentProjectConfig ? 'project' : 'global'
+		};
+	};
+
+	const addResourcePromise: ConfigService['addResourcePromise'] = async (resource) => {
+		const mergedResources = getMergedResources();
+		if (mergedResources.some((r) => r.name === resource.name)) {
+			throw new ConfigError({
+				message: `Resource "${resource.name}" already exists`,
+				hint: `Choose a different name or remove the existing resource first with "btca remove ${resource.name}".`
+			});
+		}
+
+		const mutableConfig = getMutableConfig();
+		const updated = {
+			...mutableConfig,
+			resources: [...mutableConfig.resources, resource]
+		};
+		setMutableConfig(updated);
+		await saveConfig(configPath, updated);
+		metricsInfo('config.resource.added', { name: resource.name, type: resource.type });
+		return resource;
+	};
+
+	const removeResourcePromise: ConfigService['removeResourcePromise'] = async (name) => {
+		const mergedResources = getMergedResources();
+		const exists = mergedResources.some((r) => r.name === name);
+		if (!exists) {
+			const available = mergedResources.map((r) => r.name);
+			throw new ConfigError({
+				message: `Resource "${name}" not found`,
+				hint:
+					available.length > 0
+						? `Available resources: ${available.join(', ')}. ${CommonHints.LIST_RESOURCES}`
+						: `No resources configured. ${CommonHints.ADD_RESOURCE}`
+			});
+		}
+
+		const mutableConfig = getMutableConfig();
+		const isInMutableConfig = mutableConfig.resources.some((r) => r.name === name);
+
+		if (currentProjectConfig) {
+			const isInGlobal = currentGlobalConfig.resources.some((r) => r.name === name);
+			const isInProject = currentProjectConfig.resources.some((r) => r.name === name);
+
+			if (isInProject) {
+				const updated = {
+					...currentProjectConfig,
+					resources: currentProjectConfig.resources.filter((r) => r.name !== name)
+				};
+				currentProjectConfig = updated;
+				await saveConfig(configPath, updated);
+				metricsInfo('config.resource.removed', { name, from: 'project' });
+			} else if (isInGlobal) {
+				throw new ConfigError({
+					message: `Resource "${name}" is defined in the global config`,
+					hint: `To remove this resource globally, edit the global config at "${expandHome(GLOBAL_CONFIG_DIR)}/${GLOBAL_CONFIG_FILENAME}" or run the command without a project config present.`
+				});
+			}
+		} else {
+			if (!isInMutableConfig) {
+				throw new ConfigError({
+					message: `Resource "${name}" not found in config`,
+					hint: CommonHints.LIST_RESOURCES
+				});
+			}
+			const updated = {
+				...mutableConfig,
+				resources: mutableConfig.resources.filter((r) => r.name !== name)
+			};
+			setMutableConfig(updated);
+			await saveConfig(configPath, updated);
+			metricsInfo('config.resource.removed', { name, from: 'global' });
+		}
+	};
+
+	const clearResourcesPromise: ConfigService['clearResourcesPromise'] = async () => {
+		let clearedCount = 0;
+
+		let resourcesDir: string[] = [];
+		try {
+			resourcesDir = await fs.readdir(resourcesDirectory);
+		} catch {
+			resourcesDir = [];
+		}
+
+		for (const item of resourcesDir) {
+			try {
+				await fs.rm(`${resourcesDirectory}/${item}`, { recursive: true, force: true });
+				clearedCount++;
+			} catch {
+				break;
+			}
+		}
+
+		metricsInfo('config.resources.cleared', { count: clearedCount });
+		return { cleared: clearedCount };
+	};
+
+	const reloadPromise: ConfigService['reloadPromise'] = async () => {
+		metricsInfo('config.reload.start', { configPath });
+
+		const configExists = await Bun.file(configPath).exists();
+		if (!configExists) {
+			metricsInfo('config.reload.skipped', { reason: 'file not found', configPath });
+			return;
+		}
+
+		const reloaded = await loadConfigFromPath(configPath);
+
+		if (currentProjectConfig !== null) {
+			currentProjectConfig = reloaded;
+		} else {
+			currentGlobalConfig = reloaded;
+		}
+
+		metricsInfo('config.reload.done', {
+			resources: reloaded.resources.length,
+			configPath
+		});
+	};
+
 	const service: ConfigService = {
 		resourcesDirectory,
 		configPath,
@@ -516,215 +688,36 @@ const makeService = (
 		getProviderOptions: (providerId: string) => getMergedProviderOptions()[providerId],
 		getResource: (name: string) => getMergedResources().find((r) => r.name === name),
 
-		updateModel: async (
-			provider: string,
-			model: string,
-			providerOptions?: ProviderOptionsConfig
-		) => {
-			if (!isProviderSupported(provider)) {
-				const available = getSupportedProviders();
-				throw new ConfigError({
-					message: `Provider "${provider}" is not supported`,
-					hint: `Available providers: ${available.join(', ')}. Open an issue to request this provider: https://github.com/davis7dotsh/better-context/issues.`
-				});
-			}
-			const mutableConfig = getMutableConfig();
-			const existingProviderOptions = mutableConfig.providerOptions ?? {};
-			const nextProviderOptions = providerOptions
-				? {
-						...existingProviderOptions,
-						[provider]: {
-							...(existingProviderOptions[provider] ?? {}),
-							...providerOptions
-						}
-					}
-				: existingProviderOptions;
-			const updated = {
-				...mutableConfig,
-				provider,
-				model,
-				...(providerOptions ? { providerOptions: nextProviderOptions } : {})
-			};
-
-			if (provider === 'openai-compat') {
-				const merged = currentProjectConfig
-					? mergeProviderOptions(currentGlobalConfig, updated)
-					: mergeProviderOptions(updated, null);
-				const compat = merged['openai-compat'];
-				const baseURL = compat?.baseURL?.trim();
-				const name = compat?.name?.trim();
-				if (!baseURL || !name) {
-					throw new ConfigError({
-						message: 'openai-compat requires baseURL and name',
-						hint: 'Run "btca connect -p openai-compat" to configure baseURL and name.'
-					});
-				}
-			}
-			setMutableConfig(updated);
-			await saveConfig(configPath, updated);
-			metricsInfo('config.model.updated', { provider, model });
-			return {
-				provider,
-				model,
-				savedTo: currentProjectConfig ? 'project' : 'global'
-			};
-		},
-
-		addResource: async (resource: ResourceDefinition) => {
-			// Check for duplicate name in merged resources
-			const mergedResources = getMergedResources();
-			if (mergedResources.some((r) => r.name === resource.name)) {
-				throw new ConfigError({
-					message: `Resource "${resource.name}" already exists`,
-					hint: `Choose a different name or remove the existing resource first with "btca remove ${resource.name}".`
-				});
-			}
-
-			// Add only to the mutable config (project if exists, else global)
-			const mutableConfig = getMutableConfig();
-			const updated = {
-				...mutableConfig,
-				resources: [...mutableConfig.resources, resource]
-			};
-			setMutableConfig(updated);
-			await saveConfig(configPath, updated);
-			metricsInfo('config.resource.added', { name: resource.name, type: resource.type });
-			return resource;
-		},
-
-		removeResource: async (name: string) => {
-			const mergedResources = getMergedResources();
-			const exists = mergedResources.some((r) => r.name === name);
-			if (!exists) {
-				const available = mergedResources.map((r) => r.name);
-				throw new ConfigError({
-					message: `Resource "${name}" not found`,
-					hint:
-						available.length > 0
-							? `Available resources: ${available.join(', ')}. ${CommonHints.LIST_RESOURCES}`
-							: `No resources configured. ${CommonHints.ADD_RESOURCE}`
-				});
-			}
-
-			const mutableConfig = getMutableConfig();
-			const isInMutableConfig = mutableConfig.resources.some((r) => r.name === name);
-
-			if (currentProjectConfig) {
-				// We have a project config
-				const isInGlobal = currentGlobalConfig.resources.some((r) => r.name === name);
-				const isInProject = currentProjectConfig.resources.some((r) => r.name === name);
-
-				if (isInProject) {
-					// Resource is in project config - just remove it
-					const updated = {
-						...currentProjectConfig,
-						resources: currentProjectConfig.resources.filter((r) => r.name !== name)
-					};
-					currentProjectConfig = updated;
-					await saveConfig(configPath, updated);
-					metricsInfo('config.resource.removed', { name, from: 'project' });
-				} else if (isInGlobal) {
-					// Resource is only in global config
-					// User wants to remove a global resource from project context
-					// We can't modify global config from project context, so throw an error
-					throw new ConfigError({
-						message: `Resource "${name}" is defined in the global config`,
-						hint: `To remove this resource globally, edit the global config at "${expandHome(GLOBAL_CONFIG_DIR)}/${GLOBAL_CONFIG_FILENAME}" or run the command without a project config present.`
-					});
-				}
-			} else {
-				// No project config, modify global directly
-				if (!isInMutableConfig) {
-					// This shouldn't happen given the exists check above, but be safe
-					throw new ConfigError({
-						message: `Resource "${name}" not found in config`,
-						hint: CommonHints.LIST_RESOURCES
-					});
-				}
-				const updated = {
-					...mutableConfig,
-					resources: mutableConfig.resources.filter((r) => r.name !== name)
-				};
-				setMutableConfig(updated);
-				await saveConfig(configPath, updated);
-				metricsInfo('config.resource.removed', { name, from: 'global' });
-			}
-		},
-
-		clearResources: async () => {
-			// Clear the resources directory
-			let clearedCount = 0;
-
-			let resourcesDir: string[] = [];
-			try {
-				resourcesDir = await fs.readdir(resourcesDirectory);
-			} catch {
-				resourcesDir = [];
-			}
-
-			for (const item of resourcesDir) {
-				try {
-					await fs.rm(`${resourcesDirectory}/${item}`, { recursive: true, force: true });
-					clearedCount++;
-				} catch {
-					break;
-				}
-			}
-
-			metricsInfo('config.resources.cleared', { count: clearedCount });
-			return { cleared: clearedCount };
-		},
-
-		reload: async () => {
-			// Reload the config file from disk
-			// configPath points to either project config (if it existed at startup) or global config
-			metricsInfo('config.reload.start', { configPath });
-
-			const configExists = await Bun.file(configPath).exists();
-			if (!configExists) {
-				metricsInfo('config.reload.skipped', { reason: 'file not found', configPath });
-				return;
-			}
-
-			const reloaded = await loadConfigFromPath(configPath);
-
-			// Update the appropriate config based on what we had at startup
-			if (currentProjectConfig !== null) {
-				currentProjectConfig = reloaded;
-			} else {
-				currentGlobalConfig = reloaded;
-			}
-
-			metricsInfo('config.reload.done', {
-				resources: reloaded.resources.length,
-				configPath
-			});
-		},
-		updateModelEffect: (provider, model, providerOptions) =>
+		updateModel: (provider, model, providerOptions) =>
 			Effect.tryPromise({
-				try: () => service.updateModel(provider, model, providerOptions),
+				try: () => updateModelPromise(provider, model, providerOptions),
 				catch: (cause) => cause
 			}),
-		addResourceEffect: (resource) =>
+		updateModelPromise,
+		addResource: (resource) =>
 			Effect.tryPromise({
-				try: () => service.addResource(resource),
+				try: () => addResourcePromise(resource),
 				catch: (cause) => cause
 			}),
-		removeResourceEffect: (name) =>
+		addResourcePromise,
+		removeResource: (name) =>
 			Effect.tryPromise({
-				try: () => service.removeResource(name),
+				try: () => removeResourcePromise(name),
 				catch: (cause) => cause
 			}),
-		clearResourcesEffect: () =>
+		removeResourcePromise,
+		clearResources: () =>
 			Effect.tryPromise({
-				try: () => service.clearResources(),
+				try: () => clearResourcesPromise(),
 				catch: (cause) => cause
 			}),
-		reloadEffect: () =>
+		clearResourcesPromise,
+		reload: () =>
 			Effect.tryPromise({
-				try: () => service.reload(),
+				try: () => reloadPromise(),
 				catch: (cause) => cause
-			})
+			}),
+		reloadPromise
 	};
 
 	return service;

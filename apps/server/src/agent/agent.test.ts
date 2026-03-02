@@ -71,7 +71,7 @@ describe('Agent', () => {
 				vfsId
 			};
 
-			const result = await agent.ask({
+			const result = await agent.askPromise({
 				collection,
 				question: 'What number is the answer to life according to the README?'
 			});
@@ -102,7 +102,7 @@ describe('Agent', () => {
 				vfsId
 			};
 
-			const { stream, model } = await agent.askStream({
+			const { stream, model } = await agent.askStreamPromise({
 				collection,
 				question: 'What is the capital of France according to the data file?'
 			});
@@ -154,7 +154,7 @@ describe('Agent', () => {
 				vfsId
 			};
 
-			const result = await agent.ask({
+			const result = await agent.askPromise({
 				collection,
 				question: 'What number is the answer according to the README?'
 			});
@@ -200,7 +200,7 @@ describe('Agent', () => {
 				vfsId
 			};
 
-			const { stream } = await agent.askStream({
+			const { stream } = await agent.askStreamPromise({
 				collection,
 				question: 'What is the capital of France according to the README?'
 			});

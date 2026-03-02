@@ -87,35 +87,37 @@ export class ProviderNotConnectedError extends Error {
 }
 
 export type AgentService = {
-	askStream: (args: { collection: CollectionResult; question: string }) => Promise<{
-		stream: AsyncIterable<AgentEvent>;
-		model: { provider: string; model: string };
-	}>;
-	askStreamEffect: (args: { collection: CollectionResult; question: string }) => Effect.Effect<
+	askStream: (args: { collection: CollectionResult; question: string }) => Effect.Effect<
 		{
 			stream: AsyncIterable<AgentEvent>;
 			model: { provider: string; model: string };
 		},
-		unknown
+		unknown,
+		never
 	>;
+	askStreamPromise: (args: { collection: CollectionResult; question: string }) => Promise<{
+		stream: AsyncIterable<AgentEvent>;
+		model: { provider: string; model: string };
+	}>;
 
-	ask: (args: { collection: CollectionResult; question: string }) => Promise<AgentResult>;
-	askEffect: (args: {
+	ask: (args: {
 		collection: CollectionResult;
 		question: string;
-	}) => Effect.Effect<AgentResult, unknown>;
+	}) => Effect.Effect<AgentResult, unknown, never>;
+	askPromise: (args: { collection: CollectionResult; question: string }) => Promise<AgentResult>;
 
-	listProviders: () => Promise<{
-		all: { id: string; models: Record<string, unknown> }[];
-		connected: string[];
-	}>;
-	listProvidersEffect: () => Effect.Effect<
+	listProviders: () => Effect.Effect<
 		{
 			all: { id: string; models: Record<string, unknown> }[];
 			connected: string[];
 		},
-		unknown
+		unknown,
+		never
 	>;
+	listProvidersPromise: () => Promise<{
+		all: { id: string; models: Record<string, unknown> }[];
+		connected: string[];
+	}>;
 };
 
 export type Service = AgentService;
@@ -147,7 +149,7 @@ export const createAgentService = (config: ConfigServiceShape): AgentService => 
 	/**
 	 * Ask a question and stream the response using the new AI SDK loop
 	 */
-	const askStream: AgentService['askStream'] = async ({ collection, question }) => {
+	const askStreamPromise: AgentService['askStreamPromise'] = async ({ collection, question }) => {
 		metricsInfo('agent.ask.start', {
 			provider: config.provider,
 			model: config.model,
@@ -191,7 +193,7 @@ export const createAgentService = (config: ConfigServiceShape): AgentService => 
 	/**
 	 * Ask a question and return the complete response
 	 */
-	const ask: AgentService['ask'] = async ({ collection, question }) => {
+	const askPromise: AgentService['askPromise'] = async ({ collection, question }) => {
 		try {
 			metricsInfo('agent.ask.start', {
 				provider: config.provider,
@@ -244,7 +246,7 @@ export const createAgentService = (config: ConfigServiceShape): AgentService => 
 	/**
 	 * List available providers using local auth data
 	 */
-	const listProviders: AgentService['listProviders'] = async () => {
+	const listProvidersPromise: AgentService['listProvidersPromise'] = async () => {
 		const supportedProviders = getSupportedProviders();
 		const authenticatedProviders = await getAuthenticatedProviders();
 		const all = supportedProviders.map((id) => ({
@@ -258,19 +260,19 @@ export const createAgentService = (config: ConfigServiceShape): AgentService => 
 		};
 	};
 
-	const askStreamEffect: AgentService['askStreamEffect'] = (args) =>
+	const askStream: AgentService['askStream'] = (args) =>
 		Effect.tryPromise({
-			try: () => askStream(args),
+			try: () => askStreamPromise(args),
 			catch: (cause) => cause
 		});
-	const askEffect: AgentService['askEffect'] = (args) =>
+	const ask: AgentService['ask'] = (args) =>
 		Effect.tryPromise({
-			try: () => ask(args),
+			try: () => askPromise(args),
 			catch: (cause) => cause
 		});
-	const listProvidersEffect: AgentService['listProvidersEffect'] = () =>
+	const listProviders: AgentService['listProviders'] = () =>
 		Effect.tryPromise({
-			try: () => listProviders(),
+			try: () => listProvidersPromise(),
 			catch: (cause) => cause
 		});
 
@@ -278,8 +280,8 @@ export const createAgentService = (config: ConfigServiceShape): AgentService => 
 		askStream,
 		ask,
 		listProviders,
-		askStreamEffect,
-		askEffect,
-		listProvidersEffect
+		askStreamPromise,
+		askPromise,
+		listProvidersPromise
 	};
 };
