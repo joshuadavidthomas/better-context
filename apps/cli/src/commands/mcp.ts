@@ -7,8 +7,13 @@ import * as readline from 'readline';
 import { mkdir } from 'node:fs/promises';
 import select from '@inquirer/select';
 import { Effect } from 'effect';
-import { askQuestion, createClient, getResources } from '../client/index.ts';
+import {
+	askQuestionEffect,
+	createClient,
+	getResourcesEffect
+} from '../client/index.ts';
 import { ensureServer } from '../server/manager.ts';
+import { runCliEffect } from '../effect/runtime.ts';
 import packageJson from '../../package.json';
 
 declare const __VERSION__: string;
@@ -347,7 +352,7 @@ export const runMcpServerCommand = (args: {
 			},
 			async () => {
 				try {
-					const resourcesResult = await getResources(client);
+				const resourcesResult = await runCliEffect(getResourcesEffect(client));
 					return jsonResult(resourcesResult.resources);
 				} catch (error) {
 					return errorResult(error);
@@ -365,11 +370,13 @@ export const runMcpServerCommand = (args: {
 			async (args: AskInput) => {
 				const { question, resources } = args;
 				try {
-					const answerResult = await askQuestion(client, {
+				const answerResult = await runCliEffect(
+					askQuestionEffect(client, {
 						question,
 						resources,
 						quiet: true
-					});
+					})
+				);
 					return textResult(answerResult.answer);
 				} catch (error) {
 					return errorResult(error);

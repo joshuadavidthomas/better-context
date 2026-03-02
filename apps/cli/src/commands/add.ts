@@ -3,7 +3,8 @@ import path from 'node:path';
 import * as readline from 'readline';
 import { Effect } from 'effect';
 
-import { addResource } from '../client/index.ts';
+import { addResourceEffect } from '../client/index.ts';
+import { runCliEffect } from '../effect/runtime.ts';
 import { dim } from '../lib/utils/colors.ts';
 import { ensureServer } from '../server/manager.ts';
 
@@ -260,7 +261,7 @@ async function promptSelect<T extends string>(
 
 const runWithServer = <A>(
 	globalOpts: { server?: string; port?: number } | undefined,
-	run: (serverUrl: string) => Promise<A>
+	run: (serverUrl: string) => Effect.Effect<A, unknown, never>
 ) =>
 	(async () => {
 		const server = await ensureServer({
@@ -269,7 +270,7 @@ const runWithServer = <A>(
 			quiet: true
 		});
 		try {
-			return await run(server.url);
+			return await runCliEffect(run(server.url));
 		} finally {
 			server.stop();
 		}
@@ -328,7 +329,7 @@ async function addGitResourceWizard(
 		}
 
 		const resource = await runWithServer(globalOpts, (serverUrl) =>
-			addResource(serverUrl, {
+			addResourceEffect(serverUrl, {
 				type: 'git',
 				name,
 				url: finalUrl,
@@ -392,7 +393,7 @@ async function addLocalResourceWizard(
 		}
 
 		await runWithServer(globalOpts, (serverUrl) =>
-			addResource(serverUrl, {
+			addResourceEffect(serverUrl, {
 				type: 'local',
 				name,
 				path: finalPath,
@@ -455,7 +456,7 @@ async function addNpmResourceWizard(
 		}
 
 		await runWithServer(globalOpts, (serverUrl) =>
-			addResource(serverUrl, {
+			addResourceEffect(serverUrl, {
 				type: 'npm',
 				name,
 				package: packageName,
@@ -547,7 +548,7 @@ const runAddCommandPromise = async (args: {
 			const normalizedUrl = normalizeGitHubUrl(args.reference);
 			const searchPaths = args.searchPath ?? [];
 			const resource = await runWithServer(args.globalOpts, (serverUrl) =>
-				addResource(serverUrl, {
+				addResourceEffect(serverUrl, {
 					type: 'git',
 					name,
 					url: normalizedUrl,
@@ -571,7 +572,7 @@ const runAddCommandPromise = async (args: {
 				? args.reference
 				: path.resolve(process.cwd(), args.reference);
 			await runWithServer(args.globalOpts, (serverUrl) =>
-				addResource(serverUrl, {
+				addResourceEffect(serverUrl, {
 					type: 'local',
 					name,
 					path: resolvedPath,
@@ -592,7 +593,7 @@ const runAddCommandPromise = async (args: {
 			}
 
 			await runWithServer(args.globalOpts, (serverUrl) =>
-				addResource(serverUrl, {
+				addResourceEffect(serverUrl, {
 					type: 'npm',
 					name,
 					package: parsed.packageName,

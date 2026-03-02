@@ -1,7 +1,12 @@
 import { Effect } from 'effect';
 import type { BtcaStreamEvent } from 'btca-server/stream/types';
 import { withServerEffect } from '../server/manager.ts';
-import { createClient, getConfig, getResources, askQuestionStream } from '../client/index.ts';
+import {
+	createClient,
+	getConfigEffect,
+	getResourcesEffect,
+	askQuestionStreamEffect
+} from '../client/index.ts';
 import { parseSSEStream } from '../client/stream.ts';
 import { formatCliCommandError } from '../effect/errors.ts';
 import { runCliEffect } from '../effect/runtime.ts';
@@ -133,8 +138,8 @@ const launchReplPromise = async (options: ReplOptions): Promise<void> => {
 				Effect.tryPromise(async () => {
 					const client = createClient(server.url);
 					const [config, resourcesResult] = await Promise.all([
-						getConfig(client),
-						getResources(client)
+						runReplEffect(getConfigEffect(client)),
+						runReplEffect(getResourcesEffect(client))
 					]);
 					setTelemetryContext({ provider: config.provider, model: config.model });
 					await trackTelemetryEvent({
@@ -235,11 +240,13 @@ Examples:
 							await runReplEffect(
 								Effect.tryPromise(async () => {
 									console.log(`[Searching: ${sessionResources.join(', ')}]\n`);
-									const response = await askQuestionStream(server.url, {
-										question,
-										resources: sessionResources,
-										quiet: true
-									});
+									const response = await runReplEffect(
+										askQuestionStreamEffect(server.url, {
+											question,
+											resources: sessionResources,
+											quiet: true
+										})
+									);
 
 									let inReasoning = false;
 									let hasText = false;
