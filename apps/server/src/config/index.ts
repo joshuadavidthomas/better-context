@@ -142,19 +142,10 @@ export type ConfigService = {
 		model: string,
 		providerOptions?: ProviderOptionsConfig
 	) => Effect.Effect<{ provider: string; model: string; savedTo: ConfigScope }, unknown>;
-	updateModelPromise: (
-		provider: string,
-		model: string,
-		providerOptions?: ProviderOptionsConfig
-	) => Promise<{ provider: string; model: string; savedTo: ConfigScope }>;
 	addResource: (resource: ResourceDefinition) => Effect.Effect<ResourceDefinition, unknown>;
-	addResourcePromise: (resource: ResourceDefinition) => Promise<ResourceDefinition>;
 	removeResource: (name: string) => Effect.Effect<void, unknown>;
-	removeResourcePromise: (name: string) => Promise<void>;
 	clearResources: () => Effect.Effect<{ cleared: number }, unknown>;
-	clearResourcesPromise: () => Promise<{ cleared: number }>;
 	reload: () => Effect.Effect<void, unknown>;
-	reloadPromise: () => Promise<void>;
 };
 
 export type Service = ConfigService;
@@ -495,11 +486,11 @@ const makeService = (
 		}
 	};
 
-	const updateModelPromise: ConfigService['updateModelPromise'] = async (
-		provider,
-		model,
-		providerOptions
-	) => {
+	const updateModelPromise = async (
+		provider: string,
+		model: string,
+		providerOptions?: ProviderOptionsConfig
+	): Promise<{ provider: string; model: string; savedTo: ConfigScope }> => {
 		if (!isProviderSupported(provider)) {
 			const available = getSupportedProviders();
 			throw new ConfigError({
@@ -549,7 +540,7 @@ const makeService = (
 		};
 	};
 
-	const addResourcePromise: ConfigService['addResourcePromise'] = async (resource) => {
+	const addResourcePromise = async (resource: ResourceDefinition): Promise<ResourceDefinition> => {
 		const mergedResources = getMergedResources();
 		if (mergedResources.some((r) => r.name === resource.name)) {
 			throw new ConfigError({
@@ -569,7 +560,7 @@ const makeService = (
 		return resource;
 	};
 
-	const removeResourcePromise: ConfigService['removeResourcePromise'] = async (name) => {
+	const removeResourcePromise = async (name: string): Promise<void> => {
 		const mergedResources = getMergedResources();
 		const exists = mergedResources.some((r) => r.name === name);
 		if (!exists) {
@@ -621,7 +612,7 @@ const makeService = (
 		}
 	};
 
-	const clearResourcesPromise: ConfigService['clearResourcesPromise'] = async () => {
+	const clearResourcesPromise = async (): Promise<{ cleared: number }> => {
 		let clearedCount = 0;
 
 		let resourcesDir: string[] = [];
@@ -644,7 +635,7 @@ const makeService = (
 		return { cleared: clearedCount };
 	};
 
-	const reloadPromise: ConfigService['reloadPromise'] = async () => {
+	const reloadPromise = async (): Promise<void> => {
 		metricsInfo('config.reload.start', { configPath });
 
 		const configExists = await Bun.file(configPath).exists();
@@ -693,31 +684,26 @@ const makeService = (
 				try: () => updateModelPromise(provider, model, providerOptions),
 				catch: (cause) => cause
 			}),
-		updateModelPromise,
 		addResource: (resource) =>
 			Effect.tryPromise({
 				try: () => addResourcePromise(resource),
 				catch: (cause) => cause
 			}),
-		addResourcePromise,
 		removeResource: (name) =>
 			Effect.tryPromise({
 				try: () => removeResourcePromise(name),
 				catch: (cause) => cause
 			}),
-		removeResourcePromise,
 		clearResources: () =>
 			Effect.tryPromise({
 				try: () => clearResourcesPromise(),
 				catch: (cause) => cause
 			}),
-		clearResourcesPromise,
 		reload: () =>
 			Effect.tryPromise({
 				try: () => reloadPromise(),
 				catch: (cause) => cause
-			}),
-		reloadPromise
+			})
 	};
 
 	return service;

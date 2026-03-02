@@ -87,37 +87,20 @@ export class ProviderNotConnectedError extends Error {
 }
 
 export type AgentService = {
-	askStream: (args: { collection: CollectionResult; question: string }) => Effect.Effect<
-		{
-			stream: AsyncIterable<AgentEvent>;
-			model: { provider: string; model: string };
-		},
-		unknown,
-		never
-	>;
-	askStreamPromise: (args: { collection: CollectionResult; question: string }) => Promise<{
+	askStream: (args: { collection: CollectionResult; question: string }) => Effect.Effect<{
 		stream: AsyncIterable<AgentEvent>;
 		model: { provider: string; model: string };
-	}>;
+	}, unknown>;
 
 	ask: (args: {
 		collection: CollectionResult;
 		question: string;
-	}) => Effect.Effect<AgentResult, unknown, never>;
-	askPromise: (args: { collection: CollectionResult; question: string }) => Promise<AgentResult>;
+	}) => Effect.Effect<AgentResult, unknown>;
 
-	listProviders: () => Effect.Effect<
-		{
-			all: { id: string; models: Record<string, unknown> }[];
-			connected: string[];
-		},
-		unknown,
-		never
-	>;
-	listProvidersPromise: () => Promise<{
+	listProviders: () => Effect.Effect<{
 		all: { id: string; models: Record<string, unknown> }[];
 		connected: string[];
-	}>;
+	}, unknown>;
 };
 
 export type Service = AgentService;
@@ -149,7 +132,7 @@ export const createAgentService = (config: ConfigServiceShape): AgentService => 
 	/**
 	 * Ask a question and stream the response using the new AI SDK loop
 	 */
-	const askStreamPromise: AgentService['askStreamPromise'] = async ({ collection, question }) => {
+	const askStreamImpl = async ({ collection, question }: { collection: CollectionResult; question: string }) => {
 		metricsInfo('agent.ask.start', {
 			provider: config.provider,
 			model: config.model,
@@ -193,7 +176,7 @@ export const createAgentService = (config: ConfigServiceShape): AgentService => 
 	/**
 	 * Ask a question and return the complete response
 	 */
-	const askPromise: AgentService['askPromise'] = async ({ collection, question }) => {
+	const askImpl = async ({ collection, question }: { collection: CollectionResult; question: string }) => {
 		try {
 			metricsInfo('agent.ask.start', {
 				provider: config.provider,
@@ -246,7 +229,7 @@ export const createAgentService = (config: ConfigServiceShape): AgentService => 
 	/**
 	 * List available providers using local auth data
 	 */
-	const listProvidersPromise: AgentService['listProvidersPromise'] = async () => {
+	const listProvidersImpl = async () => {
 		const supportedProviders = getSupportedProviders();
 		const authenticatedProviders = await getAuthenticatedProviders();
 		const all = supportedProviders.map((id) => ({
@@ -262,26 +245,23 @@ export const createAgentService = (config: ConfigServiceShape): AgentService => 
 
 	const askStream: AgentService['askStream'] = (args) =>
 		Effect.tryPromise({
-			try: () => askStreamPromise(args),
+			try: () => askStreamImpl(args),
 			catch: (cause) => cause
 		});
 	const ask: AgentService['ask'] = (args) =>
 		Effect.tryPromise({
-			try: () => askPromise(args),
+			try: () => askImpl(args),
 			catch: (cause) => cause
 		});
 	const listProviders: AgentService['listProviders'] = () =>
 		Effect.tryPromise({
-			try: () => listProvidersPromise(),
+			try: () => listProvidersImpl(),
 			catch: (cause) => cause
 		});
 
 	return {
 		askStream,
 		ask,
-		listProviders,
-		askStreamPromise,
-		askPromise,
-		listProvidersPromise
+		listProviders
 	};
 };
