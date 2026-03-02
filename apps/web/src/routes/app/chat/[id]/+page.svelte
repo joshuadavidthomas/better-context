@@ -673,7 +673,11 @@
 	// Convert Convex messages to the format expected by ChatMessages
 	type Message = import('$lib/types').Message;
 	const displayMessages = $derived.by((): Message[] => {
-		const msgs = messages.map((m): Message => {
+		const visibleMessages = messages.filter(
+			(m) => !(isStreamingThisThread && activeStream?.messageId === m._id && m.role === 'assistant')
+		);
+
+		const msgs = visibleMessages.map((m): Message => {
 			if (m.role === 'user') {
 				return {
 					id: m._id as string,
@@ -682,13 +686,21 @@
 					resources: m.resources ?? []
 				};
 			}
-			// Assistant messages - content can be string or { type: 'chunks', chunks: [] }
+
+			if (m.role === 'assistant') {
+				return {
+					id: m._id as string,
+					role: 'assistant',
+					content: m.content,
+					canceled: m.canceled
+				};
+			}
+
 			return {
 				id: m._id as string,
-				role: 'assistant',
-				content: m.content,
-				canceled: m.canceled
-			} as Message;
+				role: 'system',
+				content: m.content as string
+			};
 		});
 
 		// Add pending user message if exists (shown immediately while waiting for stream)
