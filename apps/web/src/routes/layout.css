@@ -243,6 +243,62 @@
 		backdrop-filter: none;
 	}
 
+	.bc-rewriteBanner {
+		border-bottom: 1px solid color-mix(in oklab, hsl(var(--bc-warning)) 45%, hsl(var(--bc-border)));
+		background: linear-gradient(
+			90deg,
+			color-mix(in oklab, hsl(var(--bc-warning)) 16%, hsl(var(--bc-bg))) 0%,
+			color-mix(in oklab, hsl(var(--bc-accent)) 10%, hsl(var(--bc-bg))) 100%
+		);
+	}
+
+	.bc-rewriteBannerContent {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		max-width: 56rem;
+	}
+
+	.bc-rewriteBannerEyebrow {
+		font-size: 11px;
+		font-weight: 700;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: color-mix(in oklab, hsl(var(--bc-warning)) 80%, hsl(var(--bc-fg)));
+	}
+
+	.bc-rewriteBannerText {
+		margin: 0;
+		font-size: 14px;
+		line-height: 1.5;
+		color: hsl(var(--bc-fg));
+	}
+
+	.bc-rewriteBannerText a {
+		text-decoration-color: color-mix(in oklab, hsl(var(--bc-warning)) 65%, transparent);
+	}
+
+	.bc-rewriteBannerClose {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+		width: 40px;
+		height: 40px;
+		border: 1px solid color-mix(in oklab, hsl(var(--bc-warning)) 38%, hsl(var(--bc-border)));
+		background: color-mix(in oklab, hsl(var(--bc-surface)) 82%, transparent);
+		color: hsl(var(--bc-fg));
+		cursor: pointer;
+		transition:
+			background 120ms ease,
+			border-color 120ms ease;
+	}
+
+	.bc-rewriteBannerClose:hover {
+		border-color: color-mix(in oklab, hsl(var(--bc-warning)) 62%, hsl(var(--bc-fg)));
+		background: color-mix(in oklab, hsl(var(--bc-warning)) 10%, hsl(var(--bc-surface)));
+	}
+
 	.bc-logoMark {
 		display: grid;
 		place-items: center;

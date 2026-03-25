@@ -6,6 +6,9 @@ https://btca.dev
 
 Ask your AI agent questions about libraries and frameworks by searching the actual source code, not outdated docs.
 
+> [!WARNING]
+> btca is being rewritten right now. The new version will overwrite the current one with full backwards compatibility, while fixing a ton of issues and massively improving performance. It is being rebuilt around [pi agent and node](https://github.com/davis7dotsh/btca-3) to improve the Windows experience.
+
 ## Install
 
 ```bash

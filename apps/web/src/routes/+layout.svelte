@@ -12,14 +12,18 @@
 	import { onMount } from 'svelte';
 
 	let { children } = $props();
+	const rewriteBannerStorageKey = 'btca-rewrite-banner-dismissed-v1';
 
 	const teardownShiki = () => {
 		disposeShikiStoreHighlighter();
 		disposeChatHighlighter();
 	};
 
+	let rewriteBannerDismissed = $state(false);
+
 	onMount(() => {
 		initAnalytics();
+		rewriteBannerDismissed = localStorage.getItem(rewriteBannerStorageKey) === 'true';
 		window.addEventListener('pagehide', teardownShiki);
 		window.addEventListener('beforeunload', teardownShiki);
 		return () => {
@@ -45,6 +49,11 @@
 
 	const toggleNav = () => {
 		mobileNavOpen = !mobileNavOpen;
+	};
+
+	const dismissRewriteBanner = () => {
+		rewriteBannerDismissed = true;
+		localStorage.setItem(rewriteBannerStorageKey, 'true');
 	};
 
 	const isActive = (href: string) =>
@@ -94,6 +103,35 @@
 		<div class="bc-skip">
 			<a class="bc-skipLink" href="#main">Skip to content</a>
 		</div>
+
+		{#if !rewriteBannerDismissed}
+			<div class="bc-rewriteBanner">
+				<div class="bc-container flex items-start justify-between gap-3 py-3">
+					<div class="bc-rewriteBannerContent">
+						<div class="bc-rewriteBannerEyebrow">Heads up</div>
+						<p class="bc-rewriteBannerText">
+							btca is being rewritten right now. The new version will overwrite the current one with
+							full backwards compatibility, fix a ton of issues, and massively improve performance.
+							It is being rebuilt around
+							<a href="https://github.com/davis7dotsh/btca-3" target="_blank" rel="noreferrer">
+								pi agent and node
+							</a>
+							to improve Windows support.
+						</p>
+					</div>
+
+					<button
+						type="button"
+						class="bc-rewriteBannerClose"
+						onclick={dismissRewriteBanner}
+						aria-label="Dismiss rewrite notice"
+						title="Dismiss rewrite notice"
+					>
+						<X size={18} strokeWidth={2.25} />
+					</button>
+				</div>
+			</div>
+		{/if}
 
 		<header class="bc-header sticky top-0 z-20">
 			<div class="bc-container flex items-center justify-between gap-4 py-4">
