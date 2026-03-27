@@ -194,7 +194,13 @@ mcpServer.tool(
 	}
 );
 
-const transport = new HttpTransport<AuthContext>(mcpServer, { path: '/api/mcp' });
+const transport = new HttpTransport<AuthContext>(mcpServer, {
+	path: '/api/mcp',
+	// Vercel's serverless runtime is a poor fit for TMCP's long-lived SSE GET stream.
+	// The hosted MCP endpoint only needs request/response POST handling for tools, so
+	// disable SSE to avoid lambdas hanging until the platform timeout.
+	disableSse: true
+});
 
 const respondWithMcp = async (request: Request) => {
 	const apiKey = extractApiKey(request);
