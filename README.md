@@ -9,124 +9,28 @@ Ask your AI agent questions about libraries and frameworks by searching the actu
 > [!WARNING]
 > btca is being rewritten right now. The new version will overwrite the current one with full backwards compatibility, while fixing a ton of issues and massively improving performance. It is being rebuilt around [pi agent and node](https://github.com/davis7dotsh/btca-3) to improve the Windows experience.
 
-## Install
+## A note on this project
 
-```bash
-bun add -g btca opencode-ai
-btca connect --provider opencode --model claude-haiku-4-5
-```
+I've been testing a ton, and I mean a ton of stuff for how to make the local experience better.
 
-## Usage
+- Custom pi agent
+- New cli
+- A pi extension
+- A complex resource management cli
 
-```bash
-# Ask a question
-btca ask --resource svelte --question "How does the $state rune work?"
+And as I've done all of these things I've come to realize, that the local version of this probably just should have been a skill.
 
-# Launch the TUI
-btca
-```
+So at least for now, it is. I know that sounds dumb, but just trust me the experience is great. I highly recommend doing this with pi or codex:
 
-## Project Setup
+## getting started
 
-Paste this into your AI coding agent to set up btca for your project:
+1. install the skill: `npx skills add https://github.com/davis7dotsh/better-context --skill btca-local`
+2. three ways to use it:
+   1. during any prompt simply say "use btca" and your coding agent will now clone/search important repos in `~/.btca/agent/sandbox`, improving your output quality
+   2. invoke the skill from your coding agent with "/btc..." or "$btc..." (depends on your agent) and it will feel like the old tui
+   3. invoke the skill the same way as above, but this time include a question/prompt. basically the same thing as `btca ask`
 
-```
-Set up btca for this project: scan package.json for major dependencies (frameworks, libraries, tools), suggest adding each as a btca resource with sensible defaults, then create a btca.config.jsonc file in the project root and update AGENTS.md with usage instructions. Ask me to confirm each resource before adding.
-```
+## the future of this project
 
-See the full [Getting Started guide](https://docs.btca.dev/guides/quickstart) for more details.
-
-## Development
-
-This is a Bun monorepo using Turborepo. **Only use `bun`** - never npm/yarn.
-
-### Quick Start
-
-```bash
-bun install
-bun run dev:web   # Start web app with Convex
-bun run dev:cli   # Start CLI in watch mode
-bun run server    # Start server in watch mode
-bun run cli       # Run CLI (no watch)
-```
-
-### Web Deployment
-
-`apps/web` is configured for Vercel. Import the repo into Vercel, set the Root Directory to `apps/web`, and keep the checked-in [`apps/web/vercel.json`](/Users/davis/Developer/better-context/apps/web/vercel.json) so builds run through Convex and inject `PUBLIC_CONVEX_URL` automatically. You still need `CONVEX_DEPLOY_KEY` in Vercel, plus the app's public env vars in Vercel and the backend-only secrets in Convex.
-
-### Scripts
-
-All scripts use Turborepo for caching. Run from the repository root.
-
-#### Build
-
-| Command             | Description                  |
-| ------------------- | ---------------------------- |
-| `bun run build:all` | Build all packages           |
-| `bun run build:cli` | Build CLI (creates binaries) |
-| `bun run build:web` | Build web app                |
-
-#### Type Check
-
-| Command                 | Description               |
-| ----------------------- | ------------------------- |
-| `bun run check:all`     | Type check all packages   |
-| `bun run check:cli`     | Type check CLI            |
-| `bun run check:web`     | Type check web app        |
-| `bun run check:server`  | Type check server         |
-| `bun run check:sandbox` | Type check sandbox        |
-| `bun run check:shared`  | Type check shared package |
-
-#### Format
-
-| Command                  | Description           |
-| ------------------------ | --------------------- |
-| `bun run format:all`     | Format all packages   |
-| `bun run format:cli`     | Format CLI            |
-| `bun run format:web`     | Format web app        |
-| `bun run format:server`  | Format server         |
-| `bun run format:sandbox` | Format sandbox        |
-| `bun run format:shared`  | Format shared package |
-
-#### Test
-
-| Command               | Description      |
-| --------------------- | ---------------- |
-| `bun run test:all`    | Run all tests    |
-| `bun run test:server` | Run server tests |
-
-#### Other
-
-| Command                         | Description                                       |
-| ------------------------------- | ------------------------------------------------- |
-| `bun run clean`                 | Remove node_modules, .svelte-kit, .turbo, .vercel |
-| `bun run analytics-proxy:build` | Build analytics proxy Docker image                |
-| `bun run analytics-proxy:run`   | Run analytics proxy locally                       |
-
-### Packages
-
-| Package                 | Path                   | Description                  |
-| ----------------------- | ---------------------- | ---------------------------- |
-| `btca`                  | `apps/cli`             | CLI tool                     |
-| `btca-server`           | `apps/server`          | API server                   |
-| `@btca/web`             | `apps/web`             | Web app (SvelteKit + Convex) |
-| `btca-sandbox`          | `apps/sandbox`         | Sandbox environment          |
-| `@btca/shared`          | `packages/shared`      | Shared utilities             |
-| `@btca/analytics-proxy` | `apps/analytics-proxy` | PostHog analytics proxy      |
-
-## model recs...
-
-**openai**
-
-- "gpt-5.3-codex-spark"
-- "gpt-5.3-codex"
-
-**opencode**
-
-- "claude-sonnet-4-6"
-- "claude-haiku-4-5"
-- "gemini-3-flash"
-
-**minimax**
-
-- "MiniMax-M2.5"
+- the web app will continue to be expanded and supported. I can do things there I can't do locally, and I don't want to make that experience worse
+- the local version might get revisited in the future. it being a "subagent" for search was actually quite nice. main issue with the new system is it clogs the main context window...
